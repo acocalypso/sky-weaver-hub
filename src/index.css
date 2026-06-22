@@ -2,104 +2,165 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
-All colors MUST be HSL.
-*/
+/* AllSky Control Hub — observatory dark theme.
+   All colors are HSL. Tokens drive every surface, status, and chart. */
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    /* Deep midnight observatory palette */
+    --background: 230 35% 6%;
+    --foreground: 210 40% 96%;
 
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card: 230 30% 9%;
+    --card-foreground: 210 40% 96%;
 
-    --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
+    --popover: 230 35% 8%;
+    --popover-foreground: 210 40% 96%;
 
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
+    /* Primary: cyan starlight */
+    --primary: 188 92% 56%;
+    --primary-foreground: 230 40% 8%;
+    --primary-glow: 188 92% 70%;
 
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
+    /* Secondary: deep nebula indigo */
+    --secondary: 245 40% 18%;
+    --secondary-foreground: 210 40% 96%;
 
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
+    --muted: 230 25% 14%;
+    --muted-foreground: 215 20% 65%;
 
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
+    /* Accent: amber sun for warnings/highlights */
+    --accent: 35 95% 60%;
+    --accent-foreground: 230 40% 8%;
 
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive: 0 75% 58%;
+    --destructive-foreground: 0 0% 98%;
 
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
+    --border: 230 25% 18%;
+    --input: 230 25% 16%;
+    --ring: 188 92% 56%;
 
-    --radius: 0.5rem;
+    --radius: 0.6rem;
 
-    --sidebar-background: 0 0% 98%;
+    /* Status colors */
+    --status-ok: 145 65% 50%;
+    --status-warn: 35 95% 60%;
+    --status-error: 0 75% 60%;
+    --status-idle: 215 20% 55%;
+    --status-active: 188 92% 56%;
 
-    --sidebar-foreground: 240 5.3% 26.1%;
+    /* Gradients */
+    --gradient-sky: radial-gradient(ellipse at top, hsl(245 60% 18%) 0%, hsl(230 50% 8%) 50%, hsl(230 35% 4%) 100%);
+    --gradient-primary: linear-gradient(135deg, hsl(188 92% 56%), hsl(220 90% 60%));
+    --gradient-aurora: linear-gradient(135deg, hsl(188 92% 56% / 0.25), hsl(280 80% 60% / 0.15), hsl(35 95% 60% / 0.15));
+    --gradient-card: linear-gradient(180deg, hsl(230 30% 11%) 0%, hsl(230 35% 8%) 100%);
 
-    --sidebar-primary: 240 5.9% 10%;
+    /* Shadows */
+    --shadow-glow: 0 0 40px hsl(188 92% 56% / 0.25);
+    --shadow-card: 0 8px 24px -8px hsl(230 60% 2% / 0.6);
+    --shadow-elevated: 0 20px 48px -12px hsl(230 60% 2% / 0.8);
 
-    --sidebar-primary-foreground: 0 0% 98%;
-
-    --sidebar-accent: 240 4.8% 95.9%;
-
-    --sidebar-accent-foreground: 240 5.9% 10%;
-
-    --sidebar-border: 220 13% 91%;
-
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    --sidebar-background: 230 40% 5%;
+    --sidebar-foreground: 215 25% 75%;
+    --sidebar-primary: 188 92% 56%;
+    --sidebar-primary-foreground: 230 40% 8%;
+    --sidebar-accent: 230 30% 12%;
+    --sidebar-accent-foreground: 210 40% 96%;
+    --sidebar-border: 230 30% 14%;
+    --sidebar-ring: 188 92% 56%;
   }
 
-  .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
-
-    --primary: 210 40% 98%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 212.7 26.8% 83.9%;
-    --sidebar-background: 240 5.9% 10%;
-    --sidebar-foreground: 240 4.8% 95.9%;
-    --sidebar-primary: 224.3 76.3% 48%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 240 3.7% 15.9%;
-    --sidebar-accent-foreground: 240 4.8% 95.9%;
-    --sidebar-border: 240 3.7% 15.9%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
+  /* Light mode kept available but app defaults to dark */
+  .light {
+    --background: 210 40% 98%;
+    --foreground: 230 40% 8%;
+    --card: 0 0% 100%;
+    --card-foreground: 230 40% 8%;
+    --primary: 188 92% 40%;
+    --primary-foreground: 0 0% 100%;
+    --muted: 210 30% 94%;
+    --muted-foreground: 215 20% 40%;
+    --border: 214 30% 88%;
+    --input: 214 30% 88%;
+    --ring: 188 92% 40%;
   }
 }
 
 @layer base {
-  * {
-    @apply border-border;
+  * { @apply border-border; }
+  html { @apply dark; }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "ss01", "cv11";
+    background: var(--gradient-sky);
+    background-attachment: fixed;
+    min-height: 100vh;
   }
 
-  body {
-    @apply bg-background text-foreground;
+  /* Telemetry / monospace data */
+  .font-mono-data {
+    font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
   }
+}
+
+@layer components {
+  .telemetry-card {
+    @apply rounded-lg border border-border/60 bg-card/80 backdrop-blur-sm p-4 shadow-[var(--shadow-card)];
+    background-image: var(--gradient-card);
+  }
+
+  .glow-primary { box-shadow: var(--shadow-glow); }
+
+  .status-dot {
+    @apply inline-block h-2 w-2 rounded-full;
+    box-shadow: 0 0 8px currentColor;
+  }
+
+  .aurora-bg {
+    background-image: var(--gradient-aurora);
+  }
+
+  /* Animated starfield (CSS only) */
+  .starfield {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+    z-index: 0;
+  }
+  .starfield::before,
+  .starfield::after {
+    content: "";
+    position: absolute;
+    inset: -50%;
+    background-image:
+      radial-gradient(1px 1px at 20% 30%, hsl(0 0% 100% / 0.8), transparent),
+      radial-gradient(1px 1px at 70% 60%, hsl(0 0% 100% / 0.6), transparent),
+      radial-gradient(1.5px 1.5px at 40% 80%, hsl(188 100% 90% / 0.7), transparent),
+      radial-gradient(1px 1px at 85% 15%, hsl(0 0% 100% / 0.5), transparent),
+      radial-gradient(1px 1px at 10% 70%, hsl(0 0% 100% / 0.6), transparent),
+      radial-gradient(2px 2px at 55% 45%, hsl(45 100% 90% / 0.6), transparent),
+      radial-gradient(1px 1px at 90% 90%, hsl(0 0% 100% / 0.7), transparent);
+    background-size: 600px 600px;
+    animation: drift 120s linear infinite;
+    opacity: 0.7;
+  }
+  .starfield::after {
+    background-size: 800px 800px;
+    animation-duration: 200s;
+    animation-direction: reverse;
+    opacity: 0.4;
+  }
+  @keyframes drift {
+    from { transform: translate3d(0,0,0); }
+    to { transform: translate3d(-200px, -200px, 0); }
+  }
+
+  @keyframes pulse-glow {
+    0%, 100% { box-shadow: 0 0 0 0 hsl(var(--primary) / 0.4); }
+    50% { box-shadow: 0 0 0 8px hsl(var(--primary) / 0); }
+  }
+  .pulse-glow { animation: pulse-glow 2s ease-out infinite; }
 }
