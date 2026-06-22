@@ -1,4 +1,4 @@
-import SunCalc from "suncalc";
+import * as SunCalc from "suncalc";
 
 export interface TwilightTimeline {
   sunset: Date;
