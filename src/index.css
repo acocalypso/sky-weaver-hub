@@ -88,7 +88,6 @@
 
 @layer base {
   * { @apply border-border; }
-  html { @apply dark; }
   body {
     @apply bg-background text-foreground antialiased;
     font-feature-settings: "ss01", "cv11";
