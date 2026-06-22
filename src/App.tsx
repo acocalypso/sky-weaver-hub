@@ -3,8 +3,16 @@ import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import Index from "./pages/Index.tsx";
-import NotFound from "./pages/NotFound.tsx";
+import { AuthProvider } from "@/hooks/useAuth";
+import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { AppShell } from "@/components/AppShell";
+import Dashboard from "@/pages/Dashboard";
+import AuthPage from "@/pages/Auth";
+import NotFound from "@/pages/NotFound";
+import {
+  Cameras, Schedule, Gallery, Timelapses, Logs,
+  Settings, ApiKeys, DeveloperApi, Deployment,
+} from "@/pages/Placeholder";
 
 const queryClient = new QueryClient();
 
@@ -12,13 +20,26 @@ const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
       <Toaster />
-      <Sonner />
+      <Sonner position="top-right" theme="dark" />
       <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Index />} />
-          {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-          <Route path="*" element={<NotFound />} />
-        </Routes>
+        <AuthProvider>
+          <Routes>
+            <Route path="/auth" element={<AuthPage />} />
+            <Route element={<ProtectedRoute><AppShell /></ProtectedRoute>}>
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/cameras" element={<Cameras />} />
+              <Route path="/schedule" element={<Schedule />} />
+              <Route path="/gallery" element={<Gallery />} />
+              <Route path="/timelapses" element={<Timelapses />} />
+              <Route path="/logs" element={<Logs />} />
+              <Route path="/settings" element={<Settings />} />
+              <Route path="/api-keys" element={<ApiKeys />} />
+              <Route path="/developer" element={<DeveloperApi />} />
+              <Route path="/deployment" element={<Deployment />} />
+            </Route>
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </AuthProvider>
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>
