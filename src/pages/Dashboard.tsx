@@ -3,7 +3,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { StatusBadge } from "@/components/StatusBadge";
-import { SkyApi, type CameraRow, type ImageRow, type SkyStatus, type SystemMetrics } from "@/lib/api";
+import { SkyApi, type CameraRow, type ImageRow, type SchedulePreview, type SkyStatus, type SystemMetrics } from "@/lib/api";
 import { getTonightTimeline, getSunAltitude } from "@/lib/sun";
 import sampleSky from "@/assets/sample-sky-1.jpg";
 import { Play, Square, Camera, RefreshCw, Film, RotateCw, Cpu, MemoryStick, HardDrive, Thermometer, Activity, Clock } from "lucide-react";
@@ -15,6 +15,7 @@ export default function Dashboard() {
   const [images, setImages] = useState<ImageRow[]>([]);
   const [settings, setSettings] = useState<any>(null);
   const [metrics, setMetrics] = useState<SystemMetrics>({ cpu_percent: 0, memory_percent: 0, disk_percent: 0, disk_free_gb: 0, temperature_c: null, uptime_seconds: 0 });
+  const [schedulePreview, setSchedulePreview] = useState<SchedulePreview | null>(null);
 
   useEffect(() => { document.title = "Dashboard - Sky Weaver Hub"; }, []);
   useEffect(() => {
@@ -25,8 +26,8 @@ export default function Dashboard() {
 
   async function load() {
     try {
-      const [st, imgs, sets, m] = await Promise.all([SkyApi.status(), SkyApi.images("?limit=8"), SkyApi.settings(), SkyApi.metrics()]);
-      setStatus(st); setImages(imgs); setSettings(sets); setMetrics(m);
+      const [st, imgs, sets, m, sched] = await Promise.all([SkyApi.status(), SkyApi.images("?limit=8"), SkyApi.settings(), SkyApi.metrics(), SkyApi.schedulePreview()]);
+      setStatus(st); setImages(imgs); setSettings(sets); setMetrics(m); setSchedulePreview(sched);
     } catch (e: any) {
       toast.error(e.message ?? "Unable to load dashboard");
     }
@@ -34,8 +35,8 @@ export default function Dashboard() {
 
   async function loadLight() {
     try {
-      const [st, imgs, m] = await Promise.all([SkyApi.status(), SkyApi.images("?limit=8"), SkyApi.metrics()]);
-      setStatus(st); setImages(imgs); setMetrics(m);
+      const [st, imgs, m, sched] = await Promise.all([SkyApi.status(), SkyApi.images("?limit=8"), SkyApi.metrics(), SkyApi.schedulePreview()]);
+      setStatus(st); setImages(imgs); setMetrics(m); setSchedulePreview(sched);
     } catch {
       // Keep the last visible telemetry during transient API restarts.
     }
@@ -136,10 +137,17 @@ export default function Dashboard() {
       <Card className="telemetry-card">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2"><Clock className="h-4 w-4 text-primary" /> Tonight</h3>
-          <span className="text-xs text-muted-foreground font-mono-data">{observatory.timezone}</span>
+          <div className="flex items-center gap-2">
+            <StatusBadge variant={schedulePreview?.active ? "active" : schedulePreview?.enabled ? "idle" : "warn"} pulse={schedulePreview?.active}>{schedulePreview?.active ? "window active" : schedulePreview?.enabled ? "waiting" : "disabled"}</StatusBadge>
+            <span className="text-xs text-muted-foreground font-mono-data">{schedulePreview?.timezone ?? observatory.timezone}</span>
+          </div>
         </div>
         <div className="grid grid-cols-4 lg:grid-cols-8 gap-2 text-xs font-mono-data">
           {Object.entries(timeline).map(([key, value]) => <div key={key}><p className="text-muted-foreground">{key}</p><p>{isNaN(value.getTime()) ? "-" : format(value, "HH:mm")}</p></div>)}
+        </div>
+        <div className="mt-4 pt-4 border-t border-border flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs font-mono-data">
+          <span className="text-muted-foreground">Capture window: {formatScheduleTime(schedulePreview?.window_start)} to {formatScheduleTime(schedulePreview?.window_end)}</span>
+          <span>Next: {schedulePreview?.next_transition_at ? `${schedulePreview.next_state} ${formatDistanceToNow(new Date(schedulePreview.next_transition_at), { addSuffix: true })}` : "-"}</span>
         </div>
       </Card>
 
@@ -179,4 +187,9 @@ function MetricCard({ icon, label, value, pct, accent = false }: { icon: React.R
       <Progress value={Math.max(0, Math.min(100, pct))} className="mt-3 h-1" />
     </Card>
   );
+}
+
+function formatScheduleTime(value?: string | null) {
+  if (!value) return "-";
+  return format(new Date(value), "HH:mm");
 }

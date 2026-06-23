@@ -43,6 +43,7 @@ export const SkyApi = {
   patchSettings: (values: Record<string, any>) => api<Record<string, any>>("/api/v1/settings", { method: "PATCH", body: JSON.stringify({ values }) }),
   schedule: () => api<ScheduleRow>("/api/v1/schedule"),
   putSchedule: (body: ScheduleRow) => api<ScheduleRow>("/api/v1/schedule", { method: "PUT", body: JSON.stringify(body) }),
+  schedulePreview: (body: Partial<ScheduleRow> = {}) => api<SchedulePreview>("/api/v1/schedule/preview-tonight", { method: "POST", body: JSON.stringify(body) }),
   products: () => api<any[]>("/api/v1/products"),
   createProduct: (type: string, body: any) => api<any>(`/api/v1/products/${type}`, { method: "POST", body: JSON.stringify(body) }),
   apiKeys: () => api<ApiKeyRow[]>("/api/v1/api-keys"),
@@ -61,5 +62,6 @@ export interface DetectedCamera { id: string; name: string; backend: string; mod
 export interface CameraProfile { id: string; camera_id: string; name: string; mode: string; settings: Record<string, any>; }
 export interface ImageRow { id: string; camera_id: string | null; captured_at: string; day_key: string; mode: string; file_path: string; public_url: string | null; thumbnail_path: string | null; format: string; width: number | null; height: number | null; size_bytes: number | null; exposure_ms: number | null; gain: number | null; temperature_c: number | null; mean_brightness: number | null; star_count: number | null; cloud_score: number | null; bad_image: boolean; metadata: any; }
 export interface ScheduleRow { id?: string; enabled: boolean; start_mode: string; end_mode: string; sun_angle: number; fixed_start_time?: string | null; fixed_end_time?: string | null; timezone: string; latitude: number; longitude: number; interval_seconds: number; exposure_ramping_enabled: boolean; }
+export interface SchedulePreview { enabled: boolean; active: boolean; now: string; window_start: string | null; window_end: string | null; next_transition_at: string | null; next_state: string; timezone: string; }
 export interface LogRow { id: string; level: string; source: string; message: string; context: any; created_at: string; }
 export interface ApiKeyRow { id: string; name: string; prefix: string; scopes: string[]; enabled: boolean; created_at: string; last_used_at?: string | null; }

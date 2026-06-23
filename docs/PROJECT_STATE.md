@@ -8,7 +8,7 @@ This document tracks the current implementation state against the all-sky platfo
 
 Sky Weaver Hub has moved from a mock dashboard toward a local-first Raspberry Pi/Linux all-sky platform. The repository now has a FastAPI backend, SQLite persistence, a camera adapter interface, mock capture with real image artifacts, an initial Raspberry Pi camera adapter, a daemon-owned scheduled capture loop, API-key authentication, systemd and installer scaffolding, and a React UI wired to the local API.
 
-The product is not yet Allsky feature-complete. The main missing areas are full capture pause/resume semantics, schedule UI integration, full image-product generation, public sky page, overlay/module workflows, remote upload execution, complete Allsky import, and Raspberry Pi acceptance testing.
+The product is not yet Allsky feature-complete. The main missing areas are full capture pause/resume semantics, queued sequence capture, full image-product generation, public sky page, overlay/module workflows, remote upload execution, complete Allsky import, and Raspberry Pi acceptance testing.
 
 ## Repo Map
 
@@ -84,6 +84,8 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 - Dashboard with latest image, capture controls, status, metrics, and recent captures.
 - Cameras page with detection, adapter selection, night-profile editing, and test shot.
 - Schedule page with sun-angle/fixed/manual mode settings.
+- Schedule page displays the backend active window, next transition, and fixed-time controls.
+- Dashboard Tonight panel displays capture-window status and the next schedule transition.
 - Gallery page with day/mode/quality filters and image detail.
 - Night Products page queues product jobs.
 - Logs page reads backend logs.
@@ -115,7 +117,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 | Phase 1: API skeleton and SQLite | Mostly done | Backend, schema, health/status, API client, core routes, and mock capture exist. Dedicated migration framework still needed. |
 | Phase 2: Auth/API keys/settings/docs | Mostly done | JWT login, API-key scopes, settings, API Keys UI, and Developer API UI exist. First-run setup and rate limiting are still open. |
 | Phase 3: Camera adapters and test shot | Partial | Mock and rpicam/libcamera implemented. ZWO, gPhoto2, V4L2, INDI, custom command are placeholders. |
-| Phase 4: Capture daemon and realtime | Partial | Scheduled daemon loop, shared capture service, persistent job claiming for single/scheduled captures, active-window checks, interval gating, lock-file duplicate-loop guard, heartbeat reporting, and SSE endpoint exist. Sequence queue handling, pause semantics, and richer reboot-safe state are open. |
+| Phase 4: Capture daemon and realtime | Partial | Scheduled daemon loop, shared capture service, persistent job claiming for single/scheduled captures, active-window checks and UI preview, interval gating, lock-file duplicate-loop guard, heartbeat reporting, and SSE endpoint exist. Sequence queue handling, pause semantics, and richer reboot-safe state are open. |
 | Phase 5: Image storage/gallery/latest/metadata | Partial | Mock capture artifacts, metadata, thumbnails, image rows, gallery, latest image exist. Latest symlink/copy and broader metadata extraction are open. |
 | Phase 6: Processing worker/products/retention | Early scaffold | Job endpoints and worker stub exist. Timelapse, keogram, startrail, mini timelapse, cleanup, and upload execution are open. |
 | Phase 7: Overlay/modules | Early scaffold | Module tables/endpoints exist. Overlay editor, processor, built-in modules, safe module execution are open. |
@@ -132,7 +134,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
   - distinguish running, paused, stopped, and failed state precisely
   - survive reboot
   - gracefully stop after current exposure
-- Integrate schedule preview into the UI and show next active/inactive transition.
+- Keep schedule preview and daemon state visible across Dashboard and Schedule as the daemon model evolves.
 - Complete mock acceptance flow end to end:
   - start capture
   - images continuously appear
@@ -335,12 +337,12 @@ Most recent checks run during implementation:
 
 ## Recommended Next Phase
 
-The next development phase should focus on exposing schedule state in the UI and tightening daemon control semantics, because queued single captures, scheduled captures, active-window checks, and heartbeat reporting now exist.
+The next development phase should focus on tightening daemon control semantics and queued sequence capture, because schedule state is now visible in the UI.
 
 Suggested next tasks:
 
-1. Add schedule preview/next-transition display to the Schedule page and Dashboard.
-2. Make `start`, `stop`, `pause`, and `resume` control daemon behavior with explicit state transitions.
-3. Add queued sequence capture support.
+1. Make `start`, `stop`, `pause`, and `resume` control daemon behavior with explicit state transitions.
+2. Add queued sequence capture support.
+3. Add frontend controls for pause/resume once the daemon semantics are explicit.
 4. Add a richer daemon heartbeat/state view, including last claimed job and last successful capture.
 5. Run a mock-camera overnight simulation that creates multiple captures and verifies latest/gallery updates.
