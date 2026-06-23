@@ -6,7 +6,12 @@ INSTALL_DIR="${SKYWEAVER_INSTALL_DIR:-/opt/skyweaver}"
 CONFIG_DIR="${SKYWEAVER_CONFIG_DIR:-/etc/skyweaver}"
 DATA_DIR="${SKYWEAVER_DATA_DIR:-/var/lib/skyweaver}"
 LOG_DIR="${SKYWEAVER_LOG_DIR:-/var/log/skyweaver}"
+SYSTEMD_DIR="${SKYWEAVER_SYSTEMD_DIR:-/etc/systemd/system}"
+SERVICE_USER="${SKYWEAVER_SERVICE_USER:-skyweaver}"
+SERVICE_GROUP="${SKYWEAVER_SERVICE_GROUP:-skyweaver}"
+CONFIG_OWNER="${SKYWEAVER_CONFIG_OWNER:-root}"
 DRY_RUN="${SKYWEAVER_DRY_RUN:-0}"
+ALLOW_NON_ROOT="${SKYWEAVER_ALLOW_NON_ROOT:-0}"
 
 run() {
   echo "+ $*"
@@ -14,6 +19,9 @@ run() {
 }
 
 need_root() {
+  if [[ "$DRY_RUN" == "1" || "$ALLOW_NON_ROOT" == "1" ]]; then
+    return
+  fi
   if [[ "${EUID}" -ne 0 ]]; then
     echo "Please run with sudo: sudo ./install.sh"
     exit 1
@@ -21,8 +29,14 @@ need_root() {
 }
 
 detect_os() {
-  # shellcheck source=/dev/null
-  . /etc/os-release
+  if [[ -f /etc/os-release ]]; then
+    # shellcheck source=/dev/null
+    . /etc/os-release
+  else
+    PRETTY_NAME="Unknown Linux"
+    ID="unknown"
+    VERSION_CODENAME=""
+  fi
   echo "Detected ${PRETTY_NAME:-Linux} on $(uname -m)"
   if grep -qi raspberry /proc/device-tree/model 2>/dev/null; then
     echo "Raspberry Pi: $(tr -d '\0' </proc/device-tree/model)"
@@ -37,13 +51,18 @@ detect_os() {
 install_packages() {
   run apt-get update
   run apt-get install -y git curl jq python3 python3-venv python3-pip ffmpeg imagemagick v4l-utils gphoto2 sqlite3 build-essential
+  if [[ "$DRY_RUN" == "1" ]]; then
+    run apt-get install -y rpicam-apps
+    echo "+ apt-get install -y libcamera-apps # fallback if rpicam-apps is unavailable"
+    return
+  fi
   if apt-cache show rpicam-apps >/dev/null 2>&1; then run apt-get install -y rpicam-apps; else run apt-get install -y libcamera-apps || true; fi
 }
 
 create_user_dirs() {
-  if ! id skyweaver >/dev/null 2>&1; then run useradd --system --home "$DATA_DIR" --shell /usr/sbin/nologin skyweaver; fi
+  if ! id "$SERVICE_USER" >/dev/null 2>&1; then run useradd --system --home "$DATA_DIR" --shell /usr/sbin/nologin "$SERVICE_USER"; fi
   run mkdir -p "$INSTALL_DIR" "$CONFIG_DIR" "$DATA_DIR" "$DATA_DIR/images" "$DATA_DIR/thumbnails" "$DATA_DIR/products" "$LOG_DIR"
-  run chown -R skyweaver:skyweaver "$DATA_DIR" "$LOG_DIR"
+  run chown -R "$SERVICE_USER:$SERVICE_GROUP" "$DATA_DIR" "$LOG_DIR"
 }
 
 copy_code() {
@@ -57,17 +76,26 @@ build_backend() {
 }
 
 build_frontend() {
-  if [[ -f "$INSTALL_DIR/package.json" ]]; then
+  if [[ -f "$INSTALL_DIR/package.json" || ( "$DRY_RUN" == "1" && -f "$ROOT_DIR/package.json" ) ]]; then
     run npm ci --prefix "$INSTALL_DIR"
     run npm run build --prefix "$INSTALL_DIR"
     run mkdir -p "$DATA_DIR/web"
     run rsync -a --delete "$INSTALL_DIR/dist/" "$DATA_DIR/web/"
-    run chown -R skyweaver:skyweaver "$DATA_DIR/web"
+    run chown -R "$SERVICE_USER:$SERVICE_GROUP" "$DATA_DIR/web"
   fi
 }
 
 write_config() {
   local secret
+  if [[ -f "$CONFIG_DIR/skyweaver.env" ]]; then
+    echo "Keeping existing $CONFIG_DIR/skyweaver.env"
+    return
+  fi
+  if [[ "$DRY_RUN" == "1" ]]; then
+    echo "+ install -m 640 skyweaver.env $CONFIG_DIR/skyweaver.env"
+    echo "+ chown $CONFIG_OWNER:$SERVICE_GROUP $CONFIG_DIR/skyweaver.env"
+    return
+  fi
   secret="$(openssl rand -hex 32 2>/dev/null || date +%s%N)"
   if [[ ! -f "$CONFIG_DIR/skyweaver.env" ]]; then
     cat >"$CONFIG_DIR/skyweaver.env" <<EOF
@@ -82,12 +110,13 @@ SKYWEAVER_DB=$DATA_DIR/skyweaver.db
 SKYWEAVER_ADMIN_USERNAME=admin
 EOF
     chmod 640 "$CONFIG_DIR/skyweaver.env"
-    chown root:skyweaver "$CONFIG_DIR/skyweaver.env"
+    chown "$CONFIG_OWNER:$SERVICE_GROUP" "$CONFIG_DIR/skyweaver.env"
   fi
 }
 
 install_systemd() {
-  run cp "$INSTALL_DIR/scripts/systemd/"*.service "$INSTALL_DIR/scripts/systemd/skyweaver.target" /etc/systemd/system/
+  run mkdir -p "$SYSTEMD_DIR"
+  run cp "$INSTALL_DIR/scripts/systemd/"*.service "$INSTALL_DIR/scripts/systemd/skyweaver.target" "$SYSTEMD_DIR/"
   run systemctl daemon-reload
   run systemctl enable skyweaver.target skyweaver-api.service skyweaver-capture.service skyweaver-worker.service
   run systemctl restart skyweaver.target

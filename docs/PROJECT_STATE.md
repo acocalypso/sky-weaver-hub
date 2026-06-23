@@ -22,7 +22,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 | Camera abstraction | `CameraAdapter` base class plus working `mock` adapter and initial `rpicam`/`libcamera` adapter. Other adapters are placeholders with actionable errors. |
 | UI/API integration | Dashboard, Cameras, Schedule, Gallery, Night Products, Logs, Settings, API Keys, and Developer API call the local backend. |
 | Deployment | `install.sh`, `upgrade.sh`, `uninstall.sh`, `support.sh`, and systemd units exist. Installer is not yet fully interactive. |
-| Tests | Backend pytest coverage for health/status, login, API keys, mock capture, scheduled daemon capture, queued single-capture execution, queued sequence capture, pause/resume/stop queue semantics, schedule preview, daemon heartbeat/activity, interrupted job recovery, mock overnight acceptance flow, night product generation, migration preview, and mock adapter. Frontend component tests cover Dashboard, Gallery, Settings, and API Keys. |
+| Tests | Backend pytest coverage for health/status, login, API keys, mock capture, scheduled daemon capture, queued single-capture execution, queued sequence capture, pause/resume/stop queue semantics, schedule preview, daemon heartbeat/activity, interrupted job recovery, mock overnight acceptance flow, night product generation, migration preview, and mock adapter. Frontend component tests cover Dashboard, Gallery, Settings, and API Keys. Shell tests cover installer dry-run and repeat-install idempotency with mocked system commands. |
 
 ## Implemented Capabilities
 
@@ -105,6 +105,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 - `skyweaver-capture.service`
 - `skyweaver-worker.service`
 - Installer creates directories, system user, Python venv, frontend build, config, and services.
+- Installer dry-run no longer requires root or writes config, and CI has a temp-dir test harness for dry-run and repeat-install idempotency.
 - Upgrade script backs up config/database and rebuilds.
 - Uninstall script removes services and optionally data.
 - Support script collects OS, camera, service, journal, disk, config-redacted, and API health details.
@@ -139,7 +140,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 | Phase 5: Image storage/gallery/latest/metadata | Partial | Mock capture artifacts, metadata, thumbnails, image rows, gallery, latest image exist. Latest symlink/copy and broader metadata extraction are open. |
 | Phase 6: Processing worker/products/retention | Partial | Worker claims jobs, thumbnail reprocess exists, keogram JPEG generation, ffmpeg timelapse/mini-timelapse generation, and startrail generation exist, and product job progress is visible in the UI. Cleanup and upload execution are open. |
 | Phase 7: Overlay/modules | Early scaffold | Module tables/endpoints exist. Overlay editor, processor, built-in modules, safe module execution are open. |
-| Phase 8: Installer/systemd/support/docs | Partial | Scripts and units exist. Interactive setup, nginx option, shellcheck, idempotency tests, and Pi verification are open. |
+| Phase 8: Installer/systemd/support/docs | Partial | Scripts and units exist. Shellcheck CI and installer dry-run/idempotency tests exist. Interactive setup, nginx option, and Pi verification are open. |
 | Phase 9: Allsky migration/remote upload | Early scaffold | Detection and dry-run count preview exist. Real import, rollback, unsupported-setting report, and remote upload execution are open. |
 | Phase 10: Polish/mobile/tests/hardening | Partial | Mobile API docs, latest/status/gallery endpoints, route bundle splitting, system health/diagnostics UI, initial frontend component tests, and CI workflow exist. Broader tests, UX polish, performance, and security hardening remain. |
 
@@ -170,8 +171,8 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 - Add camera presence check during install.
 - Add optional nginx reverse proxy.
 - Add `skyweaver` convenience command or documented aliases for start/stop/restart/status.
-- Add shellcheck coverage.
-- Add installer dry-run/idempotency tests.
+- Keep shellcheck coverage passing as installer scripts evolve.
+- Expand installer tests when interactive setup and nginx options are added.
 - Confirm service permissions and ownership on real Pi.
 
 ### Camera Hardware
@@ -315,7 +316,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
   - processing job lifecycle
   - every API-key scope boundary
 - Expand GitHub Actions after Pi validation:
-  - installer dry-run/idempotency tests
+  - installer tests for future interactive setup and nginx paths
   - real migration fixture tests
   - OpenAPI diff checks
 
@@ -342,6 +343,16 @@ Most recent checks run during implementation:
 - `npm audit --audit-level=high`: passed with 0 vulnerabilities
 - `backend\\.venv\\Scripts\\python -m pytest backend\\tests`: passed with 22 tests
 
+Most recent local follow-up checks on 2026-06-23:
+
+- `npm run lint`: passed
+- `npm test`: passed with 4 tests
+- `npm run build`: passed
+- `backend\\.venv\\Scripts\\python -m pytest backend\\tests`: passed with 22 tests
+- `bash scripts/test_install.sh`: passed
+- `bash -n install.sh scripts/test_install.sh upgrade.sh uninstall.sh support.sh`: passed
+- `shellcheck install.sh scripts/test_install.sh upgrade.sh uninstall.sh support.sh`: not run locally because ShellCheck is not installed on this Windows host; CI installs ShellCheck on Ubuntu.
+
 ## Recommended Next Phase
 
 The next development phase should focus on operational hardening, because interrupted job recovery and the initial night products now generate real downloadable artifacts.
@@ -350,4 +361,4 @@ Suggested next tasks:
 
 1. Validate reboot recovery on real Raspberry Pi/systemd services.
 2. Expand system health service controls after systemd validation.
-3. Add installer dry-run/idempotency tests.
+3. Add interactive installer setup questions for admin password, observatory location, timezone, camera adapter, and public page mode.

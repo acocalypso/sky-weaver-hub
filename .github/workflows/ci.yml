@@ -83,7 +83,7 @@ jobs:
         run: npm run build
 
   shellcheck:
-    name: Shellcheck scripts
+    name: Shell scripts
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -96,3 +96,6 @@ jobs:
 
       - name: Run shellcheck
         run: shellcheck install.sh upgrade.sh uninstall.sh support.sh
+
+      - name: Test installer dry-run and idempotency
+        run: bash scripts/test_install.sh
