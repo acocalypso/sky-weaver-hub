@@ -221,7 +221,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 - Add Allsky migration page.
 - Add deployment/installer docs page.
 - Improve mobile layouts after real data flows are in place.
-- Consider bundle splitting; current build warns that the main JS chunk is over 500 kB.
+- Route-level bundle splitting is enabled; keep watching bundle size as large pages and dependencies are added.
 
 ### API and Mobile Readiness
 
@@ -341,7 +341,7 @@ Most recent checks run during implementation:
 
 - `npm run build`: passed
 - `npm test`: passed
-- `npm run lint`: passed with warnings only
+- `npm run lint`: passed with zero warnings
 - `npm audit --audit-level=high`: passed with 0 vulnerabilities
 - `backend\\.venv\\Scripts\\python -m pytest backend\\tests`: passed with 15 tests
 
