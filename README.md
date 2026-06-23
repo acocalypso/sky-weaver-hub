@@ -15,7 +15,7 @@ This repository now contains the first working platform slice:
 - Systemd units and installer scripts for Pi deployment.
 - Allsky migration detection and dry-run preview endpoints.
 
-Some Allsky parity items are intentionally scaffolded for later phases: full scheduler daemon logic, keogram/startrail/timelapse rendering, remote upload execution, overlay editing, dark-frame median combine, and custom module sandboxing.
+Some Allsky parity items are intentionally scaffolded for later phases: full scheduler daemon hardening, startrail/timelapse rendering, remote upload execution, overlay editing, dark-frame median combine, and custom module sandboxing. Keogram generation is implemented as an initial processing worker product.
 
 ## Supported Targets
 

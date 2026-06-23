@@ -22,7 +22,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 | Camera abstraction | `CameraAdapter` base class plus working `mock` adapter and initial `rpicam`/`libcamera` adapter. Other adapters are placeholders with actionable errors. |
 | UI/API integration | Dashboard, Cameras, Schedule, Gallery, Night Products, Logs, Settings, API Keys, and Developer API call the local backend. |
 | Deployment | `install.sh`, `upgrade.sh`, `uninstall.sh`, `support.sh`, and systemd units exist. Installer is not yet fully interactive. |
-| Tests | Backend pytest coverage for health/status, login, API keys, mock capture, scheduled daemon capture, queued single-capture execution, queued sequence capture, pause/resume/stop queue semantics, schedule preview, daemon heartbeat/activity, migration preview, and mock adapter. Frontend smoke test exists. |
+| Tests | Backend pytest coverage for health/status, login, API keys, mock capture, scheduled daemon capture, queued single-capture execution, queued sequence capture, pause/resume/stop queue semantics, schedule preview, daemon heartbeat/activity, keogram worker generation, migration preview, and mock adapter. Frontend smoke test exists. |
 
 ## Implemented Capabilities
 
@@ -106,6 +106,14 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 - Uninstall script removes services and optionally data.
 - Support script collects OS, camera, service, journal, disk, config-redacted, and API health details.
 
+### Processing Worker
+
+- `backend/skyweaver/worker.py` now claims and executes pending processing jobs.
+- Thumbnail reprocess jobs regenerate thumbnails for existing image rows.
+- Keogram jobs generate a real JPEG night product from same-day image center columns.
+- Completed keograms are inserted into `night_products` and are downloadable through `/api/v1/products/{id}/download`.
+- Backend tests verify keogram product generation from mock captures.
+
 ### Documentation
 
 - README updated with architecture, quickstart, API examples, status, and limitations.
@@ -121,7 +129,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 | Phase 3: Camera adapters and test shot | Partial | Mock and rpicam/libcamera implemented. ZWO, gPhoto2, V4L2, INDI, custom command are placeholders. |
 | Phase 4: Capture daemon and realtime | Partial | Scheduled daemon loop, shared capture service, persistent job claiming for single/scheduled/sequence captures, pause/resume/stop queue semantics, active-window checks and UI preview, interval gating, lock-file duplicate-loop guard, heartbeat/activity reporting, and SSE endpoint exist. Reboot recovery is open. |
 | Phase 5: Image storage/gallery/latest/metadata | Partial | Mock capture artifacts, metadata, thumbnails, image rows, gallery, latest image exist. Latest symlink/copy and broader metadata extraction are open. |
-| Phase 6: Processing worker/products/retention | Early scaffold | Job endpoints and worker stub exist. Timelapse, keogram, startrail, mini timelapse, cleanup, and upload execution are open. |
+| Phase 6: Processing worker/products/retention | Partial | Worker claims jobs, thumbnail reprocess exists, and keogram JPEG generation exists. Timelapse, startrail, mini timelapse, cleanup, progress UI, and upload execution are open. |
 | Phase 7: Overlay/modules | Early scaffold | Module tables/endpoints exist. Overlay editor, processor, built-in modules, safe module execution are open. |
 | Phase 8: Installer/systemd/support/docs | Partial | Scripts and units exist. Interactive setup, nginx option, shellcheck, idempotency tests, and Pi verification are open. |
 | Phase 9: Allsky migration/remote upload | Early scaffold | Detection and dry-run count preview exist. Real import, rollback, unsupported-setting report, and remote upload execution are open. |
@@ -190,9 +198,9 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 
 ### Night Products
 
+- Expand keogram generation options and UI progress.
 - Implement timelapse generation via ffmpeg.
 - Implement mini timelapse generation.
-- Implement keogram generation.
 - Implement startrail generation.
 - Add product progress reporting.
 - Add regenerate by date/date range.
@@ -316,8 +324,8 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 ## Known Current Limitations
 
 - Capture daemon now performs scheduled captures and consumes queued single-capture and sequence jobs. Pause/resume/stop queue semantics and daemon activity visibility exist; reboot recovery is still open.
-- Worker is still a service stub, not a full processing loop.
-- Product endpoints currently queue jobs but do not generate real files.
+- Worker now generates thumbnails and keograms, but timelapse, mini timelapse, startrail, retention cleanup, and upload execution are still open.
+- Product endpoints queue jobs; only keogram currently produces a downloadable night product.
 - Public page is not implemented.
 - Remote upload is not implemented.
 - Allsky migration does not yet import data.
@@ -334,16 +342,16 @@ Most recent checks run during implementation:
 - `npm test`: passed
 - `npm run lint`: passed with warnings only
 - `npm audit --audit-level=high`: passed with 0 vulnerabilities
-- `backend\\.venv\\Scripts\\python -m pytest backend\\tests`: passed with 14 tests
+- `backend\\.venv\\Scripts\\python -m pytest backend\\tests`: passed with 15 tests
 
 ## Recommended Next Phase
 
-The next development phase should focus on richer daemon state visibility and first processing products, because queue ownership and operator control semantics now exist.
+The next development phase should focus on product progress UI and the next processing products, because keogram generation now exists.
 
 Suggested next tasks:
 
-1. Add sequence capture controls and job progress in the UI.
-2. Implement the first processing product worker path, starting with thumbnail/latest publisher or timelapse scaffolding.
-3. Add reboot recovery rules for claimed/running capture jobs.
+1. Add sequence capture controls and capture/processing job progress in the UI.
+2. Implement timelapse or mini timelapse generation.
+3. Add reboot recovery rules for claimed/running capture and processing jobs.
 4. Add a dedicated system health page with service controls and diagnostics export.
 5. Run a mock-camera overnight simulation that creates multiple captures and verifies latest/gallery updates.
