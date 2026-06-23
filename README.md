@@ -2,9 +2,9 @@
 
 Sky Weaver Hub is a local-first, REST API first all-sky camera platform for Raspberry Pi and Linux. It is intended as a modern successor path for users who like the practical Allsky experience but want a cleaner backend, a modern responsive UI, API-key access for future mobile apps, and hardware adapters that keep camera commands out of the browser.
 
-## Phase 1 Status
+## Current Status
 
-This repository now contains the first working platform slice:
+This repository now contains a working local-first platform slice:
 
 - Vite/React admin UI using the local `/api/v1` service.
 - FastAPI backend under `backend/` with SQLite storage.
@@ -12,10 +12,12 @@ This repository now contains the first working platform slice:
 - Mock camera adapter that writes real images, thumbnails, metadata sidecars, image rows, capture jobs, logs, and realtime events.
 - Raspberry Pi `rpicam-still` / `libcamera-still` adapter path.
 - Versioned REST endpoints, OpenAPI docs at `/api/docs`, and SSE events at `/api/v1/events/stream`.
-- Systemd units and installer scripts for Pi deployment.
-- Allsky migration detection and dry-run preview endpoints.
+- Daemon-owned scheduled capture loop with queued single/sequence captures, pause/resume/stop queue semantics, heartbeat reporting, interrupted job recovery, and stale daemon lock recovery.
+- Processing worker for thumbnail reprocess, keogram JPEGs, ffmpeg timelapses, mini timelapses, and startrail JPEGs.
+- Systemd units and installer scripts for Pi deployment, with dry-run/idempotency tests.
+- Allsky migration detection and dry-run preview endpoints. Real import is still scaffolded.
 
-Some Allsky parity items are intentionally scaffolded for later phases: full scheduler daemon hardening, remote upload execution, overlay editing, dark-frame median combine, and custom module sandboxing. Keogram, ffmpeg timelapse, mini-timelapse, and startrail generation are implemented as initial processing worker products.
+Some Allsky parity items are intentionally scaffolded for later phases: public unauthenticated sky page, remote upload execution, overlay editing, dark-frame median combine, full Allsky import, and custom module sandboxing.
 
 ## Supported Targets
 
@@ -30,7 +32,7 @@ Primary:
 Development and partial support:
 
 - Raspberry Pi Zero 2 W with reduced processing
-- Debian/Ubuntu Linux
+- Debian/Ubuntu Linux. A Raspberry Pi 3 Model B on Debian 13/trixie has passed install, repeat-install, service restart, reboot, API, and mock capture acceptance.
 - Mock camera
 - ZWO, gPhoto2, V4L2/webcam, INDI, and custom command adapters as extension points
 
@@ -50,6 +52,14 @@ After install:
 - Bootstrap login: `admin / skyweaver-change-me`
 
 Change the bootstrap password during setup before exposing the device to a network.
+
+The installer creates `/opt/skyweaver`, `/etc/skyweaver`, `/var/lib/skyweaver`, and `/var/log/skyweaver`, installs Node/npm and Python dependencies, builds the frontend, installs systemd units, and starts `skyweaver.target`. Re-running the installer preserves the existing `/etc/skyweaver/skyweaver.env`.
+
+To inspect installer actions without root or filesystem writes:
+
+```bash
+SKYWEAVER_DRY_RUN=1 ./install.sh
+```
 
 ## Development
 
@@ -121,9 +131,29 @@ sudo systemctl restart skyweaver.target
 sudo systemctl status skyweaver.target
 ```
 
+Individual services:
+
+- `skyweaver-api.service`
+- `skyweaver-capture.service`
+- `skyweaver-worker.service`
+
+## Verification
+
+Common checks:
+
+```bash
+npm run lint
+npm test
+npm run build
+backend/.venv/bin/python -m pytest backend/tests
+bash scripts/test_install.sh
+```
+
+On Windows, use `backend\.venv\Scripts\python -m pytest backend\tests` for backend tests.
+
 ## Allsky Migration
 
-Sky Weaver detects common Allsky directories such as `~/allsky`, `~/allsky-OLD`, `~/allsky-SAVED`, `/home/pi/allsky`, and `/var/www/html/allsky`. Phase 1 provides detection, dry-run counts, and queued import jobs. The original Allsky data is never deleted.
+Sky Weaver detects common Allsky directories such as `~/allsky`, `~/allsky-OLD`, `~/allsky-SAVED`, `/home/pi/allsky`, and `/var/www/html/allsky`. Current migration support provides detection, dry-run counts, and queued import jobs. Real import and rollback are still scaffolded. The original Allsky data is never deleted.
 
 ## Documentation
 
