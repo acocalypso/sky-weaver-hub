@@ -141,7 +141,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 | Phase 7: Overlay/modules | Early scaffold | Module tables/endpoints exist. Overlay editor, processor, built-in modules, safe module execution are open. |
 | Phase 8: Installer/systemd/support/docs | Partial | Scripts and units exist. Interactive setup, nginx option, shellcheck, idempotency tests, and Pi verification are open. |
 | Phase 9: Allsky migration/remote upload | Early scaffold | Detection and dry-run count preview exist. Real import, rollback, unsupported-setting report, and remote upload execution are open. |
-| Phase 10: Polish/mobile/tests/hardening | Partial | Mobile API docs, latest/status/gallery endpoints, route bundle splitting, system health/diagnostics UI, and initial frontend component tests exist. CI, broader tests, UX polish, performance, and security hardening remain. |
+| Phase 10: Polish/mobile/tests/hardening | Partial | Mobile API docs, latest/status/gallery endpoints, route bundle splitting, system health/diagnostics UI, initial frontend component tests, and CI workflow exist. Broader tests, UX polish, performance, and security hardening remain. |
 
 ## Open Topics
 
@@ -235,7 +235,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
   - bad image
   - processing status
 - Add Swift/Kotlin response examples.
-- Add OpenAPI artifact generation in CI.
+- Expand generated OpenAPI artifact checks beyond upload-only validation.
 - Add websocket endpoint if SSE is insufficient.
 - Ensure public endpoints are explicitly unauthenticated and admin endpoints are protected.
 
@@ -314,14 +314,10 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
   - image database CRUD
   - processing job lifecycle
   - every API-key scope boundary
-- Add shellcheck.
-- Add GitHub Actions workflow:
-  - frontend lint
-  - frontend build
-  - frontend tests
-  - backend tests
-  - shellcheck
-  - OpenAPI generation artifact
+- Expand GitHub Actions after Pi validation:
+  - installer dry-run/idempotency tests
+  - real migration fixture tests
+  - OpenAPI diff checks
 
 ## Known Current Limitations
 
@@ -354,4 +350,4 @@ Suggested next tasks:
 
 1. Validate reboot recovery on real Raspberry Pi/systemd services.
 2. Expand system health service controls after systemd validation.
-3. Add CI workflow for backend tests, frontend lint/build/tests, shellcheck, and OpenAPI artifact generation.
+3. Add installer dry-run/idempotency tests.
