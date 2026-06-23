@@ -22,7 +22,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 | Camera abstraction | `CameraAdapter` base class plus working `mock` adapter and initial `rpicam`/`libcamera` adapter. Other adapters are placeholders with actionable errors. |
 | UI/API integration | Dashboard, Cameras, Schedule, Gallery, Night Products, Logs, Settings, API Keys, and Developer API call the local backend. |
 | Deployment | `install.sh`, `upgrade.sh`, `uninstall.sh`, `support.sh`, and systemd units exist. Installer is not yet fully interactive. |
-| Tests | Backend pytest coverage for health/status, login, API keys, mock capture, scheduled daemon capture, queued single-capture execution, queued sequence capture, pause/resume/stop queue semantics, schedule preview, daemon heartbeat, migration preview, and mock adapter. Frontend smoke test exists. |
+| Tests | Backend pytest coverage for health/status, login, API keys, mock capture, scheduled daemon capture, queued single-capture execution, queued sequence capture, pause/resume/stop queue semantics, schedule preview, daemon heartbeat/activity, migration preview, and mock adapter. Frontend smoke test exists. |
 
 ## Implemented Capabilities
 
@@ -72,18 +72,18 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 - The daemon checks capture state, honors the configured interval, claims pending capture jobs, and runs scheduled captures through the shared capture service.
 - Scheduled captures now consult the configured active window before creating unattended jobs.
 - A daemon lock file prevents duplicate daemon loops from running in the same data directory.
-- The daemon writes a heartbeat and PID into `capture_state`; `/api/v1/system/services` reports running/stale status from that heartbeat.
+- The daemon writes a heartbeat, PID, last claimed job, and last success timestamp into `capture_state`; `/api/v1/system/services` reports running/stale status and recent daemon activity.
 - Manual/test-shot API captures, queued single captures, and scheduled daemon captures now share the same capture execution path.
 - `/api/v1/capture/single` creates a persistent pending capture job for daemon execution.
 - `/api/v1/capture/sequence` creates a persistent parent job that the daemon expands into child capture artifacts.
 - Pause holds queued capture jobs, resume releases them, and stop cancels pending/claimed queued capture jobs.
 - `/api/v1/schedule/preview-tonight` returns a real active window and next transition for fixed or sun-angle schedules.
-- Backend tests verify daemon-run scheduled capture creation, interval gating, queued single-capture completion, queued sequence completion, pause/resume/stop semantics, schedule preview, and heartbeat reporting.
+- Backend tests verify daemon-run scheduled capture creation, interval gating, queued single-capture completion, queued sequence completion, pause/resume/stop semantics, schedule preview, and heartbeat/activity reporting.
 
 ### Frontend
 
 - Local login page.
-- Dashboard with latest image, start/pause/resume/stop/test-shot controls, status, metrics, and recent captures.
+- Dashboard with latest image, start/pause/resume/stop/test-shot controls, daemon activity, status, metrics, and recent captures.
 - Cameras page with detection, adapter selection, night-profile editing, and test shot.
 - Schedule page with sun-angle/fixed/manual mode settings.
 - Schedule page displays the backend active window, next transition, and fixed-time controls.
@@ -119,7 +119,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 | Phase 1: API skeleton and SQLite | Mostly done | Backend, schema, health/status, API client, core routes, and mock capture exist. Dedicated migration framework still needed. |
 | Phase 2: Auth/API keys/settings/docs | Mostly done | JWT login, API-key scopes, settings, API Keys UI, and Developer API UI exist. First-run setup and rate limiting are still open. |
 | Phase 3: Camera adapters and test shot | Partial | Mock and rpicam/libcamera implemented. ZWO, gPhoto2, V4L2, INDI, custom command are placeholders. |
-| Phase 4: Capture daemon and realtime | Partial | Scheduled daemon loop, shared capture service, persistent job claiming for single/scheduled/sequence captures, pause/resume/stop queue semantics, active-window checks and UI preview, interval gating, lock-file duplicate-loop guard, heartbeat reporting, and SSE endpoint exist. Richer reboot-safe state is open. |
+| Phase 4: Capture daemon and realtime | Partial | Scheduled daemon loop, shared capture service, persistent job claiming for single/scheduled/sequence captures, pause/resume/stop queue semantics, active-window checks and UI preview, interval gating, lock-file duplicate-loop guard, heartbeat/activity reporting, and SSE endpoint exist. Reboot recovery is open. |
 | Phase 5: Image storage/gallery/latest/metadata | Partial | Mock capture artifacts, metadata, thumbnails, image rows, gallery, latest image exist. Latest symlink/copy and broader metadata extraction are open. |
 | Phase 6: Processing worker/products/retention | Early scaffold | Job endpoints and worker stub exist. Timelapse, keogram, startrail, mini timelapse, cleanup, and upload execution are open. |
 | Phase 7: Overlay/modules | Early scaffold | Module tables/endpoints exist. Overlay editor, processor, built-in modules, safe module execution are open. |
@@ -315,7 +315,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 
 ## Known Current Limitations
 
-- Capture daemon now performs scheduled captures and consumes queued single-capture and sequence jobs. Pause/resume/stop queue semantics exist; richer reboot-safe state is still open.
+- Capture daemon now performs scheduled captures and consumes queued single-capture and sequence jobs. Pause/resume/stop queue semantics and daemon activity visibility exist; reboot recovery is still open.
 - Worker is still a service stub, not a full processing loop.
 - Product endpoints currently queue jobs but do not generate real files.
 - Public page is not implemented.
@@ -342,8 +342,8 @@ The next development phase should focus on richer daemon state visibility and fi
 
 Suggested next tasks:
 
-1. Add a richer daemon heartbeat/state view, including last claimed job and last successful capture.
-2. Add sequence capture controls and job progress in the UI.
-3. Implement the first processing product worker path, starting with thumbnail/latest publisher or timelapse scaffolding.
-4. Add reboot recovery rules for claimed/running capture jobs.
+1. Add sequence capture controls and job progress in the UI.
+2. Implement the first processing product worker path, starting with thumbnail/latest publisher or timelapse scaffolding.
+3. Add reboot recovery rules for claimed/running capture jobs.
+4. Add a dedicated system health page with service controls and diagnostics export.
 5. Run a mock-camera overnight simulation that creates multiple captures and verifies latest/gallery updates.

@@ -91,6 +91,12 @@ def test_daemon_consumes_queued_single_capture(tmp_path: Path):
     assert after["status"] == "completed"
     assert after["result"]["image_id"]
 
+    status = client.get("/api/v1/status", headers=headers).json()["data"]["capture"]
+    assert status["daemon_last_claimed_job_id"] == queued["id"]
+    assert status["daemon_last_claimed_job_type"] == "single"
+    assert status["daemon_last_claimed_at"]
+    assert status["daemon_last_success_at"]
+
     images = client.get("/api/v1/images", headers=headers).json()["data"]
     assert len(images) == 1
     assert images[0]["mode"] == "manual"
@@ -211,3 +217,5 @@ def test_daemon_heartbeat_is_reported_by_services(tmp_path: Path):
     assert capture["status"] == "running"
     assert capture["heartbeat_at"]
     assert capture["pid"]
+    assert "last_claimed_job_id" in capture
+    assert "last_success_at" in capture

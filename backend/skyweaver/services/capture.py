@@ -105,6 +105,10 @@ def claim_next_capture_job(job_types: tuple[str, ...] = ("single", "scheduled", 
         if not row:
             return None
         conn.execute("UPDATE capture_jobs SET status='claimed' WHERE id=? AND status='pending'", (row["id"],))
+        conn.execute(
+            "UPDATE capture_state SET daemon_last_claimed_job_id=?, daemon_last_claimed_job_type=?, daemon_last_claimed_at=?, updated_at=? WHERE id=1",
+            (row["id"], row["type"], now_iso(), now_iso()),
+        )
         event(conn, "capture_job_claimed", {"job_id": row["id"], "type": row["type"]})
         return decode_row(row_to_dict(row))
 
@@ -218,7 +222,10 @@ async def execute_capture(command: CaptureCommand, job_type: str = "manual", job
                     now_iso(),
                 ),
             )
-            conn.execute("UPDATE capture_state SET last_image_id=?, active_camera_id=?, last_error=NULL, updated_at=? WHERE id=1", (image_id, cam["id"], now_iso()))
+            conn.execute(
+                "UPDATE capture_state SET last_image_id=?, active_camera_id=?, daemon_last_success_at=?, last_error=NULL, updated_at=? WHERE id=1",
+                (image_id, cam["id"], now_iso(), now_iso()),
+            )
             conn.execute("UPDATE capture_jobs SET status='completed', result=?, completed_at=? WHERE id=?", (json_dumps({"image_id": image_id}), now_iso(), job_id))
             event(conn, "new_image", {"image_id": image_id, "path": str(result.file_path)})
 

@@ -102,7 +102,9 @@ def metrics(_principal: Annotated[dict, Depends(require_scope("read:status"))]):
 @router.get("/system/services")
 def services(_principal: Annotated[dict, Depends(require_scope("read:status"))]):
     with session() as conn:
-        state = decode_row(row_to_dict(conn.execute("SELECT daemon_heartbeat_at, daemon_pid FROM capture_state WHERE id=1").fetchone())) or {}
+        state = decode_row(row_to_dict(conn.execute(
+            "SELECT daemon_heartbeat_at, daemon_pid, daemon_last_claimed_job_id, daemon_last_claimed_job_type, daemon_last_claimed_at, daemon_last_success_at FROM capture_state WHERE id=1"
+        ).fetchone())) or {}
     heartbeat = state.get("daemon_heartbeat_at")
     age_seconds = None
     capture_status = "idle"
@@ -114,7 +116,18 @@ def services(_principal: Annotated[dict, Depends(require_scope("read:status"))])
             capture_status = "unknown"
     return ok([
         {"name": "skyweaver-api", "status": "running", "managed_by": "systemd"},
-        {"name": "skyweaver-capture", "status": capture_status, "managed_by": "systemd", "heartbeat_at": heartbeat, "heartbeat_age_seconds": age_seconds, "pid": state.get("daemon_pid")},
+        {
+            "name": "skyweaver-capture",
+            "status": capture_status,
+            "managed_by": "systemd",
+            "heartbeat_at": heartbeat,
+            "heartbeat_age_seconds": age_seconds,
+            "pid": state.get("daemon_pid"),
+            "last_claimed_job_id": state.get("daemon_last_claimed_job_id"),
+            "last_claimed_job_type": state.get("daemon_last_claimed_job_type"),
+            "last_claimed_at": state.get("daemon_last_claimed_at"),
+            "last_success_at": state.get("daemon_last_success_at"),
+        },
         {"name": "skyweaver-worker", "status": "idle", "managed_by": "systemd"},
     ])
 

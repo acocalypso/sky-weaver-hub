@@ -45,7 +45,9 @@ CREATE TABLE IF NOT EXISTS capture_schedule (
 CREATE TABLE IF NOT EXISTS capture_state (
   id INTEGER PRIMARY KEY CHECK (id = 1), status TEXT NOT NULL, current_mode TEXT NOT NULL,
   active_camera_id TEXT, last_image_id TEXT, last_error TEXT, started_at TEXT,
-  daemon_heartbeat_at TEXT, daemon_pid INTEGER, updated_at TEXT NOT NULL
+  daemon_heartbeat_at TEXT, daemon_pid INTEGER, daemon_last_claimed_job_id TEXT,
+  daemon_last_claimed_job_type TEXT, daemon_last_claimed_at TEXT, daemon_last_success_at TEXT,
+  updated_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS capture_jobs (
   id TEXT PRIMARY KEY, type TEXT NOT NULL, status TEXT NOT NULL, request TEXT NOT NULL,
@@ -141,7 +143,18 @@ def init_db(path: Path | None = None) -> None:
     settings = get_settings()
     with session(path) as conn:
         conn.executescript(SCHEMA)
-        ensure_columns(conn, "capture_state", {"daemon_heartbeat_at": "TEXT", "daemon_pid": "INTEGER"})
+        ensure_columns(
+            conn,
+            "capture_state",
+            {
+                "daemon_heartbeat_at": "TEXT",
+                "daemon_pid": "INTEGER",
+                "daemon_last_claimed_job_id": "TEXT",
+                "daemon_last_claimed_job_type": "TEXT",
+                "daemon_last_claimed_at": "TEXT",
+                "daemon_last_success_at": "TEXT",
+            },
+        )
         seed_defaults(conn, settings.admin_username, settings.admin_password)
 
 

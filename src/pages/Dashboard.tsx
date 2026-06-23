@@ -129,6 +129,8 @@ export default function Dashboard() {
             <Stat k="Format" v={latest?.format?.toUpperCase() ?? "-"} />
             <Stat k="Stars" v={latest?.star_count ?? "-"} />
             <Stat k="Cloud" v={latest?.cloud_score ?? "-"} />
+            <Stat k="Last job" v={formatDaemonJob(status?.capture)} />
+            <Stat k="Last ok" v={formatRelative(status?.capture?.daemon_last_success_at)} />
           </dl>
         </Card>
       </div>
@@ -199,4 +201,15 @@ function MetricCard({ icon, label, value, pct, accent = false }: { icon: React.R
 function formatScheduleTime(value?: string | null) {
   if (!value) return "-";
   return format(new Date(value), "HH:mm");
+}
+
+function formatRelative(value?: string | null) {
+  if (!value) return "-";
+  return formatDistanceToNow(new Date(value), { addSuffix: true });
+}
+
+function formatDaemonJob(capture: any) {
+  if (!capture?.daemon_last_claimed_job_type) return "-";
+  const when = formatRelative(capture.daemon_last_claimed_at);
+  return `${capture.daemon_last_claimed_job_type} ${when}`;
 }
