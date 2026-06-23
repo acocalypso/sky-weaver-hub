@@ -18,6 +18,7 @@ from .services.capture import (
     schedule_command,
     update_daemon_heartbeat,
 )
+from .services.recovery import recover_capture_jobs
 
 
 class CaptureDaemon:
@@ -85,6 +86,7 @@ def daemon_lock() -> Iterator[None]:
 
 async def main() -> None:
     init_db()
+    recover_capture_jobs()
     with daemon_lock():
         await CaptureDaemon().run_forever()
 

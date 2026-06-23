@@ -77,8 +77,9 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 - `/api/v1/capture/single` creates a persistent pending capture job for daemon execution.
 - `/api/v1/capture/sequence` creates a persistent parent job that the daemon expands into child capture artifacts.
 - Pause holds queued capture jobs, resume releases them, and stop cancels pending/claimed queued capture jobs.
+- Capture daemon startup requeues interrupted claimed/running capture jobs after service restart.
 - `/api/v1/schedule/preview-tonight` returns a real active window and next transition for fixed or sun-angle schedules.
-- Backend tests verify daemon-run scheduled capture creation, interval gating, queued single-capture completion, queued sequence completion, pause/resume/stop semantics, schedule preview, and heartbeat/activity reporting.
+- Backend tests verify daemon-run scheduled capture creation, interval gating, queued single-capture completion, queued sequence completion, pause/resume/stop semantics, schedule preview, heartbeat/activity reporting, and interrupted job recovery.
 
 ### Frontend
 
@@ -116,6 +117,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 - Startrail jobs generate downloadable JPEG night products through lighten blending.
 - Completed keograms, timelapses, mini timelapses, and startrails are inserted into `night_products` and are downloadable through `/api/v1/products/{id}/download`.
 - `/api/v1/processing/jobs` exposes queued/running/completed processing jobs for UI progress.
+- Worker startup requeues interrupted claimed/running processing jobs after service restart.
 - Backend tests verify keogram, timelapse, mini timelapse, and startrail product generation from mock captures.
 
 ### Documentation
@@ -131,7 +133,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 | Phase 1: API skeleton and SQLite | Mostly done | Backend, schema, health/status, API client, core routes, and mock capture exist. Dedicated migration framework still needed. |
 | Phase 2: Auth/API keys/settings/docs | Mostly done | JWT login, API-key scopes, settings, API Keys UI, and Developer API UI exist. First-run setup and rate limiting are still open. |
 | Phase 3: Camera adapters and test shot | Partial | Mock and rpicam/libcamera implemented. ZWO, gPhoto2, V4L2, INDI, custom command are placeholders. |
-| Phase 4: Capture daemon and realtime | Partial | Scheduled daemon loop, shared capture service, persistent job claiming for single/scheduled/sequence captures, pause/resume/stop queue semantics, active-window checks and UI preview, interval gating, lock-file duplicate-loop guard, heartbeat/activity reporting, and SSE endpoint exist. Reboot recovery is open. |
+| Phase 4: Capture daemon and realtime | Partial | Scheduled daemon loop, shared capture service, persistent job claiming for single/scheduled/sequence captures, pause/resume/stop queue semantics, active-window checks and UI preview, interval gating, lock-file duplicate-loop guard, heartbeat/activity reporting, interrupted job recovery, and SSE endpoint exist. Pi reboot acceptance testing is open. |
 | Phase 5: Image storage/gallery/latest/metadata | Partial | Mock capture artifacts, metadata, thumbnails, image rows, gallery, latest image exist. Latest symlink/copy and broader metadata extraction are open. |
 | Phase 6: Processing worker/products/retention | Partial | Worker claims jobs, thumbnail reprocess exists, keogram JPEG generation, ffmpeg timelapse/mini-timelapse generation, and startrail generation exist, and product job progress is visible in the UI. Cleanup and upload execution are open. |
 | Phase 7: Overlay/modules | Early scaffold | Module tables/endpoints exist. Overlay editor, processor, built-in modules, safe module execution are open. |
@@ -145,7 +147,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 
 - Expand the capture daemon into complete queue ownership:
   - move all remaining long-running capture execution out of direct API request path
-  - survive reboot
+  - validate reboot recovery on real Pi/systemd services
   - gracefully stop after current exposure
 - Keep schedule preview and daemon state visible across Dashboard and Schedule as the daemon model evolves.
 - Complete mock acceptance flow end to end:
@@ -324,7 +326,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 
 ## Known Current Limitations
 
-- Capture daemon now performs scheduled captures and consumes queued single-capture and sequence jobs. Pause/resume/stop queue semantics, daemon activity visibility, and Dashboard capture job progress exist; reboot recovery is still open.
+- Capture daemon now performs scheduled captures and consumes queued single-capture and sequence jobs. Pause/resume/stop queue semantics, daemon activity visibility, Dashboard capture job progress, and interrupted job requeue on service start exist; real Pi reboot acceptance testing is still open.
 - Worker now generates thumbnails, keograms, ffmpeg timelapses, mini timelapses, and startrails, but retention cleanup and upload execution are still open.
 - Product endpoints queue jobs; keogram, timelapse, mini timelapse, and startrail currently produce downloadable night products.
 - Public page is not implemented.
@@ -343,14 +345,14 @@ Most recent checks run during implementation:
 - `npm test`: passed
 - `npm run lint`: passed with zero warnings
 - `npm audit --audit-level=high`: passed with 0 vulnerabilities
-- `backend\\.venv\\Scripts\\python -m pytest backend\\tests`: passed with 18 tests
+- `backend\\.venv\\Scripts\\python -m pytest backend\\tests`: passed with 20 tests
 
 ## Recommended Next Phase
 
-The next development phase should focus on reboot recovery and operational hardening, because the initial night products now generate real downloadable artifacts.
+The next development phase should focus on operational hardening, because interrupted job recovery and the initial night products now generate real downloadable artifacts.
 
 Suggested next tasks:
 
-1. Add reboot recovery rules for claimed/running capture and processing jobs.
-2. Add a dedicated system health page with service controls and diagnostics export.
-3. Run a mock-camera overnight simulation that creates multiple captures and verifies latest/gallery updates.
+1. Add a dedicated system health page with service controls and diagnostics export.
+2. Run a mock-camera overnight simulation that creates multiple captures and verifies latest/gallery updates.
+3. Validate reboot recovery on real Raspberry Pi/systemd services.
