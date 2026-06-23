@@ -46,15 +46,14 @@ export default function Cameras() {
     setSettings((data as Settings) ?? { camera_id: c.id, exposure_us: 1_000_000, gain: 100, resolution: "1920x1080", file_format: "jpg", white_balance: "auto", binning: 1 });
   }
 
-  async function saveCamera(form: Partial<Camera>) {
+  async function saveCamera(form: { name: string; model: string | null; adapter_type: AdapterType }) {
     if (editing?.id) {
       const { error } = await supabase.from("cameras").update(form).eq("id", editing.id);
       if (error) return toast.error(error.message);
       toast.success("Camera updated");
     } else {
       const { data, error } = await supabase.from("cameras").insert({
-        name: form.name ?? "New camera", model: form.model ?? null,
-        adapter_type: (form.adapter_type ?? "mock") as AdapterType, status: "unknown",
+        name: form.name, model: form.model, adapter_type: form.adapter_type, status: "unknown",
       }).select().single();
       if (error) return toast.error(error.message);
       await supabase.from("camera_settings").insert({ camera_id: data!.id });
@@ -179,8 +178,8 @@ function CameraDialog({ editing, onSave }: { editing: Camera | null; onSave: (f:
     <DialogContent>
       <DialogHeader><DialogTitle>{editing ? "Edit camera" : "New camera"}</DialogTitle></DialogHeader>
       <div className="space-y-4">
-        <Field label="Name" value={name} onChange={setName} placeholder="Roof All-Sky" />
-        <Field label="Model" value={model} onChange={setModel} placeholder="ZWO ASI224MC" />
+        <Field label="Name" value={name} onChange={(v) => setName(v)} placeholder="Roof All-Sky" />
+        <Field label="Model" value={model} onChange={(v) => setModel(v)} placeholder="ZWO ASI224MC" />
         <div className="space-y-2">
           <Label>Adapter</Label>
           <Select value={adapter} onValueChange={(v) => setAdapter(v as AdapterType)}>

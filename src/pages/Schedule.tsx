@@ -39,7 +39,7 @@ export default function Schedule() {
     document.title = "Schedule · AllSky Control Hub";
     (async () => {
       const { data } = await supabase.from("capture_schedule").select("*").limit(1).maybeSingle();
-      if (data) setS(data as Schedule);
+      if (data) setS(data as unknown as Schedule);
     })();
   }, []);
 
