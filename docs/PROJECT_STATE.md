@@ -22,7 +22,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 | Camera abstraction | `CameraAdapter` base class plus working `mock` adapter and initial `rpicam`/`libcamera` adapter. Other adapters are placeholders with actionable errors. |
 | UI/API integration | Dashboard, Cameras, Schedule, Gallery, Night Products, Logs, Settings, API Keys, and Developer API call the local backend. |
 | Deployment | `install.sh`, `upgrade.sh`, `uninstall.sh`, `support.sh`, and systemd units exist. Installer is not yet fully interactive. |
-| Tests | Backend pytest coverage for health/status, login, API keys, mock capture, scheduled daemon capture, queued single-capture execution, queued sequence capture, pause/resume/stop queue semantics, schedule preview, daemon heartbeat/activity, interrupted job recovery, mock overnight acceptance flow, night product generation, migration preview, and mock adapter. Frontend smoke test exists. |
+| Tests | Backend pytest coverage for health/status, login, API keys, mock capture, scheduled daemon capture, queued single-capture execution, queued sequence capture, pause/resume/stop queue semantics, schedule preview, daemon heartbeat/activity, interrupted job recovery, mock overnight acceptance flow, night product generation, migration preview, and mock adapter. Frontend component tests cover Dashboard, Gallery, Settings, and API Keys. |
 
 ## Implemented Capabilities
 
@@ -141,7 +141,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 | Phase 7: Overlay/modules | Early scaffold | Module tables/endpoints exist. Overlay editor, processor, built-in modules, safe module execution are open. |
 | Phase 8: Installer/systemd/support/docs | Partial | Scripts and units exist. Interactive setup, nginx option, shellcheck, idempotency tests, and Pi verification are open. |
 | Phase 9: Allsky migration/remote upload | Early scaffold | Detection and dry-run count preview exist. Real import, rollback, unsupported-setting report, and remote upload execution are open. |
-| Phase 10: Polish/mobile/tests/hardening | Partial | Mobile API docs, latest/status/gallery endpoints, route bundle splitting, and system health/diagnostics UI exist. CI, broader tests, UX polish, performance, and security hardening remain. |
+| Phase 10: Polish/mobile/tests/hardening | Partial | Mobile API docs, latest/status/gallery endpoints, route bundle splitting, system health/diagnostics UI, and initial frontend component tests exist. CI, broader tests, UX polish, performance, and security hardening remain. |
 
 ## Open Topics
 
@@ -305,7 +305,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 ### Testing and CI
 
 - Add frontend route smoke tests.
-- Add component tests for Dashboard, Settings, Gallery, API Keys.
+- Expand component tests beyond Dashboard, Settings, Gallery, and API Keys.
 - Add public page no-auth test once implemented.
 - Add admin route auth tests.
 - Add backend tests for:
@@ -341,7 +341,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 Most recent checks run during implementation:
 
 - `npm run build`: passed
-- `npm test`: passed
+- `npm test`: passed with 4 tests
 - `npm run lint`: passed with zero warnings
 - `npm audit --audit-level=high`: passed with 0 vulnerabilities
 - `backend\\.venv\\Scripts\\python -m pytest backend\\tests`: passed with 22 tests
@@ -354,4 +354,4 @@ Suggested next tasks:
 
 1. Validate reboot recovery on real Raspberry Pi/systemd services.
 2. Expand system health service controls after systemd validation.
-3. Add frontend route/component tests for Dashboard, Gallery, Settings, and API Keys.
+3. Add CI workflow for backend tests, frontend lint/build/tests, shellcheck, and OpenAPI artifact generation.
