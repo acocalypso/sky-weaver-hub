@@ -15,6 +15,7 @@ const Cameras = lazy(() => import("@/pages/Cameras"));
 const Schedule = lazy(() => import("@/pages/Schedule"));
 const Gallery = lazy(() => import("@/pages/Gallery"));
 const Timelapses = lazy(() => import("@/pages/Timelapses"));
+const Health = lazy(() => import("@/pages/Health"));
 const Logs = lazy(() => import("@/pages/Logs"));
 const SettingsPage = lazy(() => import("@/pages/Settings"));
 const ApiKeys = lazy(() => import("@/pages/ApiKeys"));
@@ -39,6 +40,7 @@ const App = () => (
                 <Route path="/schedule" element={<Schedule />} />
                 <Route path="/gallery" element={<Gallery />} />
                 <Route path="/timelapses" element={<Timelapses />} />
+                <Route path="/health" element={<Health />} />
                 <Route path="/logs" element={<Logs />} />
                 <Route path="/settings" element={<SettingsPage />} />
                 <Route path="/api-keys" element={<ApiKeys />} />

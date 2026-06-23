@@ -1,7 +1,7 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, Camera, CalendarClock, Images, Film, ScrollText,
-  Settings, KeyRound, Code2, ServerCog, LogOut, Telescope, Menu, X,
+  Settings, KeyRound, Code2, ServerCog, LogOut, Telescope, Menu, X, Activity,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/auth-context";
@@ -15,6 +15,7 @@ const NAV = [
   { to: "/schedule", label: "Schedule", icon: CalendarClock },
   { to: "/gallery", label: "Gallery", icon: Images },
   { to: "/timelapses", label: "Timelapses", icon: Film },
+  { to: "/health", label: "Health", icon: Activity },
   { to: "/logs", label: "Logs", icon: ScrollText },
   { to: "/settings", label: "Settings", icon: Settings },
   { to: "/api-keys", label: "API Keys", icon: KeyRound },

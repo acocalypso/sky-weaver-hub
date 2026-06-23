@@ -1,5 +1,7 @@
 import asyncio
 import json
+import platform
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Annotated
@@ -101,6 +103,10 @@ def metrics(_principal: Annotated[dict, Depends(require_scope("read:status"))]):
 
 @router.get("/system/services")
 def services(_principal: Annotated[dict, Depends(require_scope("read:status"))]):
+    return ok(service_rows())
+
+
+def service_rows() -> list[dict[str, Any]]:
     with session() as conn:
         state = decode_row(row_to_dict(conn.execute(
             "SELECT daemon_heartbeat_at, daemon_pid, daemon_last_claimed_job_id, daemon_last_claimed_job_type, daemon_last_claimed_at, daemon_last_success_at FROM capture_state WHERE id=1"
@@ -114,7 +120,7 @@ def services(_principal: Annotated[dict, Depends(require_scope("read:status"))])
             capture_status = "running" if age_seconds <= 120 else "stale"
         except ValueError:
             capture_status = "unknown"
-    return ok([
+    return [
         {"name": "skyweaver-api", "status": "running", "managed_by": "systemd"},
         {
             "name": "skyweaver-capture",
@@ -129,7 +135,46 @@ def services(_principal: Annotated[dict, Depends(require_scope("read:status"))])
             "last_success_at": state.get("daemon_last_success_at"),
         },
         {"name": "skyweaver-worker", "status": "idle", "managed_by": "systemd"},
-    ])
+    ]
+
+
+@router.get("/system/diagnostics")
+def diagnostics(_principal: Annotated[dict, Depends(require_scope("read:status"))]):
+    settings = get_settings()
+    with session() as conn:
+        counts = {
+            "images": conn.execute("SELECT COUNT(*) FROM images").fetchone()[0],
+            "capture_jobs_pending": conn.execute("SELECT COUNT(*) FROM capture_jobs WHERE status='pending'").fetchone()[0],
+            "capture_jobs_running": conn.execute("SELECT COUNT(*) FROM capture_jobs WHERE status IN ('claimed', 'running')").fetchone()[0],
+            "processing_jobs_pending": conn.execute("SELECT COUNT(*) FROM processing_jobs WHERE status='pending'").fetchone()[0],
+            "processing_jobs_running": conn.execute("SELECT COUNT(*) FROM processing_jobs WHERE status IN ('claimed', 'running')").fetchone()[0],
+            "products": conn.execute("SELECT COUNT(*) FROM night_products").fetchone()[0],
+            "logs": conn.execute("SELECT COUNT(*) FROM logs").fetchone()[0],
+        }
+        recent_logs = all_rows(conn, "SELECT level, source, message, created_at FROM logs ORDER BY created_at DESC LIMIT 25")
+    db_path = settings.db_path
+    return ok({
+        "generated_at": now_iso(),
+        "app": {"name": settings.app_name, "environment": settings.environment, "version": "0.1.0"},
+        "platform": {
+            "system": platform.system(),
+            "release": platform.release(),
+            "machine": platform.machine(),
+            "python": sys.version.split()[0],
+        },
+        "paths": {
+            "data_dir": str(settings.data_dir),
+            "config_dir": str(settings.config_dir),
+            "log_dir": str(settings.log_dir),
+            "database": str(db_path),
+        },
+        "database": {"exists": db_path.exists(), "size_bytes": db_path.stat().st_size if db_path.exists() else 0},
+        "metrics": system_metrics(),
+        "services": service_rows(),
+        "counts": counts,
+        "recent_logs": recent_logs,
+        "redaction": "Secrets, password hashes, API-key hashes, and remote credentials are not included.",
+    })
 
 
 @router.post("/system/services/{name}/restart")

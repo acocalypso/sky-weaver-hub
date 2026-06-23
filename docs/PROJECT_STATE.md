@@ -32,6 +32,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 - `/api/v1/status`
 - `/api/v1/system/metrics`
 - `/api/v1/system/services`
+- `/api/v1/system/diagnostics`
 - `/api/v1/logs`
 - `/api/v1/auth/login`
 - `/api/v1/auth/logout`
@@ -91,6 +92,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 - Dashboard Tonight panel displays capture-window status and the next schedule transition.
 - Gallery page with day/mode/quality filters and image detail.
 - Night Products page queues product jobs, shows processing job progress, and lists generated downloads.
+- System Health page shows metrics, service status, restart actions, queue counts, recent logs, and diagnostics JSON export.
 - Logs page reads backend logs.
 - Settings page edits local settings groups.
 - API Keys page creates scoped keys, shows full key once, enables/disables, and revokes.
@@ -139,7 +141,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 | Phase 7: Overlay/modules | Early scaffold | Module tables/endpoints exist. Overlay editor, processor, built-in modules, safe module execution are open. |
 | Phase 8: Installer/systemd/support/docs | Partial | Scripts and units exist. Interactive setup, nginx option, shellcheck, idempotency tests, and Pi verification are open. |
 | Phase 9: Allsky migration/remote upload | Early scaffold | Detection and dry-run count preview exist. Real import, rollback, unsupported-setting report, and remote upload execution are open. |
-| Phase 10: Polish/mobile/tests/hardening | Partial | Mobile API docs and latest/status/gallery endpoints exist. CI, broader tests, UX polish, performance, and security hardening remain. |
+| Phase 10: Polish/mobile/tests/hardening | Partial | Mobile API docs, latest/status/gallery endpoints, route bundle splitting, and system health/diagnostics UI exist. CI, broader tests, UX polish, performance, and security hardening remain. |
 
 ## Open Topics
 
@@ -219,7 +221,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 - Add module/plugin manager.
 - Add dark frames page.
 - Add remote upload page.
-- Add system health page with service controls, package versions, diagnostics export.
+- Expand system health service controls beyond restart placeholders after real Pi/systemd validation.
 - Add Allsky migration page.
 - Add deployment/installer docs page.
 - Improve mobile layouts after real data flows are in place.
@@ -345,7 +347,7 @@ Most recent checks run during implementation:
 - `npm test`: passed
 - `npm run lint`: passed with zero warnings
 - `npm audit --audit-level=high`: passed with 0 vulnerabilities
-- `backend\\.venv\\Scripts\\python -m pytest backend\\tests`: passed with 20 tests
+- `backend\\.venv\\Scripts\\python -m pytest backend\\tests`: passed with 21 tests
 
 ## Recommended Next Phase
 
@@ -353,6 +355,6 @@ The next development phase should focus on operational hardening, because interr
 
 Suggested next tasks:
 
-1. Add a dedicated system health page with service controls and diagnostics export.
-2. Run a mock-camera overnight simulation that creates multiple captures and verifies latest/gallery updates.
-3. Validate reboot recovery on real Raspberry Pi/systemd services.
+1. Run a mock-camera overnight simulation that creates multiple captures and verifies latest/gallery updates.
+2. Validate reboot recovery on real Raspberry Pi/systemd services.
+3. Expand system health service controls after systemd validation.

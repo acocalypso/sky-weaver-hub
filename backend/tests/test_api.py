@@ -64,6 +64,21 @@ def test_api_key_scopes(tmp_path):
     assert client.post("/api/v1/capture/start", headers={"Authorization": f"Bearer {api_key}"}).status_code == 403
 
 
+def test_system_diagnostics_export_is_redacted(tmp_path):
+    client = make_client(tmp_path)
+    token = login(client)
+    res = client.get("/api/v1/system/diagnostics", headers={"Authorization": f"Bearer {token}"})
+    assert res.status_code == 200
+    data = res.json()["data"]
+    assert data["app"]["name"] == "Sky Weaver Hub"
+    assert data["metrics"]["disk_free_gb"] >= 0
+    assert any(service["name"] == "skyweaver-api" for service in data["services"])
+    assert "counts" in data
+    assert "password_hash" not in res.text
+    assert "key_hash" not in res.text
+    assert "dev-change-me" not in res.text
+
+
 def test_allsky_preview(tmp_path):
     client = make_client(tmp_path)
     token = login(client)
