@@ -21,6 +21,7 @@ need_root() {
 }
 
 detect_os() {
+  # shellcheck source=/dev/null
   . /etc/os-release
   echo "Detected ${PRETTY_NAME:-Linux} on $(uname -m)"
   if grep -qi raspberry /proc/device-tree/model 2>/dev/null; then
