@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Iterator
 
-from .config import get_settings
+from .config import Settings, get_settings
 from .security import hash_password
 
 
@@ -157,7 +157,7 @@ def init_db(path: Path | None = None) -> None:
             },
         )
         ensure_columns(conn, "capture_jobs", {"progress": "REAL NOT NULL DEFAULT 0"})
-        seed_defaults(conn, settings.admin_username, settings.admin_password)
+        seed_defaults(conn, settings)
 
 
 def ensure_columns(conn: sqlite3.Connection, table: str, columns: dict[str, str]) -> None:
@@ -167,21 +167,31 @@ def ensure_columns(conn: sqlite3.Connection, table: str, columns: dict[str, str]
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
 
 
-def seed_defaults(conn: sqlite3.Connection, admin_username: str, admin_password: str | None) -> None:
+def seed_defaults(conn: sqlite3.Connection, settings: Settings) -> None:
     ts = now_iso()
     if conn.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 0:
-        password = admin_password or "skyweaver-change-me"
+        password_hash = settings.admin_password_hash or hash_password(settings.admin_password or "skyweaver-change-me")
         conn.execute(
             "INSERT INTO users (id, username, password_hash, role, created_at, updated_at) VALUES (?, ?, ?, 'admin', ?, ?)",
-            (new_id(), admin_username, hash_password(password), ts, ts),
+            (new_id(), settings.admin_username, password_hash, ts, ts),
         )
-        log(conn, "warning", "security", "Created bootstrap admin; change password during setup", {"username": admin_username})
+        log(conn, "warning", "security", "Created bootstrap admin; change password during setup", {"username": settings.admin_username})
     if conn.execute("SELECT COUNT(*) FROM cameras").fetchone()[0] == 0:
         camera_id = new_id()
+        adapter = settings.primary_camera_adapter if settings.primary_camera_adapter in {"mock", "rpicam", "libcamera", "zwo", "gphoto2", "v4l2", "webcam", "indi", "custom_command"} else "mock"
         conn.execute(
             """INSERT INTO cameras (id, name, adapter, device_id, model, enabled, is_primary, capabilities, created_at, updated_at)
-               VALUES (?, 'Mock all-sky camera', 'mock', 'mock://default', 'Synthetic sky generator', 1, 1, ?, ?, ?)""",
-            (camera_id, json_dumps({"formats": ["jpg", "png"], "controls": ["exposure_ms", "gain"]}), ts, ts),
+               VALUES (?, ?, ?, ?, ?, 1, 1, ?, ?, ?)""",
+            (
+                camera_id,
+                "Primary all-sky camera" if adapter != "mock" else "Mock all-sky camera",
+                adapter,
+                f"{adapter}://default",
+                "Configured during setup" if adapter != "mock" else "Synthetic sky generator",
+                json_dumps({"formats": ["jpg", "png"], "controls": ["exposure_ms", "gain"]}),
+                ts,
+                ts,
+            ),
         )
         for mode in ["daytime", "nighttime"]:
             conn.execute(
@@ -192,8 +202,8 @@ def seed_defaults(conn: sqlite3.Connection, admin_username: str, admin_password:
         conn.execute(
             """INSERT INTO capture_schedule
                (id, enabled, sun_angle, timezone, latitude, longitude, interval_seconds, created_at, updated_at)
-               VALUES (?, 0, -6, 'UTC', 0, 0, 30, ?, ?)""",
-            (new_id(), ts, ts),
+               VALUES (?, 0, -6, ?, ?, ?, 30, ?, ?)""",
+            (new_id(), settings.observatory_timezone, settings.observatory_latitude, settings.observatory_longitude, ts, ts),
         )
     conn.execute(
         """INSERT OR IGNORE INTO capture_state
@@ -201,7 +211,7 @@ def seed_defaults(conn: sqlite3.Connection, admin_username: str, admin_password:
            VALUES (1, 'idle', 'manual', (SELECT id FROM cameras WHERE is_primary=1 LIMIT 1), ?)""",
         (ts,),
     )
-    for key, value in default_settings().items():
+    for key, value in default_settings(settings).items():
         conn.execute(
             "INSERT OR IGNORE INTO system_settings (key, value, updated_at) VALUES (?, ?, ?)",
             (key, json_dumps(value), ts),
@@ -235,12 +245,18 @@ def default_profile(mode: str) -> dict[str, Any]:
     }
 
 
-def default_settings() -> dict[str, Any]:
+def default_settings(settings: Settings | None = None) -> dict[str, Any]:
+    observatory = {
+        "name": settings.observatory_name if settings else "Sky Weaver Observatory",
+        "latitude": settings.observatory_latitude if settings else 0,
+        "longitude": settings.observatory_longitude if settings else 0,
+        "timezone": settings.observatory_timezone if settings else "UTC",
+    }
     return {
-        "observatory": {"name": "Sky Weaver Observatory", "latitude": 0, "longitude": 0, "timezone": "UTC"},
+        "observatory": observatory,
         "storage": {"images": "./data/images", "videos": "./data/videos", "retention_days": 30, "min_free_gb": 2},
-        "public_page": {"enabled": True, "refresh_seconds": 30, "iframe_enabled": True},
-        "security": {"cors_origins": ["http://localhost:8080"], "first_setup_required": True},
+        "public_page": {"enabled": settings.public_page_enabled if settings else True, "refresh_seconds": 30, "iframe_enabled": True},
+        "security": {"cors_origins": ["http://localhost:8080"], "first_setup_required": settings.first_setup_required if settings else True},
         "processing": {"thumbnails": True, "keogram": True, "startrails": True, "timelapse": True},
     }
 

@@ -61,6 +61,12 @@ if [[ "$1" == "-m" && "$2" == "venv" ]]; then
 echo "pip $*" >>"$SKYWEAVER_TEST_COMMAND_LOG"
 PIP
   chmod +x "$3/bin/pip"
+  cat >"$3/bin/python" <<'PYTHON'
+#!/usr/bin/env bash
+echo "python $*" >>"$SKYWEAVER_TEST_COMMAND_LOG"
+printf '$2b$12$0123456789abcdefghijklmnopqrstuv0123456789abcdefghij\n'
+PYTHON
+  chmod +x "$3/bin/python"
 fi
 EOF
 
@@ -149,6 +155,9 @@ cmp "$TMP_DIR/skyweaver.env.first" "$TMP_DIR/config/skyweaver.env"
 assert_contains "Keeping existing $TMP_DIR/config/skyweaver.env" "$TMP_DIR/install-2.out"
 assert_contains "systemctl restart skyweaver.target" "$COMMAND_LOG"
 [[ -f "$TMP_DIR/data/web/index.html" ]]
+assert_contains "SKYWEAVER_ADMIN_PASSWORD_HASH='\$2b\$12\$0123456789abcdefghijklmnopqrstuv0123456789abcdefghij'" "$TMP_DIR/config/skyweaver.env"
+assert_contains "SKYWEAVER_OBSERVATORY_TIMEZONE='" "$TMP_DIR/config/skyweaver.env"
+assert_contains "SKYWEAVER_PRIMARY_CAMERA_ADAPTER='mock'" "$TMP_DIR/config/skyweaver.env"
 [[ -f "$TMP_DIR/systemd/skyweaver-api.service" ]]
 assert_contains "Environment=PYTHONPATH=/opt/skyweaver/backend" "$TMP_DIR/systemd/skyweaver-api.service"
 assert_contains "Environment=PYTHONPATH=/opt/skyweaver/backend" "$TMP_DIR/systemd/skyweaver-capture.service"

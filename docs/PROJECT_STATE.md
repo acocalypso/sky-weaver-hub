@@ -18,10 +18,10 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 | Backend | FastAPI under `backend/skyweaver`, OpenAPI docs at `/api/docs`, REST API under `/api/v1`. |
 | Database | SQLite via stdlib `sqlite3`, schema seeded in `backend/skyweaver/db.py`. No external database dependency. |
 | Storage | Local filesystem storage for images, thumbnails, products, logs, and config. Dev defaults are local paths; system install targets `/var/lib/skyweaver`, `/etc/skyweaver`, `/var/log/skyweaver`. |
-| Auth | Local admin JWT login plus hashed API keys with scopes. Bootstrap admin still needs first-setup hardening. |
+| Auth | Local admin JWT login plus hashed API keys with scopes. Installer can seed a configured admin password hash during first setup. In-app first-setup enforcement is still open. |
 | Camera abstraction | `CameraAdapter` base class plus working `mock` adapter and initial `rpicam`/`libcamera` adapter. Other adapters are placeholders with actionable errors. |
 | UI/API integration | Dashboard, Cameras, Schedule, Gallery, Night Products, Logs, Settings, API Keys, and Developer API call the local backend. |
-| Deployment | `install.sh`, `upgrade.sh`, `uninstall.sh`, `support.sh`, and systemd units exist. Installer is not yet fully interactive. |
+| Deployment | `install.sh`, `upgrade.sh`, `uninstall.sh`, `support.sh`, and systemd units exist. Fresh interactive installs prompt for first-setup values. |
 | Tests | Backend pytest coverage for health/status, login, API keys, mock capture, scheduled daemon capture, queued single-capture execution, queued sequence capture, pause/resume/stop queue semantics, schedule preview, daemon heartbeat/activity, interrupted job recovery, mock overnight acceptance flow, night product generation, migration preview, and mock adapter. Frontend component tests cover Dashboard, Gallery, Settings, and API Keys. Shell tests cover installer dry-run and repeat-install idempotency with mocked system commands. |
 
 ## Implemented Capabilities
@@ -106,6 +106,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 - `skyweaver-worker.service`
 - Installer creates directories, system user, Python venv, frontend build, config, and services.
 - Installer dry-run no longer requires root or writes config, and CI has a temp-dir test harness for dry-run and repeat-install idempotency.
+- Fresh interactive installer setup asks for admin credentials, observatory location/timezone, primary camera adapter, and public page mode; noninteractive installs use defaults or explicit environment values.
 - Full installer, repeat-install, service restart, and reboot acceptance passed on a Raspberry Pi 3 Model B running Debian 13/trixie.
 - Upgrade script backs up config/database and rebuilds.
 - Uninstall script removes services and optionally data.
@@ -135,13 +136,13 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 | --- | --- | --- |
 | Phase 0: Repo inspection | Done | React/Vite Lovable-style frontend identified; Supabase flow replaced by local API direction. |
 | Phase 1: API skeleton and SQLite | Mostly done | Backend, schema, health/status, API client, core routes, and mock capture exist. Dedicated migration framework still needed. |
-| Phase 2: Auth/API keys/settings/docs | Mostly done | JWT login, API-key scopes, settings, API Keys UI, and Developer API UI exist. First-run setup and rate limiting are still open. |
+| Phase 2: Auth/API keys/settings/docs | Mostly done | JWT login, API-key scopes, settings, API Keys UI, Developer API UI, and installer-seeded first setup values exist. In-app first-setup enforcement and rate limiting are still open. |
 | Phase 3: Camera adapters and test shot | Partial | Mock and rpicam/libcamera implemented. ZWO, gPhoto2, V4L2, INDI, custom command are placeholders. |
 | Phase 4: Capture daemon and realtime | Partial | Scheduled daemon loop, shared capture service, persistent job claiming for single/scheduled/sequence captures, pause/resume/stop queue semantics, active-window checks and UI preview, interval gating, lock-file duplicate-loop guard with stale lock recovery, heartbeat/activity reporting, interrupted job recovery, SSE endpoint, and Pi reboot service startup acceptance exist. Broader real-camera Pi acceptance is open. |
 | Phase 5: Image storage/gallery/latest/metadata | Partial | Mock capture artifacts, metadata, thumbnails, image rows, gallery, latest image exist. Latest symlink/copy and broader metadata extraction are open. |
 | Phase 6: Processing worker/products/retention | Partial | Worker claims jobs, thumbnail reprocess exists, keogram JPEG generation, ffmpeg timelapse/mini-timelapse generation, and startrail generation exist, and product job progress is visible in the UI. Cleanup and upload execution are open. |
 | Phase 7: Overlay/modules | Early scaffold | Module tables/endpoints exist. Overlay editor, processor, built-in modules, safe module execution are open. |
-| Phase 8: Installer/systemd/support/docs | Partial | Scripts and units exist. Shellcheck CI, installer dry-run/idempotency tests, real Pi install, repeat install, service restart, and reboot verification exist. Interactive setup, nginx option, and broader Pi camera verification are open. |
+| Phase 8: Installer/systemd/support/docs | Partial | Scripts and units exist. Shellcheck CI, installer dry-run/idempotency tests, interactive first-setup prompts, real Pi install, repeat install, service restart, and reboot verification exist. Nginx option and broader Pi camera verification are open. |
 | Phase 9: Allsky migration/remote upload | Early scaffold | Detection and dry-run count preview exist. Real import, rollback, unsupported-setting report, and remote upload execution are open. |
 | Phase 10: Polish/mobile/tests/hardening | Partial | Mobile API docs, latest/status/gallery endpoints, route bundle splitting, system health/diagnostics UI, initial frontend component tests, and CI workflow exist. Broader tests, UX polish, performance, and security hardening remain. |
 
@@ -157,17 +158,14 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 - Complete mock acceptance flow end to end:
   - run longer manual/dev overnight simulations outside pytest
   - validate behavior with real service restarts
-- Add first-run setup flow:
-  - force admin password change
-  - observatory location
-  - timezone
-  - primary camera adapter
-  - public page enabled/disabled
+- Add in-app first-run setup enforcement:
+  - block normal admin use while bootstrap credentials are still active
+  - guide users to verify observatory location, timezone, primary camera adapter, and public page mode
 
 ### Raspberry Pi Deployment
 
 - Test `install.sh` on fresh Raspberry Pi OS Bookworm 64-bit; Raspberry Pi 3 Model B on Debian 13/trixie has passed install/repeat-install/service-restart/reboot acceptance.
-- Add interactive setup questions required by the prompt.
+- Expand interactive setup as new deployment options are added.
 - Add explicit Raspberry Pi model and Bookworm detection messages.
 - Add camera presence check during install.
 - Add optional nginx reverse proxy.
@@ -349,7 +347,7 @@ Most recent local follow-up checks on 2026-06-23:
 - `npm run lint`: passed
 - `npm test`: passed with 4 tests
 - `npm run build`: passed
-- `backend\\.venv\\Scripts\\python -m pytest backend\\tests`: passed with 23 tests
+- `backend\\.venv\\Scripts\\python -m pytest backend\\tests`: passed with 24 tests
 - `bash scripts/test_install.sh`: passed
 - `bash -n install.sh scripts/test_install.sh upgrade.sh uninstall.sh support.sh`: passed
 - `shellcheck install.sh scripts/test_install.sh upgrade.sh uninstall.sh support.sh`: not run locally because ShellCheck is not installed on this Windows host; CI installs ShellCheck on Ubuntu.
@@ -370,6 +368,6 @@ The next development phase should focus on operational hardening, because interr
 
 Suggested next tasks:
 
-1. Add interactive installer setup questions for admin password, observatory location, timezone, camera adapter, and public page mode.
+1. Add in-app first-setup-required enforcement and guided setup completion.
 2. Expand system health service controls after systemd validation.
 3. Validate real camera capture behavior across service restart and reboot.

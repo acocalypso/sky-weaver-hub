@@ -64,6 +64,38 @@ def test_api_key_scopes(tmp_path):
     assert client.post("/api/v1/capture/start", headers={"Authorization": f"Bearer {api_key}"}).status_code == 403
 
 
+def test_setup_environment_seeds_admin_camera_schedule_and_settings(tmp_path, monkeypatch):
+    monkeypatch.setenv("SKYWEAVER_ADMIN_USERNAME", "setup-admin")
+    monkeypatch.setenv("SKYWEAVER_ADMIN_PASSWORD", "setup-secret")
+    monkeypatch.setenv("SKYWEAVER_OBSERVATORY_NAME", "Back Garden")
+    monkeypatch.setenv("SKYWEAVER_OBSERVATORY_LATITUDE", "47.1234")
+    monkeypatch.setenv("SKYWEAVER_OBSERVATORY_LONGITUDE", "15.5678")
+    monkeypatch.setenv("SKYWEAVER_OBSERVATORY_TIMEZONE", "Europe/Berlin")
+    monkeypatch.setenv("SKYWEAVER_PRIMARY_CAMERA_ADAPTER", "rpicam")
+    monkeypatch.setenv("SKYWEAVER_PUBLIC_PAGE_ENABLED", "0")
+    monkeypatch.setenv("SKYWEAVER_FIRST_SETUP_REQUIRED", "0")
+
+    client = make_client(tmp_path)
+    res = client.post("/api/v1/auth/login", json={"username": "setup-admin", "password": "setup-secret"})
+    assert res.status_code == 200, res.text
+    token = res.json()["data"]["token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    cameras = client.get("/api/v1/cameras", headers=headers).json()["data"]
+    assert cameras[0]["adapter"] == "rpicam"
+
+    schedule = client.get("/api/v1/schedule", headers=headers).json()["data"]
+    assert schedule["timezone"] == "Europe/Berlin"
+    assert schedule["latitude"] == 47.1234
+    assert schedule["longitude"] == 15.5678
+
+    settings = client.get("/api/v1/settings", headers=headers).json()["data"]
+    assert settings["observatory"]["name"] == "Back Garden"
+    assert settings["observatory"]["timezone"] == "Europe/Berlin"
+    assert settings["public_page"]["enabled"] is False
+    assert settings["security"]["first_setup_required"] is False
+
+
 def test_system_diagnostics_export_is_redacted(tmp_path):
     client = make_client(tmp_path)
     token = login(client)

@@ -18,6 +18,14 @@ class Settings(BaseSettings):
     cors_origins: str = Field(default="http://localhost:8080,http://127.0.0.1:8080")
     admin_username: str = Field(default="admin", validation_alias="SKYWEAVER_ADMIN_USERNAME")
     admin_password: str | None = Field(default=None, validation_alias="SKYWEAVER_ADMIN_PASSWORD")
+    admin_password_hash: str | None = Field(default=None, validation_alias="SKYWEAVER_ADMIN_PASSWORD_HASH")
+    observatory_name: str = Field(default="Sky Weaver Observatory", validation_alias="SKYWEAVER_OBSERVATORY_NAME")
+    observatory_latitude: float = Field(default=0, validation_alias="SKYWEAVER_OBSERVATORY_LATITUDE")
+    observatory_longitude: float = Field(default=0, validation_alias="SKYWEAVER_OBSERVATORY_LONGITUDE")
+    observatory_timezone: str = Field(default="UTC", validation_alias="SKYWEAVER_OBSERVATORY_TIMEZONE")
+    primary_camera_adapter: str = Field(default="mock", validation_alias="SKYWEAVER_PRIMARY_CAMERA_ADAPTER")
+    public_page_enabled: bool = Field(default=True, validation_alias="SKYWEAVER_PUBLIC_PAGE_ENABLED")
+    first_setup_required: bool = Field(default=True, validation_alias="SKYWEAVER_FIRST_SETUP_REQUIRED")
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     @property
