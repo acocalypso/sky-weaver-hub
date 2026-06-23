@@ -1,21 +1,17 @@
 import asyncio
 import json
-import shutil
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Annotated
 
-import psutil
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse, StreamingResponse
-from PIL import Image, ImageStat
 from pydantic import BaseModel, Field
 
-from ..camera.base import CaptureRequest
 from ..camera.registry import adapters, get_adapter
 from ..config import get_settings
-from ..db import event, init_db, json_dumps, json_loads, log, new_id, now_iso, row_to_dict, session
+from ..db import event, init_db, json_dumps, json_loads, new_id, now_iso, row_to_dict, session
 from ..security import create_api_key, hash_password, make_token, verify_password
+from ..services.capture import CaptureCommand, all_rows, count_files, create_capture_job, decode_row, execute_capture, get_primary_camera, system_metrics
 from .deps import current_principal, require_scope
 from .responses import ok
 
@@ -82,30 +78,6 @@ class SchedulePut(BaseModel):
     exposure_ramping_enabled: bool = False
 
 
-def decode_row(row: dict[str, Any] | None) -> dict[str, Any] | None:
-    if row is None:
-        return None
-    out = dict(row)
-    for key in ["capabilities", "settings", "metadata", "context", "request", "result", "input", "output", "payload", "value", "scopes"]:
-        if key in out and isinstance(out[key], str):
-            out[key] = json_loads(out[key], out[key])
-    for key, value in list(out.items()):
-        if isinstance(value, int) and key in {"enabled", "is_primary", "bad_image", "dark_frame_applied", "overlay_applied", "trusted"}:
-            out[key] = bool(value)
-    return out
-
-
-def all_rows(conn, sql: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
-    return [decode_row(row_to_dict(row)) for row in conn.execute(sql, params).fetchall()]
-
-
-def get_primary_camera(conn, camera_id: str | None = None) -> dict[str, Any]:
-    row = conn.execute("SELECT * FROM cameras WHERE id=?", (camera_id,)).fetchone() if camera_id else conn.execute("SELECT * FROM cameras WHERE is_primary=1 LIMIT 1").fetchone()
-    if not row:
-        raise HTTPException(404, "Camera not found")
-    return decode_row(row_to_dict(row))
-
-
 @router.get("/health")
 def health():
     return ok({"status": "ok", "service": "skyweaver-api", "version": "0.1.0"})
@@ -122,15 +94,7 @@ def status(_principal: Annotated[dict, Depends(require_scope("read:status"))]):
 
 @router.get("/system/metrics")
 def metrics(_principal: Annotated[dict, Depends(require_scope("read:status"))]):
-    disk = shutil.disk_usage(get_settings().data_dir)
-    return ok({
-        "cpu_percent": psutil.cpu_percent(interval=0.1),
-        "memory_percent": psutil.virtual_memory().percent,
-        "disk_percent": round((disk.used / disk.total) * 100, 2),
-        "disk_free_gb": round(disk.free / 1024 / 1024 / 1024, 2),
-        "temperature_c": read_pi_temp(),
-        "uptime_seconds": int(datetime.now().timestamp() - psutil.boot_time()),
-    })
+    return ok(system_metrics())
 
 
 @router.get("/system/services")
@@ -452,7 +416,7 @@ async def single_capture(body: CaptureBody, principal: dict = Depends(require_sc
 @router.post("/capture/sequence")
 def capture_sequence(body: dict[str, Any], _principal: Annotated[dict, Depends(require_scope("write:capture"))]):
     with session() as conn:
-        job_id = create_job(conn, "sequence", body)
+        job_id = create_capture_job(conn, "sequence", body)
     return ok({"id": job_id, "status": "pending"})
 
 
@@ -473,63 +437,12 @@ def capture_job(job_id: str, _principal: Annotated[dict, Depends(require_scope("
 
 
 async def capture_image(body: CaptureBody, _principal: dict, job_type: str):
-    settings = get_settings()
-    with session() as conn:
-        cam = get_primary_camera(conn, body.camera_id)
-        job_id = create_job(conn, job_type, body.model_dump())
-        conn.execute("UPDATE capture_jobs SET status='running', started_at=? WHERE id=?", (now_iso(), job_id))
-    captured_at = datetime.now(UTC)
-    day_key = captured_at.strftime("%Y%m%d")
-    image_id = new_id()
-    output = settings.image_dir / day_key / f"{captured_at.strftime('%H%M%S')}_{image_id[:8]}.{body.format.lower()}"
-    adapter = get_adapter(cam["adapter"])
     try:
-        result = await adapter.capture(CaptureRequest(output_path=output, exposure_ms=body.exposure_ms, gain=body.gain, width=body.width, height=body.height, image_format=body.format, mode=body.mode, settings=body.settings))
-        metadata = {
-            "id": image_id,
-            "captured_at": captured_at.isoformat(),
-            "camera": {"id": cam["id"], "adapter": cam["adapter"], "model": cam.get("model")},
-            "settings": {"exposure_ms": body.exposure_ms, "gain": body.gain, "format": body.format},
-            "environment": {"sensor_temperature_c": result.temperature_c, "system_temperature_c": read_pi_temp()},
-            "analysis": analyze_image(result.file_path),
-            **result.metadata,
-        }
-        sidecar = Path(str(result.file_path) + ".json")
-        sidecar.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
-        thumb = make_thumbnail(result.file_path, settings.thumbnail_dir / day_key / result.file_path.name)
-        with session() as conn:
-            conn.execute(
-                """INSERT INTO images
-                   (id, camera_id, captured_at, day_key, mode, file_path, public_url, thumbnail_path, format, width, height,
-                    size_bytes, exposure_ms, gain, temperature_c, mean_brightness, star_count, cloud_score, bad_image, metadata, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    image_id, cam["id"], captured_at.isoformat(), day_key, body.mode, str(result.file_path), f"/api/v1/images/{image_id}/download",
-                    str(thumb) if thumb else None, result.format, result.width, result.height, result.size_bytes, result.exposure_ms, result.gain,
-                    result.temperature_c, metadata["analysis"]["mean_brightness"], metadata["analysis"]["star_count"],
-                    metadata["analysis"]["cloud_score"], int(metadata["analysis"]["bad_image"]), json_dumps(metadata), now_iso(),
-                ),
-            )
-            conn.execute("UPDATE capture_state SET last_image_id=?, active_camera_id=?, last_error=NULL, updated_at=? WHERE id=1", (image_id, cam["id"], now_iso()))
-            conn.execute("UPDATE capture_jobs SET status='completed', result=?, completed_at=? WHERE id=?", (json_dumps({"image_id": image_id}), now_iso(), job_id))
-            event(conn, "new_image", {"image_id": image_id, "path": str(result.file_path)})
-        return ok({"job_id": job_id, "image": {**metadata, "file_path": str(result.file_path), "thumbnail_path": str(thumb) if thumb else None}})
+        return ok(await execute_capture(CaptureCommand.from_mapping(body.model_dump()), job_type))
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
     except Exception as exc:
-        with session() as conn:
-            conn.execute("UPDATE capture_state SET status='error', last_error=?, updated_at=? WHERE id=1", (str(exc), now_iso()))
-            conn.execute("UPDATE capture_jobs SET status='failed', error=?, completed_at=? WHERE id=?", (str(exc), now_iso(), job_id))
-            log(conn, "error", "capture", "Capture failed", {"error": str(exc), "camera_id": cam["id"]})
-            event(conn, "camera_error", {"error": str(exc), "camera_id": cam["id"]})
         raise HTTPException(500, str(exc)) from exc
-
-
-def create_job(conn, job_type: str, request: dict[str, Any]) -> str:
-    job_id = new_id()
-    conn.execute(
-        "INSERT INTO capture_jobs (id, type, status, request, created_at) VALUES (?, ?, 'pending', ?, ?)",
-        (job_id, job_type, json_dumps(request), now_iso()),
-    )
-    return job_id
 
 
 @router.get("/schedule")
@@ -813,40 +726,6 @@ async def event_stream(_principal: Annotated[dict, Depends(require_scope("read:s
             await asyncio.sleep(2)
 
     return StreamingResponse(stream(), media_type="text/event-stream")
-
-
-def analyze_image(path: Path) -> dict[str, Any]:
-    with Image.open(path) as img:
-        gray = img.convert("L")
-        mean = ImageStat.Stat(gray).mean[0] / 255
-    return {"mean_brightness": round(mean, 4), "star_count": None, "cloud_score": None, "bad_image": mean < 0.01 or mean > 0.98}
-
-
-def make_thumbnail(source: Path, target: Path) -> Path | None:
-    target.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        with Image.open(source) as img:
-            img.thumbnail((360, 360))
-            img.save(target)
-        return target
-    except Exception:
-        return None
-
-
-def read_pi_temp() -> float | None:
-    path = Path("/sys/class/thermal/thermal_zone0/temp")
-    if not path.exists():
-        return None
-    try:
-        return round(int(path.read_text().strip()) / 1000, 1)
-    except ValueError:
-        return None
-
-
-def count_files(root: Path, patterns: list[str]) -> int:
-    if not root.exists():
-        return 0
-    return sum(1 for pattern in patterns for _ in root.rglob(pattern))
 
 
 @router.on_event("startup")
