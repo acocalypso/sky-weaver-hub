@@ -10,7 +10,7 @@ from ..db import event, json_dumps, log, now_iso, row_to_dict, session
 from .capture import decode_row, make_thumbnail
 
 
-def claim_next_processing_job(job_types: tuple[str, ...] = ("thumbnail", "keogram", "timelapse", "startrail")) -> dict[str, Any] | None:
+def claim_next_processing_job(job_types: tuple[str, ...] = ("thumbnail", "keogram", "timelapse", "mini_timelapse", "startrail")) -> dict[str, Any] | None:
     placeholders = ",".join("?" for _ in job_types)
     with session() as conn:
         conn.execute("BEGIN IMMEDIATE")
@@ -33,6 +33,8 @@ async def execute_processing_job(job: dict[str, Any]) -> dict[str, Any]:
             result = generate_keogram(job)
         elif job["type"] == "timelapse":
             result = generate_timelapse(job)
+        elif job["type"] == "mini_timelapse":
+            result = generate_timelapse(job, mini=True)
         elif job["type"] == "startrail":
             result = generate_startrail(job)
         else:
@@ -171,10 +173,10 @@ def generate_startrail(job: dict[str, Any]) -> dict[str, Any]:
     return {"product_id": product_id, "day_key": day_key, "file_path": str(output), "thumbnail_path": str(thumb) if thumb else None, "source_images": len(images)}
 
 
-def generate_timelapse(job: dict[str, Any]) -> dict[str, Any]:
+def generate_timelapse(job: dict[str, Any], mini: bool = False) -> dict[str, Any]:
     day_key = job["input"].get("day_key") or latest_day_key()
     if not day_key:
-        raise ValueError("timelapse job requires day_key or at least one image")
+        raise ValueError(f"{job['type']} job requires day_key or at least one image")
 
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
@@ -188,16 +190,21 @@ def generate_timelapse(job: dict[str, Any]) -> dict[str, Any]:
     images = [image for image in images if image and Path(image["file_path"]).exists()]
     if not images:
         raise ValueError(f"No images found for day {day_key}")
+    source_count = len(images)
+    if mini:
+        max_frames = max(1, min(300, int(job["input"].get("max_frames", 60))))
+        images = sample_evenly(images, max_frames)
 
     settings = get_settings()
     product_dir = settings.product_dir / day_key
     product_dir.mkdir(parents=True, exist_ok=True)
     product_id = job["id"]
-    fps = max(1, min(120, int(job["input"].get("fps", 30))))
-    max_width = max(320, min(3840, int(job["input"].get("max_width", 1280))))
+    fps = max(1, min(120, int(job["input"].get("fps", 15 if mini else 30))))
+    max_width = max(160, min(3840, int(job["input"].get("max_width", 640 if mini else 1280))))
     codec = str(job["input"].get("codec", "h264")).lower()
     extension = "webm" if codec in {"vp9", "webm"} else "mp4"
-    output = product_dir / f"timelapse_{day_key}_{product_id[:8]}.{extension}"
+    product_type = "mini_timelapse" if mini else "timelapse"
+    output = product_dir / f"{product_type}_{day_key}_{product_id[:8]}.{extension}"
     frame_dir = product_dir / f".timelapse_frames_{product_id[:8]}"
 
     if frame_dir.exists():
@@ -218,13 +225,13 @@ def generate_timelapse(job: dict[str, Any]) -> dict[str, Any]:
         update_processing_progress(product_id, 0.9)
 
         thumb = make_thumbnail(Path(images[0]["file_path"]), settings.thumbnail_dir / day_key / f"{output.stem}.jpg")
-        metadata = {"day_key": day_key, "source_images": len(images), "fps": fps, "codec": codec, "format": extension}
+        metadata = {"day_key": day_key, "source_images": source_count, "used_images": len(images), "fps": fps, "codec": codec, "format": extension, "mini": mini}
         with session() as conn:
             conn.execute(
-                "INSERT OR REPLACE INTO night_products (id, type, day_key, file_path, thumbnail_path, status, metadata, created_at) VALUES (?, 'timelapse', ?, ?, ?, 'completed', ?, ?)",
-                (product_id, day_key, str(output), str(thumb) if thumb else None, json_dumps(metadata), now_iso()),
+                "INSERT OR REPLACE INTO night_products (id, type, day_key, file_path, thumbnail_path, status, metadata, created_at) VALUES (?, ?, ?, ?, ?, 'completed', ?, ?)",
+                (product_id, product_type, day_key, str(output), str(thumb) if thumb else None, json_dumps(metadata), now_iso()),
             )
-        return {"product_id": product_id, "day_key": day_key, "file_path": str(output), "thumbnail_path": str(thumb) if thumb else None, "source_images": len(images)}
+        return {"product_id": product_id, "day_key": day_key, "file_path": str(output), "thumbnail_path": str(thumb) if thumb else None, "source_images": source_count, "used_images": len(images)}
     finally:
         shutil.rmtree(frame_dir, ignore_errors=True)
 
@@ -240,6 +247,16 @@ def normalize_video_frame(frame: Image.Image, max_width: int) -> Image.Image:
     if width != frame.width or height != frame.height:
         frame = frame.crop((0, 0, width, height))
     return frame
+
+
+def sample_evenly(items: list[dict[str, Any]], max_items: int) -> list[dict[str, Any]]:
+    if len(items) <= max_items:
+        return items
+    if max_items == 1:
+        return [items[0]]
+    last = len(items) - 1
+    indexes = sorted({round(index * last / (max_items - 1)) for index in range(max_items)})
+    return [items[index] for index in indexes]
 
 
 def normalize_still_frame(frame: Image.Image, max_width: int) -> Image.Image:

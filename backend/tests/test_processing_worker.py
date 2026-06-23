@@ -91,6 +91,56 @@ def test_worker_generates_timelapse_product(tmp_path: Path):
     assert download.status_code == 200
 
 
+def test_worker_generates_mini_timelapse_product(tmp_path: Path):
+    if not shutil.which("ffmpeg"):
+        import pytest
+
+        pytest.skip("ffmpeg is required for mini timelapse generation")
+
+    client = make_client(tmp_path)
+    token = login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    day_key = None
+    for _ in range(5):
+        res = client.post(
+            "/api/v1/capture/test-shot",
+            headers=headers,
+            json={"exposure_ms": 250, "gain": 1, "format": "jpg", "mode": "night"},
+        )
+        assert res.status_code == 200, res.text
+        day_key = res.json()["data"]["image"]["captured_at"][:10].replace("-", "")
+
+    queued = client.post(
+        "/api/v1/products/mini-timelapse",
+        headers=headers,
+        json={"day_key": day_key, "fps": 8, "codec": "h264", "max_frames": 3, "max_width": 640},
+    ).json()["data"]
+    assert queued["status"] == "pending"
+    assert queued["type"] == "mini_timelapse"
+    assert queued["input"]["day_key"] == day_key
+
+    from skyweaver.services.processing import run_once
+
+    assert asyncio.run(run_once()) is True
+    completed_job = client.get(f"/api/v1/processing/jobs/{queued['id']}", headers=headers).json()["data"]
+    assert completed_job["status"] == "completed"
+    assert completed_job["progress"] == 1
+
+    products = client.get("/api/v1/products", headers=headers).json()["data"]
+    product = next(item for item in products if item["id"] == queued["id"])
+    assert product["type"] == "mini_timelapse"
+    assert product["status"] == "completed"
+    assert product["metadata"]["source_images"] == 5
+    assert product["metadata"]["used_images"] == 3
+    assert product["metadata"]["mini"] is True
+    assert Path(product["file_path"]).exists()
+    assert Path(product["file_path"]).suffix == ".mp4"
+
+    download = client.get(f"/api/v1/products/{product['id']}/download")
+    assert download.status_code == 200
+
+
 def test_worker_generates_startrail_product(tmp_path: Path):
     client = make_client(tmp_path)
     token = login(client)
