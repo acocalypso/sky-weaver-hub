@@ -224,3 +224,63 @@ def test_daemon_heartbeat_is_reported_by_services(tmp_path: Path):
     assert capture["pid"]
     assert "last_claimed_job_id" in capture
     assert "last_success_at" in capture
+
+
+def test_mock_overnight_simulation_updates_latest_gallery_and_recovers(tmp_path: Path):
+    client = make_client(tmp_path)
+    token = login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+    assert client.put(
+        "/api/v1/schedule",
+        headers=headers,
+        json={
+            "enabled": True,
+            "start_mode": "manual",
+            "end_mode": "manual",
+            "sun_angle": -6,
+            "timezone": "UTC",
+            "latitude": 0,
+            "longitude": 0,
+            "interval_seconds": 1,
+            "exposure_ramping_enabled": False,
+        },
+    ).status_code == 200
+    assert client.post("/api/v1/capture/start", headers=headers).status_code == 200
+
+    from skyweaver.capture_daemon import CaptureDaemon
+    from skyweaver.db import session
+    from skyweaver.services.recovery import recover_capture_jobs
+
+    daemon = CaptureDaemon()
+    for _ in range(4):
+        assert asyncio.run(daemon.run_once(True)) is True
+
+    images = client.get("/api/v1/images?limit=10", headers=headers).json()["data"]
+    assert len(images) == 4
+    assert [image["captured_at"] for image in images] == sorted((image["captured_at"] for image in images), reverse=True)
+    assert all(Path(image["file_path"]).exists() for image in images)
+    assert all(Path(image["file_path"] + ".json").exists() for image in images)
+    assert all(image["thumbnail_path"] and Path(image["thumbnail_path"]).exists() for image in images)
+
+    latest = client.get("/api/v1/images/latest", headers=headers).json()["data"]
+    assert latest["id"] == images[0]["id"]
+    status = client.get("/api/v1/status", headers=headers).json()["data"]
+    assert status["latest_image"]["id"] == latest["id"]
+    assert status["capture"]["last_image_id"] == latest["id"]
+
+    queued = client.post("/api/v1/capture/single", headers=headers, json={"mode": "manual", "exposure_ms": 250, "gain": 1}).json()["data"]
+    with session() as conn:
+        conn.execute(
+            "UPDATE capture_jobs SET status='claimed', progress=0.02, started_at='2026-06-23T00:00:00+00:00' WHERE id=?",
+            (queued["id"],),
+        )
+
+    recovered = recover_capture_jobs()
+    assert recovered["requeued"] == 1
+    assert asyncio.run(daemon.run_once()) is True
+    recovered_job = client.get(f"/api/v1/capture/jobs/{queued['id']}", headers=headers).json()["data"]
+    assert recovered_job["status"] == "completed"
+    assert recovered_job["progress"] == 1
+
+    after_recovery = client.get("/api/v1/images?limit=10", headers=headers).json()["data"]
+    assert len(after_recovery) == 5

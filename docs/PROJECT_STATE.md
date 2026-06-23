@@ -22,7 +22,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 | Camera abstraction | `CameraAdapter` base class plus working `mock` adapter and initial `rpicam`/`libcamera` adapter. Other adapters are placeholders with actionable errors. |
 | UI/API integration | Dashboard, Cameras, Schedule, Gallery, Night Products, Logs, Settings, API Keys, and Developer API call the local backend. |
 | Deployment | `install.sh`, `upgrade.sh`, `uninstall.sh`, `support.sh`, and systemd units exist. Installer is not yet fully interactive. |
-| Tests | Backend pytest coverage for health/status, login, API keys, mock capture, scheduled daemon capture, queued single-capture execution, queued sequence capture, pause/resume/stop queue semantics, schedule preview, daemon heartbeat/activity, keogram worker generation, migration preview, and mock adapter. Frontend smoke test exists. |
+| Tests | Backend pytest coverage for health/status, login, API keys, mock capture, scheduled daemon capture, queued single-capture execution, queued sequence capture, pause/resume/stop queue semantics, schedule preview, daemon heartbeat/activity, interrupted job recovery, mock overnight acceptance flow, night product generation, migration preview, and mock adapter. Frontend smoke test exists. |
 
 ## Implemented Capabilities
 
@@ -80,7 +80,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 - Pause holds queued capture jobs, resume releases them, and stop cancels pending/claimed queued capture jobs.
 - Capture daemon startup requeues interrupted claimed/running capture jobs after service restart.
 - `/api/v1/schedule/preview-tonight` returns a real active window and next transition for fixed or sun-angle schedules.
-- Backend tests verify daemon-run scheduled capture creation, interval gating, queued single-capture completion, queued sequence completion, pause/resume/stop semantics, schedule preview, heartbeat/activity reporting, and interrupted job recovery.
+- Backend tests verify daemon-run scheduled capture creation, interval gating, queued single-capture completion, queued sequence completion, pause/resume/stop semantics, schedule preview, heartbeat/activity reporting, interrupted job recovery, and a mock overnight flow that checks latest/gallery updates.
 
 ### Frontend
 
@@ -153,11 +153,8 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
   - gracefully stop after current exposure
 - Keep schedule preview and daemon state visible across Dashboard and Schedule as the daemon model evolves.
 - Complete mock acceptance flow end to end:
-  - start capture
-  - images continuously appear
-  - latest image updates
-  - gallery updates
-  - reboot/service restart behavior works
+  - run longer manual/dev overnight simulations outside pytest
+  - validate behavior with real service restarts
 - Add first-run setup flow:
   - force admin password change
   - observatory location
@@ -347,7 +344,7 @@ Most recent checks run during implementation:
 - `npm test`: passed
 - `npm run lint`: passed with zero warnings
 - `npm audit --audit-level=high`: passed with 0 vulnerabilities
-- `backend\\.venv\\Scripts\\python -m pytest backend\\tests`: passed with 21 tests
+- `backend\\.venv\\Scripts\\python -m pytest backend\\tests`: passed with 22 tests
 
 ## Recommended Next Phase
 
@@ -355,6 +352,6 @@ The next development phase should focus on operational hardening, because interr
 
 Suggested next tasks:
 
-1. Run a mock-camera overnight simulation that creates multiple captures and verifies latest/gallery updates.
-2. Validate reboot recovery on real Raspberry Pi/systemd services.
-3. Expand system health service controls after systemd validation.
+1. Validate reboot recovery on real Raspberry Pi/systemd services.
+2. Expand system health service controls after systemd validation.
+3. Add frontend route/component tests for Dashboard, Gallery, Settings, and API Keys.
