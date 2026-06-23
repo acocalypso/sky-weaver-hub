@@ -226,6 +226,22 @@ def test_daemon_heartbeat_is_reported_by_services(tmp_path: Path):
     assert "last_success_at" in capture
 
 
+def test_daemon_lock_recovers_stale_pid_file(tmp_path: Path):
+    client = make_client(tmp_path)
+    assert client.get("/api/v1/health").status_code == 200
+
+    from skyweaver.config import get_settings
+    from skyweaver.capture_daemon import daemon_lock
+
+    lock_path = get_settings().data_dir / "capture-daemon.lock"
+    lock_path.write_text("999999", encoding="ascii")
+
+    with daemon_lock():
+        assert lock_path.read_text(encoding="ascii") != "999999"
+
+    assert not lock_path.exists()
+
+
 def test_mock_overnight_simulation_updates_latest_gallery_and_recovers(tmp_path: Path):
     client = make_client(tmp_path)
     token = login(client)

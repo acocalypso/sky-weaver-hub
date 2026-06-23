@@ -21,6 +21,18 @@ from .services.capture import (
 from .services.recovery import recover_capture_jobs
 
 
+def _pid_is_running(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    return True
+
+
 class CaptureDaemon:
     def __init__(self) -> None:
         self.last_capture_monotonic: float | None = None
@@ -70,7 +82,15 @@ def daemon_lock() -> Iterator[None]:
     lock_path = settings.data_dir / "capture-daemon.lock"
     fd: int | None = None
     try:
-        fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        try:
+            fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            pid_text = Path(lock_path).read_text(encoding="ascii").strip()
+            pid = int(pid_text) if pid_text.isdigit() else 0
+            if pid > 0 and _pid_is_running(pid):
+                raise
+            Path(lock_path).unlink(missing_ok=True)
+            fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
         os.write(fd, str(os.getpid()).encode("ascii"))
         yield
     except FileExistsError as exc:
