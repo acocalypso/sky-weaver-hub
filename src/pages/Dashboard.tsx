@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { StatusBadge } from "@/components/StatusBadge";
-import { SkyApi, type CameraRow, type ImageRow, type SchedulePreview, type SkyStatus, type SystemMetrics } from "@/lib/api";
+import { SkyApi, type CameraRow, type CaptureJob, type ImageRow, type SchedulePreview, type SkyStatus, type SystemMetrics } from "@/lib/api";
 import { getTonightTimeline, getSunAltitude } from "@/lib/sun";
 import sampleSky from "@/assets/sample-sky-1.jpg";
 import { Play, Pause, Square, Camera, RefreshCw, Film, RotateCw, Cpu, MemoryStick, HardDrive, Thermometer, Activity, Clock } from "lucide-react";
@@ -16,6 +18,8 @@ export default function Dashboard() {
   const [settings, setSettings] = useState<any>(null);
   const [metrics, setMetrics] = useState<SystemMetrics>({ cpu_percent: 0, memory_percent: 0, disk_percent: 0, disk_free_gb: 0, temperature_c: null, uptime_seconds: 0 });
   const [schedulePreview, setSchedulePreview] = useState<SchedulePreview | null>(null);
+  const [captureJobs, setCaptureJobs] = useState<CaptureJob[]>([]);
+  const [sequenceForm, setSequenceForm] = useState({ count: 5, delay_seconds: 2, exposure_ms: 1000, gain: 1 });
 
   useEffect(() => { document.title = "Dashboard - Sky Weaver Hub"; }, []);
   useEffect(() => {
@@ -26,8 +30,8 @@ export default function Dashboard() {
 
   async function load() {
     try {
-      const [st, imgs, sets, m, sched] = await Promise.all([SkyApi.status(), SkyApi.images("?limit=8"), SkyApi.settings(), SkyApi.metrics(), SkyApi.schedulePreview()]);
-      setStatus(st); setImages(imgs); setSettings(sets); setMetrics(m); setSchedulePreview(sched);
+      const [st, imgs, sets, m, sched, jobs] = await Promise.all([SkyApi.status(), SkyApi.images("?limit=8"), SkyApi.settings(), SkyApi.metrics(), SkyApi.schedulePreview(), SkyApi.captureJobs()]);
+      setStatus(st); setImages(imgs); setSettings(sets); setMetrics(m); setSchedulePreview(sched); setCaptureJobs(jobs.slice(0, 6));
     } catch (e: any) {
       toast.error(e.message ?? "Unable to load dashboard");
     }
@@ -35,8 +39,8 @@ export default function Dashboard() {
 
   async function loadLight() {
     try {
-      const [st, imgs, m, sched] = await Promise.all([SkyApi.status(), SkyApi.images("?limit=8"), SkyApi.metrics(), SkyApi.schedulePreview()]);
-      setStatus(st); setImages(imgs); setMetrics(m); setSchedulePreview(sched);
+      const [st, imgs, m, sched, jobs] = await Promise.all([SkyApi.status(), SkyApi.images("?limit=8"), SkyApi.metrics(), SkyApi.schedulePreview(), SkyApi.captureJobs()]);
+      setStatus(st); setImages(imgs); setMetrics(m); setSchedulePreview(sched); setCaptureJobs(jobs.slice(0, 6));
     } catch {
       // Keep the last visible telemetry during transient API restarts.
     }
@@ -60,11 +64,27 @@ export default function Dashboard() {
       if (type === "resume") await SkyApi.captureResume();
       if (type === "stop") await SkyApi.captureStop();
       if (type === "test") await SkyApi.testShot({ camera_id: camera?.id, exposure_ms: 1000, gain: 1, mode: "manual" });
+      if (type === "single") await SkyApi.queueSingleCapture({ camera_id: camera?.id, exposure_ms: sequenceForm.exposure_ms, gain: sequenceForm.gain, mode: "manual" });
       if (type === "timelapse") await SkyApi.createProduct("timelapse", { day_key: latest?.day_key });
-      toast.success(type === "test" ? "Test shot captured" : "Command accepted");
+      toast.success(type === "test" ? "Test shot captured" : type === "single" ? "Single capture queued" : "Command accepted");
       await load();
     } catch (e: any) {
       toast.error(e.message ?? "Command failed");
+    }
+  }
+
+  async function queueSequence() {
+    try {
+      const job = await SkyApi.queueSequenceCapture({
+        count: sequenceForm.count,
+        delay_seconds: sequenceForm.delay_seconds,
+        capture: { camera_id: camera?.id, exposure_ms: sequenceForm.exposure_ms, gain: sequenceForm.gain, mode: "sequence" },
+      });
+      setCaptureJobs([{ ...job, request: { ...sequenceForm }, progress: job.progress ?? 0 }, ...captureJobs].slice(0, 6));
+      toast.success("Sequence queued");
+      await load();
+    } catch (e: any) {
+      toast.error(e.message ?? "Sequence queue failed");
     }
   }
 
@@ -93,6 +113,7 @@ export default function Dashboard() {
         )}
         <Button variant="outline" onClick={() => quickAction("stop")}><Square className="h-4 w-4 mr-2" /> Stop</Button>
         <Button variant="outline" onClick={() => quickAction("test")}><Camera className="h-4 w-4 mr-2" /> Test shot</Button>
+        <Button variant="outline" onClick={() => quickAction("single")}><Camera className="h-4 w-4 mr-2" /> Queue single</Button>
         <Button variant="outline" onClick={load}><RefreshCw className="h-4 w-4 mr-2" /> Refresh</Button>
         <Button variant="outline" onClick={() => quickAction("timelapse")}><Film className="h-4 w-4 mr-2" /> Queue timelapse</Button>
         <Button variant="ghost" onClick={() => toast.message("Use systemctl restart skyweaver.target on the Pi")}><RotateCw className="h-4 w-4 mr-2" /> Restart services</Button>
@@ -163,6 +184,41 @@ export default function Dashboard() {
         </div>
       </Card>
 
+      <Card className="telemetry-card space-y-4">
+        <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4">
+          <div>
+            <p className="text-xs uppercase tracking-widest text-muted-foreground">Capture queue</p>
+            <h3 className="text-lg font-semibold">Sequence capture</h3>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 lg:min-w-[680px]">
+            <NumberField label="Frames" value={sequenceForm.count} min={1} max={100} onChange={(count) => setSequenceForm({ ...sequenceForm, count })} />
+            <NumberField label="Delay s" value={sequenceForm.delay_seconds} min={0} max={3600} onChange={(delay_seconds) => setSequenceForm({ ...sequenceForm, delay_seconds })} />
+            <NumberField label="Exposure ms" value={sequenceForm.exposure_ms} min={1} onChange={(exposure_ms) => setSequenceForm({ ...sequenceForm, exposure_ms })} />
+            <NumberField label="Gain" value={sequenceForm.gain} min={0} step={0.1} onChange={(gain) => setSequenceForm({ ...sequenceForm, gain })} />
+            <Button onClick={queueSequence} className="bg-gradient-primary text-primary-foreground md:self-end"><Play className="h-4 w-4 mr-2" /> Queue</Button>
+          </div>
+        </div>
+        <div className="space-y-3">
+          {captureJobs.map((job) => (
+            <div key={job.id} className="rounded-md border border-border bg-muted/20 p-3">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <p className="font-medium capitalize">{job.type.replaceAll("_", " ")}</p>
+                    <StatusBadge variant={jobStatusVariant(job.status)}>{job.status}</StatusBadge>
+                  </div>
+                  <p className="text-xs text-muted-foreground font-mono-data truncate">{formatJobDetail(job)}</p>
+                </div>
+                <span className="text-xs font-mono-data text-muted-foreground">{Math.round((job.progress ?? 0) * 100)}%</span>
+              </div>
+              {job.error && <p className="text-xs text-status-error mt-2">{job.error}</p>}
+              <Progress value={Math.round((job.progress ?? 0) * 100)} className="h-1 mt-3" />
+            </div>
+          ))}
+          {captureJobs.length === 0 && <p className="text-sm text-muted-foreground">No capture jobs queued yet.</p>}
+        </div>
+      </Card>
+
       <Card className="telemetry-card">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Recent captures</h3>
@@ -201,6 +257,15 @@ function MetricCard({ icon, label, value, pct, accent = false }: { icon: React.R
   );
 }
 
+function NumberField({ label, value, onChange, ...rest }: { label: string; value: number; onChange: (value: number) => void } & Omit<React.InputHTMLAttributes<HTMLInputElement>, "onChange" | "type" | "value">) {
+  return (
+    <div className="space-y-2">
+      <Label>{label}</Label>
+      <Input type="number" value={String(value)} onChange={(event) => onChange(Number(event.target.value || 0))} {...rest} />
+    </div>
+  );
+}
+
 function formatScheduleTime(value?: string | null) {
   if (!value) return "-";
   const date = new Date(value);
@@ -217,6 +282,25 @@ function formatDaemonJob(capture: any) {
   if (!capture?.daemon_last_claimed_job_type) return "-";
   const when = formatRelative(capture.daemon_last_claimed_at);
   return `${capture.daemon_last_claimed_job_type} ${when}`;
+}
+
+function formatJobDetail(job: CaptureJob) {
+  const request = job.request ?? {};
+  const capture = request.capture ?? request;
+  const result = job.result;
+  const count = request.count ?? request.frames;
+  const completed = result?.completed_count;
+  if (job.type === "sequence") return `${completed ?? 0}/${count ?? "-"} frames - job ${job.id}`;
+  if (result?.image_id) return `image ${result.image_id} - job ${job.id}`;
+  return `${capture?.exposure_ms ?? "-"} ms, gain ${capture?.gain ?? "-"} - job ${job.id}`;
+}
+
+function jobStatusVariant(status?: string): "ok" | "warn" | "error" | "idle" | "active" {
+  if (status === "completed") return "ok";
+  if (status === "failed" || status === "canceled") return "error";
+  if (status === "running" || status === "claimed") return "active";
+  if (status === "pending") return "warn";
+  return "idle";
 }
 
 function formatCoordinate(value: number) {

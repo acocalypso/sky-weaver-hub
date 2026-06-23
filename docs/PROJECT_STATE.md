@@ -83,7 +83,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 ### Frontend
 
 - Local login page.
-- Dashboard with latest image, start/pause/resume/stop/test-shot controls, daemon activity, status, metrics, and recent captures.
+- Dashboard with latest image, start/pause/resume/stop/test-shot controls, queued single/sequence capture controls, capture job progress, daemon activity, status, metrics, and recent captures.
 - Cameras page with detection, adapter selection, night-profile editing, and test shot.
 - Schedule page with sun-angle/fixed/manual mode settings.
 - Schedule page displays the backend active window, next transition, and fixed-time controls.
@@ -324,7 +324,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 
 ## Known Current Limitations
 
-- Capture daemon now performs scheduled captures and consumes queued single-capture and sequence jobs. Pause/resume/stop queue semantics and daemon activity visibility exist; reboot recovery is still open.
+- Capture daemon now performs scheduled captures and consumes queued single-capture and sequence jobs. Pause/resume/stop queue semantics, daemon activity visibility, and Dashboard capture job progress exist; reboot recovery is still open.
 - Worker now generates thumbnails and keograms, but timelapse, mini timelapse, startrail, retention cleanup, and upload execution are still open.
 - Product endpoints queue jobs; only keogram currently produces a downloadable night product.
 - Public page is not implemented.
@@ -351,8 +351,7 @@ The next development phase should focus on the next processing products, because
 
 Suggested next tasks:
 
-1. Add sequence capture controls and capture job progress in the UI.
-2. Implement timelapse or mini timelapse generation.
-3. Add reboot recovery rules for claimed/running capture and processing jobs.
-4. Add a dedicated system health page with service controls and diagnostics export.
-5. Run a mock-camera overnight simulation that creates multiple captures and verifies latest/gallery updates.
+1. Implement timelapse or mini timelapse generation.
+2. Add reboot recovery rules for claimed/running capture and processing jobs.
+3. Add a dedicated system health page with service controls and diagnostics export.
+4. Run a mock-camera overnight simulation that creates multiple captures and verifies latest/gallery updates.

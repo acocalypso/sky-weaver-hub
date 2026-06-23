@@ -51,7 +51,8 @@ CREATE TABLE IF NOT EXISTS capture_state (
 );
 CREATE TABLE IF NOT EXISTS capture_jobs (
   id TEXT PRIMARY KEY, type TEXT NOT NULL, status TEXT NOT NULL, request TEXT NOT NULL,
-  result TEXT, error TEXT, created_at TEXT NOT NULL, started_at TEXT, completed_at TEXT
+  result TEXT, error TEXT, progress REAL NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL, started_at TEXT, completed_at TEXT
 );
 CREATE TABLE IF NOT EXISTS images (
   id TEXT PRIMARY KEY, camera_id TEXT, captured_at TEXT NOT NULL, day_key TEXT NOT NULL,
@@ -155,6 +156,7 @@ def init_db(path: Path | None = None) -> None:
                 "daemon_last_success_at": "TEXT",
             },
         )
+        ensure_columns(conn, "capture_jobs", {"progress": "REAL NOT NULL DEFAULT 0"})
         seed_defaults(conn, settings.admin_username, settings.admin_password)
 
 

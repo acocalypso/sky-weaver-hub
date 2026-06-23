@@ -81,6 +81,7 @@ def test_daemon_consumes_queued_single_capture(tmp_path: Path):
 
     before = client.get(f"/api/v1/capture/jobs/{queued['id']}", headers=headers).json()["data"]
     assert before["status"] == "pending"
+    assert before["progress"] == 0
 
     from skyweaver.capture_daemon import CaptureDaemon
 
@@ -89,6 +90,7 @@ def test_daemon_consumes_queued_single_capture(tmp_path: Path):
 
     after = client.get(f"/api/v1/capture/jobs/{queued['id']}", headers=headers).json()["data"]
     assert after["status"] == "completed"
+    assert after["progress"] == 1
     assert after["result"]["image_id"]
 
     status = client.get("/api/v1/status", headers=headers).json()["data"]["capture"]
@@ -169,6 +171,7 @@ def test_daemon_consumes_queued_sequence_capture(tmp_path: Path):
 
     after = client.get(f"/api/v1/capture/jobs/{queued['id']}", headers=headers).json()["data"]
     assert after["status"] == "completed"
+    assert after["progress"] == 1
     assert after["result"]["requested_count"] == 3
     assert after["result"]["completed_count"] == 3
     assert len(after["result"]["image_ids"]) == 3

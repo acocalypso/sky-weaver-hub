@@ -40,6 +40,9 @@ export const SkyApi = {
   capturePause: () => api("/api/v1/capture/pause", { method: "POST" }),
   captureResume: () => api("/api/v1/capture/resume", { method: "POST" }),
   testShot: (body: any = {}) => api<any>("/api/v1/capture/test-shot", { method: "POST", body: JSON.stringify(body) }),
+  queueSingleCapture: (body: any = {}) => api<CaptureJob>("/api/v1/capture/single", { method: "POST", body: JSON.stringify(body) }),
+  queueSequenceCapture: (body: any = {}) => api<CaptureJob>("/api/v1/capture/sequence", { method: "POST", body: JSON.stringify(body) }),
+  captureJobs: () => api<CaptureJob[]>("/api/v1/capture/jobs"),
   images: (query = "") => api<ImageRow[]>(`/api/v1/images${query}`),
   settings: () => api<Record<string, any>>("/api/v1/settings"),
   patchSettings: (values: Record<string, any>) => api<Record<string, any>>("/api/v1/settings", { method: "PATCH", body: JSON.stringify({ values }) }),
@@ -68,5 +71,6 @@ export interface ScheduleRow { id?: string; enabled: boolean; start_mode: string
 export interface SchedulePreview { enabled: boolean; active: boolean; now: string; window_start: string | null; window_end: string | null; next_transition_at: string | null; next_state: string; timezone: string; }
 export interface ProductRow { id: string; type: string; day_key: string; file_path: string | null; thumbnail_path: string | null; status: string; metadata: any; created_at: string; }
 export interface ProcessingJob { id: string; type: string; status: string; input: any; output?: any; error?: string | null; progress: number; created_at: string; started_at?: string | null; completed_at?: string | null; }
+export interface CaptureJob { id: string; type: string; status: string; request: any; result?: any; error?: string | null; progress: number; created_at: string; started_at?: string | null; completed_at?: string | null; }
 export interface LogRow { id: string; level: string; source: string; message: string; context: any; created_at: string; }
 export interface ApiKeyRow { id: string; name: string; prefix: string; scopes: string[]; enabled: boolean; created_at: string; last_used_at?: string | null; }

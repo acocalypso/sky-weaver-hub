@@ -104,7 +104,7 @@ def claim_next_capture_job(job_types: tuple[str, ...] = ("single", "scheduled", 
         ).fetchone()
         if not row:
             return None
-        conn.execute("UPDATE capture_jobs SET status='claimed' WHERE id=? AND status='pending'", (row["id"],))
+        conn.execute("UPDATE capture_jobs SET status='claimed', progress=0.02 WHERE id=? AND status='pending'", (row["id"],))
         conn.execute(
             "UPDATE capture_state SET daemon_last_claimed_job_id=?, daemon_last_claimed_job_type=?, daemon_last_claimed_at=?, updated_at=? WHERE id=1",
             (row["id"], row["type"], now_iso(), now_iso()),
@@ -128,7 +128,7 @@ async def execute_sequence_job(job: dict[str, Any]) -> dict[str, Any]:
     image_ids: list[str] = []
 
     with session() as conn:
-        conn.execute("UPDATE capture_jobs SET status='running', started_at=? WHERE id=?", (now_iso(), job["id"]))
+        conn.execute("UPDATE capture_jobs SET status='running', progress=0.05, started_at=? WHERE id=?", (now_iso(), job["id"]))
 
     try:
         for index in range(count):
@@ -136,13 +136,15 @@ async def execute_sequence_job(job: dict[str, Any]) -> dict[str, Any]:
                 break
             result = await execute_capture(command, "sequence_item")
             image_ids.append(result["image"]["id"])
+            with session() as conn:
+                conn.execute("UPDATE capture_jobs SET progress=? WHERE id=?", (len(image_ids) / count, job["id"]))
             if index < count - 1 and delay_seconds:
                 await asyncio.sleep(delay_seconds)
 
         status = "completed" if len(image_ids) == count else "stopped"
         payload = {"image_ids": image_ids, "requested_count": count, "completed_count": len(image_ids)}
         with session() as conn:
-            conn.execute("UPDATE capture_jobs SET status=?, result=?, completed_at=? WHERE id=?", (status, json_dumps(payload), now_iso(), job["id"]))
+            conn.execute("UPDATE capture_jobs SET status=?, progress=?, result=?, completed_at=? WHERE id=?", (status, len(image_ids) / count, json_dumps(payload), now_iso(), job["id"]))
             event(conn, "capture_sequence_completed", {"job_id": job["id"], **payload})
         return {"job_id": job["id"], **payload}
     except Exception as exc:
@@ -158,7 +160,7 @@ async def execute_capture(command: CaptureCommand, job_type: str = "manual", job
         cam = get_primary_camera(conn, command.camera_id)
         if job_id is None:
             job_id = create_capture_job(conn, job_type, command.as_dict())
-        conn.execute("UPDATE capture_jobs SET status='running', started_at=? WHERE id=?", (now_iso(), job_id))
+        conn.execute("UPDATE capture_jobs SET status='running', progress=0.1, started_at=? WHERE id=?", (now_iso(), job_id))
 
     captured_at = datetime.now(UTC)
     day_key = captured_at.strftime("%Y%m%d")
@@ -226,7 +228,7 @@ async def execute_capture(command: CaptureCommand, job_type: str = "manual", job
                 "UPDATE capture_state SET last_image_id=?, active_camera_id=?, daemon_last_success_at=?, last_error=NULL, updated_at=? WHERE id=1",
                 (image_id, cam["id"], now_iso(), now_iso()),
             )
-            conn.execute("UPDATE capture_jobs SET status='completed', result=?, completed_at=? WHERE id=?", (json_dumps({"image_id": image_id}), now_iso(), job_id))
+            conn.execute("UPDATE capture_jobs SET status='completed', progress=1, result=?, completed_at=? WHERE id=?", (json_dumps({"image_id": image_id}), now_iso(), job_id))
             event(conn, "new_image", {"image_id": image_id, "path": str(result.file_path)})
 
         return {"job_id": job_id, "image": {**metadata, "file_path": str(result.file_path), "thumbnail_path": str(thumb) if thumb else None}}
