@@ -1,0 +1,18 @@
+[Unit]
+Description=Sky Weaver Hub API
+After=network-online.target
+Wants=network-online.target
+PartOf=skyweaver.target
+
+[Service]
+Type=simple
+User=skyweaver
+Group=skyweaver
+WorkingDirectory=/opt/skyweaver
+EnvironmentFile=-/etc/skyweaver/skyweaver.env
+ExecStart=/opt/skyweaver/backend/.venv/bin/uvicorn skyweaver.main:app --host ${SKYWEAVER_HOST} --port ${SKYWEAVER_PORT}
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=skyweaver.target

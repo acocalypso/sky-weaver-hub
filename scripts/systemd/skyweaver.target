@@ -1,0 +1,7 @@
+[Unit]
+Description=Sky Weaver Hub service group
+Wants=skyweaver-api.service skyweaver-capture.service skyweaver-worker.service
+After=network-online.target
+
+[Install]
+WantedBy=multi-user.target

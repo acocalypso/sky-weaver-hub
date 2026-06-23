@@ -1,60 +1,73 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
-import { supabase } from "@/integrations/supabase/client";
-import type { Session, User } from "@supabase/supabase-js";
+import { getToken, setToken, SkyApi, type SkyUserPrincipal } from "@/lib/api";
 
 type Role = "admin" | "operator" | "viewer";
 
 interface AuthCtx {
-  user: User | null;
-  session: Session | null;
+  user: SkyUserPrincipal | null;
+  token: string | null;
   loading: boolean;
   roles: Role[];
   isAdmin: boolean;
+  signIn: (username: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
 }
 
 const Ctx = createContext<AuthCtx | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [session, setSession] = useState<Session | null>(null);
-  const [user, setUser] = useState<User | null>(null);
+  const [tokenState, setTokenState] = useState<string | null>(getToken());
+  const [user, setUser] = useState<SkyUserPrincipal | null>(null);
   const [roles, setRoles] = useState<Role[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => {
-      setSession(s);
-      setUser(s?.user ?? null);
-      if (s?.user) {
-        setTimeout(async () => {
-          const { data } = await supabase.from("user_roles").select("role").eq("user_id", s.user.id);
-          setRoles((data ?? []).map((r) => r.role as Role));
-        }, 0);
-      } else {
+    let alive = true;
+    async function load() {
+      if (!getToken()) {
+        setLoading(false);
+        return;
+      }
+      try {
+        const principal = await SkyApi.me();
+        if (!alive) return;
+        setUser(principal);
+        setRoles([principal.role as Role]);
+      } catch {
+        setToken(null);
+        setTokenState(null);
+        setUser(null);
         setRoles([]);
+      } finally {
+        if (alive) setLoading(false);
       }
-    });
-
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        const { data } = await supabase.from("user_roles").select("role").eq("user_id", session.user.id);
-        setRoles((data ?? []).map((r) => r.role as Role));
-      }
-      setLoading(false);
-    });
-
-    return () => sub.subscription.unsubscribe();
+    }
+    load();
+    return () => { alive = false; };
   }, []);
+
+  async function signIn(username: string, password: string) {
+    const data = await SkyApi.login(username, password);
+    setToken(data.token);
+    setTokenState(data.token);
+    const principal = await SkyApi.me();
+    setUser(principal);
+    setRoles([principal.role as Role]);
+  }
 
   const value: AuthCtx = {
     user,
-    session,
+    token: tokenState,
     loading,
     roles,
     isAdmin: roles.includes("admin"),
-    signOut: async () => { await supabase.auth.signOut(); },
+    signIn,
+    signOut: async () => {
+      setToken(null);
+      setTokenState(null);
+      setUser(null);
+      setRoles([]);
+    },
   };
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

@@ -1,80 +1,92 @@
 import { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { StatusBadge } from "@/components/StatusBadge";
-import { Camera as CameraIcon, Plus, Pencil, Camera as TestIcon } from "lucide-react";
+import { SkyApi, type CameraProfile, type CameraRow, type DetectedCamera } from "@/lib/api";
+import { Camera as CameraIcon, Plus, Pencil, Camera as TestIcon, Radar } from "lucide-react";
 import { toast } from "sonner";
-import { triggerCapture } from "@/lib/capture";
 
-type AdapterType = "mock" | "libcamera" | "gphoto2" | "indi" | "zwo" | "webcam" | "custom";
-interface Camera { id: string; name: string; model: string | null; adapter_type: AdapterType; status: string; is_default: boolean; }
-interface Settings { id?: string; camera_id: string; exposure_us: number; gain: number; resolution: string; file_format: string; white_balance: string; binning: number; }
+type AdapterType = "mock" | "rpicam" | "libcamera" | "gphoto2" | "indi" | "zwo" | "v4l2" | "custom_command";
 
 const ADAPTERS: { value: AdapterType; label: string; hint: string }[] = [
-  { value: "mock", label: "Mock", hint: "Simulated camera for development" },
-  { value: "libcamera", label: "libcamera (Pi)", hint: "Raspberry Pi HQ / Camera Module v3" },
-  { value: "gphoto2", label: "gPhoto2", hint: "DSLR via USB (Canon, Nikon, Sony)" },
-  { value: "indi", label: "INDI", hint: "Astronomy INDI server" },
-  { value: "zwo", label: "ZWO ASI", hint: "ZWO ASI USB cameras" },
-  { value: "webcam", label: "V4L2 webcam", hint: "USB webcam via V4L2" },
-  { value: "custom", label: "Custom", hint: "User-supplied adapter script" },
+  { value: "mock", label: "Mock", hint: "Synthetic camera for development and CI" },
+  { value: "rpicam", label: "rpicam/libcamera", hint: "Raspberry Pi HQ, Camera Module 3, Arducam libcamera devices" },
+  { value: "zwo", label: "ZWO ASI", hint: "SDK boundary placeholder with actionable errors" },
+  { value: "gphoto2", label: "gPhoto2", hint: "DSLR/mirrorless via USB" },
+  { value: "v4l2", label: "V4L2 webcam", hint: "USB webcams via ffmpeg/V4L2" },
+  { value: "indi", label: "INDI", hint: "Future INDI server adapter" },
+  { value: "custom_command", label: "Custom command", hint: "Disabled until sandbox configuration is explicit" },
 ];
 
 export default function Cameras() {
-  const [cameras, setCameras] = useState<Camera[]>([]);
-  const [selected, setSelected] = useState<Camera | null>(null);
-  const [settings, setSettings] = useState<Settings | null>(null);
+  const [cameras, setCameras] = useState<CameraRow[]>([]);
+  const [detected, setDetected] = useState<DetectedCamera[]>([]);
+  const [profiles, setProfiles] = useState<CameraProfile[]>([]);
+  const [selected, setSelected] = useState<CameraRow | null>(null);
+  const [settings, setSettings] = useState<Record<string, any>>({});
   const [dlgOpen, setDlgOpen] = useState(false);
-  const [editing, setEditing] = useState<Camera | null>(null);
+  const [editing, setEditing] = useState<CameraRow | null>(null);
 
-  useEffect(() => { document.title = "Cameras · AllSky Control Hub"; load(); }, []);
+  useEffect(() => { document.title = "Cameras - Sky Weaver Hub"; load(); }, []);
 
   async function load() {
-    const { data } = await supabase.from("cameras").select("*").order("created_at");
-    setCameras((data ?? []) as Camera[]);
-    if (data?.length && !selected) await pick(data[0] as Camera);
+    const [cams, profs] = await Promise.all([SkyApi.cameras(), SkyApi.cameraProfiles()]);
+    setCameras(cams);
+    setProfiles(profs);
+    const first = selected ? cams.find((c) => c.id === selected.id) : cams[0];
+    if (first) pick(first, profs);
   }
 
-  async function pick(c: Camera) {
-    setSelected(c);
-    const { data } = await supabase.from("camera_settings").select("*").eq("camera_id", c.id).maybeSingle();
-    setSettings((data as Settings) ?? { camera_id: c.id, exposure_us: 1_000_000, gain: 100, resolution: "1920x1080", file_format: "jpg", white_balance: "auto", binning: 1 });
+  function pick(camera: CameraRow, profs = profiles) {
+    setSelected(camera);
+    setSettings(profs.find((p) => p.camera_id === camera.id && p.mode === "nighttime")?.settings ?? {});
   }
 
-  async function saveCamera(form: { name: string; model: string | null; adapter_type: AdapterType }) {
-    if (editing?.id) {
-      const { error } = await supabase.from("cameras").update(form).eq("id", editing.id);
-      if (error) return toast.error(error.message);
-      toast.success("Camera updated");
-    } else {
-      const { data, error } = await supabase.from("cameras").insert({
-        name: form.name, model: form.model, adapter_type: form.adapter_type, status: "unknown",
-      }).select().single();
-      if (error) return toast.error(error.message);
-      await supabase.from("camera_settings").insert({ camera_id: data!.id });
-      toast.success("Camera created");
+  async function runDetect() {
+    try {
+      const found = await SkyApi.detectCameras();
+      setDetected(found);
+      toast.success(`${found.length} camera candidate${found.length === 1 ? "" : "s"} found`);
+    } catch (e: any) {
+      toast.error(e.message ?? "Detection failed");
     }
-    setDlgOpen(false); setEditing(null); await load();
+  }
+
+  async function saveCamera(form: { name: string; model: string | null; adapter: AdapterType; is_primary: boolean }) {
+    try {
+      if (editing?.id) await SkyApi.patchCamera(editing.id, form);
+      else await SkyApi.createCamera({ ...form, enabled: true });
+      toast.success(editing ? "Camera updated" : "Camera created");
+      setDlgOpen(false); setEditing(null); await load();
+    } catch (e: any) {
+      toast.error(e.message ?? "Save failed");
+    }
   }
 
   async function saveSettings() {
-    if (!settings || !selected) return;
-    const payload = { ...settings, camera_id: selected.id };
-    const { error } = await supabase.from("camera_settings").upsert(payload, { onConflict: "camera_id" });
-    if (error) return toast.error(error.message);
-    toast.success("Settings saved");
+    const profile = profiles.find((p) => p.camera_id === selected?.id && p.mode === "nighttime");
+    if (!profile) return toast.error("No nighttime profile exists for this camera yet");
+    try {
+      await SkyApi.patchProfile(profile.id, settings);
+      toast.success("Night profile saved");
+      await load();
+    } catch (e: any) {
+      toast.error(e.message ?? "Settings save failed");
+    }
   }
 
   async function runTest() {
     if (!selected) return;
-    toast.message("Test shot queued…");
-    try { await triggerCapture({ camera_id: selected.id, type: "test" }); toast.success("Test image captured"); }
-    catch (e: any) { toast.error(e.message ?? "Capture failed"); }
+    try {
+      await SkyApi.testShot({ camera_id: selected.id, exposure_ms: Number(settings.manual_exposure_ms ?? 1000), gain: Number(settings.gain ?? 1), mode: "manual" });
+      toast.success("Test image captured");
+    } catch (e: any) {
+      toast.error(e.message ?? "Capture failed");
+    }
   }
 
   return (
@@ -84,35 +96,42 @@ export default function Cameras() {
           <p className="text-xs uppercase tracking-widest text-muted-foreground">Hardware</p>
           <h1 className="text-3xl font-semibold tracking-tight">Cameras</h1>
         </div>
-        <Dialog open={dlgOpen} onOpenChange={setDlgOpen}>
-          <DialogTrigger asChild>
-            <Button onClick={() => setEditing(null)}><Plus className="h-4 w-4 mr-2" /> New camera</Button>
-          </DialogTrigger>
-          <CameraDialog editing={editing} onSave={saveCamera} />
-        </Dialog>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={runDetect}><Radar className="h-4 w-4 mr-2" /> Detect</Button>
+          <Dialog open={dlgOpen} onOpenChange={setDlgOpen}>
+            <DialogTrigger asChild><Button onClick={() => setEditing(null)}><Plus className="h-4 w-4 mr-2" /> New camera</Button></DialogTrigger>
+            <CameraDialog editing={editing} onSave={saveCamera} />
+          </Dialog>
+        </div>
       </div>
+
+      {detected.length > 0 && (
+        <Card className="telemetry-card space-y-2">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Detected hardware</h2>
+          {detected.map((d) => <p key={`${d.backend}-${d.id}`} className="text-sm font-mono-data">{d.backend} - {d.name} - {d.model ?? d.id}</p>)}
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-[300px_1fr] gap-6">
         <Card className="telemetry-card p-2 space-y-1">
           {cameras.map((c) => (
-            <button key={c.id} onClick={() => pick(c)}
-              className={`w-full text-left p-3 rounded-md border ${selected?.id === c.id ? "border-primary bg-primary/5" : "border-transparent hover:bg-muted/40"}`}>
+            <button key={c.id} onClick={() => pick(c)} className={`w-full text-left p-3 rounded-md border ${selected?.id === c.id ? "border-primary bg-primary/5" : "border-transparent hover:bg-muted/40"}`}>
               <div className="flex items-center justify-between">
                 <span className="text-sm font-medium flex items-center gap-2"><CameraIcon className="h-4 w-4 text-primary" />{c.name}</span>
-                {c.is_default && <StatusBadge variant="active">default</StatusBadge>}
+                {c.is_primary && <StatusBadge variant="active">primary</StatusBadge>}
               </div>
-              <div className="mt-1 text-xs text-muted-foreground font-mono-data">{c.adapter_type} · {c.status}</div>
+              <div className="mt-1 text-xs text-muted-foreground font-mono-data">{c.adapter} - {c.enabled ? "enabled" : "disabled"}</div>
             </button>
           ))}
           {cameras.length === 0 && <p className="p-3 text-sm text-muted-foreground">No cameras yet.</p>}
         </Card>
 
-        {selected && settings && (
+        {selected && (
           <Card className="telemetry-card space-y-6">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <h2 className="text-xl font-semibold">{selected.name}</h2>
-                <p className="text-xs text-muted-foreground font-mono-data mt-1">{selected.model ?? "—"} · adapter {selected.adapter_type}</p>
+                <p className="text-xs text-muted-foreground font-mono-data mt-1">{selected.model ?? "-"} - adapter {selected.adapter}</p>
               </div>
               <div className="flex gap-2">
                 <Button variant="outline" size="sm" onClick={runTest}><TestIcon className="h-4 w-4 mr-2" /> Test shot</Button>
@@ -121,36 +140,16 @@ export default function Cameras() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Field label="Exposure (seconds)" type="number" step="0.1"
-                value={(settings.exposure_us / 1_000_000).toString()}
-                onChange={(v) => setSettings({ ...settings, exposure_us: Math.round(parseFloat(v || "0") * 1_000_000) })} />
-              <Field label="Gain" type="number" value={settings.gain.toString()}
-                onChange={(v) => setSettings({ ...settings, gain: parseInt(v || "0") })} />
-              <Field label="Resolution" value={settings.resolution} onChange={(v) => setSettings({ ...settings, resolution: v })} placeholder="1920x1080" />
-              <div className="space-y-2">
-                <Label>File format</Label>
-                <Select value={settings.file_format} onValueChange={(v) => setSettings({ ...settings, file_format: v })}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {["jpg", "png", "tif", "fits", "raw"].map((f) => <SelectItem key={f} value={f}>{f.toUpperCase()}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>White balance</Label>
-                <Select value={settings.white_balance} onValueChange={(v) => setSettings({ ...settings, white_balance: v })}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {["auto", "daylight", "tungsten", "fluorescent", "cloudy", "manual"].map((f) => <SelectItem key={f} value={f}>{f}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <Field label="Binning" type="number" value={settings.binning.toString()}
-                onChange={(v) => setSettings({ ...settings, binning: Math.max(1, parseInt(v || "1")) })} />
+              <Field label="Manual exposure (ms)" type="number" value={String(settings.manual_exposure_ms ?? 1000)} onChange={(v) => setSettings({ ...settings, manual_exposure_ms: Number(v) })} />
+              <Field label="Gain" type="number" value={String(settings.gain ?? 1)} onChange={(v) => setSettings({ ...settings, gain: Number(v) })} />
+              <Field label="Max auto exposure (ms)" type="number" value={String(settings.max_auto_exposure_ms ?? 30000)} onChange={(v) => setSettings({ ...settings, max_auto_exposure_ms: Number(v) })} />
+              <Field label="Mean target" type="number" step="0.01" value={String(settings.mean_target ?? 0.28)} onChange={(v) => setSettings({ ...settings, mean_target: Number(v) })} />
+              <Field label="Red balance" type="number" step="0.1" value={String(settings.red_balance ?? 1)} onChange={(v) => setSettings({ ...settings, red_balance: Number(v) })} />
+              <Field label="Blue balance" type="number" step="0.1" value={String(settings.blue_balance ?? 1)} onChange={(v) => setSettings({ ...settings, blue_balance: Number(v) })} />
             </div>
 
-            <div className="flex justify-end gap-2">
-              <Button onClick={saveSettings} className="bg-gradient-primary text-primary-foreground">Save settings</Button>
+            <div className="flex justify-end">
+              <Button onClick={saveSettings} className="bg-gradient-primary text-primary-foreground">Save night profile</Button>
             </div>
           </Card>
         )}
@@ -160,26 +159,22 @@ export default function Cameras() {
 }
 
 function Field({ label, value, onChange, ...rest }: { label: string; value: string; onChange: (v: string) => void } & React.InputHTMLAttributes<HTMLInputElement>) {
-  return (
-    <div className="space-y-2">
-      <Label>{label}</Label>
-      <Input value={value} onChange={(e) => onChange(e.target.value)} {...rest} />
-    </div>
-  );
+  return <div className="space-y-2"><Label>{label}</Label><Input value={value} onChange={(e) => onChange(e.target.value)} {...rest} /></div>;
 }
 
-function CameraDialog({ editing, onSave }: { editing: Camera | null; onSave: (f: Partial<Camera>) => void }) {
+function CameraDialog({ editing, onSave }: { editing: CameraRow | null; onSave: (f: { name: string; model: string | null; adapter: AdapterType; is_primary: boolean }) => void }) {
   const [name, setName] = useState(editing?.name ?? "");
   const [model, setModel] = useState(editing?.model ?? "");
-  const [adapter, setAdapter] = useState<AdapterType>(editing?.adapter_type ?? "mock");
-  useEffect(() => { setName(editing?.name ?? ""); setModel(editing?.model ?? ""); setAdapter(editing?.adapter_type ?? "mock"); }, [editing]);
+  const [adapter, setAdapter] = useState<AdapterType>((editing?.adapter as AdapterType) ?? "mock");
+  const [primary, setPrimary] = useState(Boolean(editing?.is_primary));
+  useEffect(() => { setName(editing?.name ?? ""); setModel(editing?.model ?? ""); setAdapter((editing?.adapter as AdapterType) ?? "mock"); setPrimary(Boolean(editing?.is_primary)); }, [editing]);
   const hint = ADAPTERS.find((a) => a.value === adapter)?.hint;
   return (
     <DialogContent>
       <DialogHeader><DialogTitle>{editing ? "Edit camera" : "New camera"}</DialogTitle></DialogHeader>
       <div className="space-y-4">
-        <Field label="Name" value={name} onChange={(v) => setName(v)} placeholder="Roof All-Sky" />
-        <Field label="Model" value={model} onChange={(v) => setModel(v)} placeholder="ZWO ASI224MC" />
+        <Field label="Name" value={name} onChange={setName} placeholder="Roof All-Sky" />
+        <Field label="Model" value={model} onChange={setModel} placeholder="IMX477 / IMX708 / ASI224MC" />
         <div className="space-y-2">
           <Label>Adapter</Label>
           <Select value={adapter} onValueChange={(v) => setAdapter(v as AdapterType)}>
@@ -188,11 +183,10 @@ function CameraDialog({ editing, onSave }: { editing: Camera | null; onSave: (f:
           </Select>
           {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
         </div>
+        <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={primary} onChange={(e) => setPrimary(e.target.checked)} /> Primary camera</label>
       </div>
       <DialogFooter>
-        <Button onClick={() => onSave({ name, model: model || null, adapter_type: adapter })} className="bg-gradient-primary text-primary-foreground">
-          {editing ? "Save" : "Create"}
-        </Button>
+        <Button onClick={() => onSave({ name, model: model || null, adapter, is_primary: primary })} className="bg-gradient-primary text-primary-foreground">{editing ? "Save" : "Create"}</Button>
       </DialogFooter>
     </DialogContent>
   );

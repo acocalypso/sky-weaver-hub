@@ -1,46 +1,37 @@
 import { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { SkyApi } from "@/lib/api";
 import { Settings as SettingsIcon, MapPin, HardDrive, Shield } from "lucide-react";
 import { toast } from "sonner";
 
-interface S {
-  id: number; observatory_name: string; latitude: number; longitude: number; timezone: string;
-  storage_path: string; timelapse_path: string;
-  default_capture_interval_s: number; default_image_format: string;
-  retention_days: number; retention_max_disk_pct: number;
-  api_enabled: boolean; startup_auto_capture: boolean;
-}
-
 export default function SettingsPage() {
-  const [s, setS] = useState<S | null>(null);
+  const [values, setValues] = useState<Record<string, any> | null>(null);
 
   useEffect(() => {
-    document.title = "Settings · AllSky Control Hub";
-    supabase.from("system_settings").select("*").eq("id", 1).maybeSingle()
-      .then(({ data }) => setS(data as S));
+    document.title = "Settings - Sky Weaver Hub";
+    SkyApi.settings().then(setValues).catch((e) => toast.error(e.message));
   }, []);
 
-  async function save() {
-    if (!s) return;
-    const { error } = await supabase.from("system_settings").update({
-      observatory_name: s.observatory_name, latitude: s.latitude, longitude: s.longitude,
-      timezone: s.timezone, storage_path: s.storage_path, timelapse_path: s.timelapse_path,
-      default_capture_interval_s: s.default_capture_interval_s,
-      default_image_format: s.default_image_format, retention_days: s.retention_days,
-      retention_max_disk_pct: s.retention_max_disk_pct, api_enabled: s.api_enabled,
-      startup_auto_capture: s.startup_auto_capture,
-    }).eq("id", 1);
-    if (error) return toast.error(error.message);
-    toast.success("Settings saved");
-  }
+  if (!values) return <p className="text-sm text-muted-foreground">Loading...</p>;
+  const observatory = values.observatory ?? {};
+  const storage = values.storage ?? {};
+  const publicPage = values.public_page ?? {};
+  const security = values.security ?? {};
+  const updateGroup = (group: string, patch: any) => setValues({ ...values, [group]: { ...(values[group] ?? {}), ...patch } });
 
-  if (!s) return <p className="text-sm text-muted-foreground">Loading…</p>;
-  const upd = (k: keyof S, v: any) => setS({ ...s, [k]: v });
+  async function save() {
+    if (!values) return;
+    try {
+      await SkyApi.patchSettings(values);
+      toast.success("Settings saved");
+    } catch (e: any) {
+      toast.error(e.message ?? "Save failed");
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -50,24 +41,24 @@ export default function SettingsPage() {
       </div>
 
       <Section icon={<MapPin className="h-4 w-4 text-primary" />} title="Location">
-        <Field label="Observatory name" value={s.observatory_name} onChange={(v) => upd("observatory_name", v)} />
-        <Field label="Latitude" type="number" step="0.0001" value={s.latitude.toString()} onChange={(v) => upd("latitude", parseFloat(v))} />
-        <Field label="Longitude" type="number" step="0.0001" value={s.longitude.toString()} onChange={(v) => upd("longitude", parseFloat(v))} />
-        <Field label="Timezone" value={s.timezone} onChange={(v) => upd("timezone", v)} placeholder="Europe/Berlin" />
+        <Field label="Observatory name" value={observatory.name ?? ""} onChange={(v) => updateGroup("observatory", { name: v })} />
+        <Field label="Latitude" type="number" step="0.0001" value={String(observatory.latitude ?? 0)} onChange={(v) => updateGroup("observatory", { latitude: Number(v) })} />
+        <Field label="Longitude" type="number" step="0.0001" value={String(observatory.longitude ?? 0)} onChange={(v) => updateGroup("observatory", { longitude: Number(v) })} />
+        <Field label="Timezone" value={observatory.timezone ?? "UTC"} onChange={(v) => updateGroup("observatory", { timezone: v })} />
       </Section>
 
-      <Section icon={<HardDrive className="h-4 w-4 text-primary" />} title="Storage & retention">
-        <Field label="Image storage path" value={s.storage_path} onChange={(v) => upd("storage_path", v)} />
-        <Field label="Timelapse path" value={s.timelapse_path} onChange={(v) => upd("timelapse_path", v)} />
-        <Field label="Default interval (s)" type="number" value={s.default_capture_interval_s.toString()} onChange={(v) => upd("default_capture_interval_s", parseInt(v || "0"))} />
-        <Field label="Default format" value={s.default_image_format} onChange={(v) => upd("default_image_format", v)} />
-        <Field label="Retention (days)" type="number" value={s.retention_days.toString()} onChange={(v) => upd("retention_days", parseInt(v || "0"))} />
-        <Field label="Max disk usage (%)" type="number" value={s.retention_max_disk_pct.toString()} onChange={(v) => upd("retention_max_disk_pct", parseInt(v || "0"))} />
+      <Section icon={<HardDrive className="h-4 w-4 text-primary" />} title="Storage and retention">
+        <Field label="Image storage path" value={storage.images ?? "./data/images"} onChange={(v) => updateGroup("storage", { images: v })} />
+        <Field label="Video storage path" value={storage.videos ?? "./data/videos"} onChange={(v) => updateGroup("storage", { videos: v })} />
+        <Field label="Retention days" type="number" value={String(storage.retention_days ?? 30)} onChange={(v) => updateGroup("storage", { retention_days: Number(v) })} />
+        <Field label="Minimum free GB" type="number" value={String(storage.min_free_gb ?? 2)} onChange={(v) => updateGroup("storage", { min_free_gb: Number(v) })} />
       </Section>
 
-      <Section icon={<Shield className="h-4 w-4 text-primary" />} title="System">
-        <Toggle label="REST API enabled" hint="Allow external apps to call /api/v1 with bearer tokens." value={s.api_enabled} onChange={(v) => upd("api_enabled", v)} />
-        <Toggle label="Auto-start capture" hint="Arm the scheduler when the service boots." value={s.startup_auto_capture} onChange={(v) => upd("startup_auto_capture", v)} />
+      <Section icon={<Shield className="h-4 w-4 text-primary" />} title="Public and API">
+        <Toggle label="Public page enabled" hint="Expose /public without admin controls." value={Boolean(publicPage.enabled)} onChange={(v) => updateGroup("public_page", { enabled: v })} />
+        <Toggle label="Iframe mode enabled" hint="Allow an embeddable read-only public sky view." value={Boolean(publicPage.iframe_enabled)} onChange={(v) => updateGroup("public_page", { iframe_enabled: v })} />
+        <Field label="CORS origins" value={(security.cors_origins ?? []).join(",")} onChange={(v) => updateGroup("security", { cors_origins: v.split(",").map((x) => x.trim()).filter(Boolean) })} />
+        <Toggle label="First setup required" hint="Installer should force a password change before unattended use." value={Boolean(security.first_setup_required)} onChange={(v) => updateGroup("security", { first_setup_required: v })} />
       </Section>
 
       <div className="flex justify-end">
@@ -78,31 +69,13 @@ export default function SettingsPage() {
 }
 
 function Section({ icon, title, children }: { icon: React.ReactNode; title: string; children: React.ReactNode }) {
-  return (
-    <Card className="telemetry-card space-y-4">
-      <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">{icon}{title}</h2>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">{children}</div>
-    </Card>
-  );
+  return <Card className="telemetry-card space-y-4"><h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">{icon}{title}</h2><div className="grid grid-cols-1 md:grid-cols-2 gap-4">{children}</div></Card>;
 }
 
 function Field({ label, value, onChange, ...rest }: { label: string; value: string; onChange: (v: string) => void } & React.InputHTMLAttributes<HTMLInputElement>) {
-  return (
-    <div className="space-y-2">
-      <Label>{label}</Label>
-      <Input value={value} onChange={(e) => onChange(e.target.value)} {...rest} />
-    </div>
-  );
+  return <div className="space-y-2"><Label>{label}</Label><Input value={value} onChange={(e) => onChange(e.target.value)} {...rest} /></div>;
 }
 
 function Toggle({ label, hint, value, onChange }: { label: string; hint: string; value: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <div className="flex items-center justify-between p-3 rounded-md border border-border bg-muted/20 md:col-span-2">
-      <div>
-        <p className="text-sm font-medium">{label}</p>
-        <p className="text-xs text-muted-foreground mt-0.5">{hint}</p>
-      </div>
-      <Switch checked={value} onCheckedChange={onChange} />
-    </div>
-  );
+  return <div className="flex items-center justify-between p-3 rounded-md border border-border bg-muted/20"><div><p className="text-sm font-medium">{label}</p><p className="text-xs text-muted-foreground mt-0.5">{hint}</p></div><Switch checked={value} onCheckedChange={onChange} /></div>;
 }

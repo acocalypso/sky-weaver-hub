@@ -48,7 +48,7 @@ export function AppShell() {
             <Telescope className="h-4 w-4 text-primary-foreground" />
           </div>
           <div className="flex flex-col leading-tight">
-            <span className="text-sm font-semibold text-sidebar-foreground">AllSky Control</span>
+            <span className="text-sm font-semibold text-sidebar-foreground">Sky Weaver Hub</span>
             <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Observatory Hub</span>
           </div>
         </div>
@@ -77,7 +77,7 @@ export function AppShell() {
 
         <div className="border-t border-sidebar-border p-3">
           <div className="px-2 py-2 text-xs">
-            <div className="text-sidebar-foreground truncate">{user?.email}</div>
+            <div className="text-sidebar-foreground truncate">{user?.username}</div>
             <div className="text-muted-foreground flex items-center gap-1.5 mt-1">
               <span className="status-dot text-status-ok" />
               {isAdmin ? "Admin" : "Viewer"}
@@ -102,7 +102,7 @@ export function AppShell() {
           </Button>
           <div className="flex items-center gap-2">
             <Telescope className="h-4 w-4 text-primary" />
-            <span className="text-sm font-semibold">AllSky Control</span>
+            <span className="text-sm font-semibold">Sky Weaver Hub</span>
           </div>
           <div className="w-9" />
         </header>

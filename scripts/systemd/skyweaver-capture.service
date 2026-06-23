@@ -1,0 +1,17 @@
+[Unit]
+Description=Sky Weaver Hub capture daemon
+After=skyweaver-api.service
+PartOf=skyweaver.target
+
+[Service]
+Type=simple
+User=skyweaver
+Group=skyweaver
+WorkingDirectory=/opt/skyweaver
+EnvironmentFile=-/etc/skyweaver/skyweaver.env
+ExecStart=/opt/skyweaver/backend/.venv/bin/python -m skyweaver.capture_daemon
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=skyweaver.target

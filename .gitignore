@@ -12,6 +12,22 @@ dist
 dist-ssr
 *.local
 
+# Python/backend local artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+backend/.venv/
+
+# Sky Weaver local runtime data
+data/
+config/
+*.db
+*.db-shm
+*.db-wal
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
