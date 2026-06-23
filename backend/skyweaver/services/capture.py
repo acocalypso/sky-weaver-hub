@@ -1,4 +1,5 @@
 import json
+import os
 import shutil
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -12,6 +13,7 @@ from ..camera.base import CaptureRequest
 from ..camera.registry import get_adapter
 from ..config import get_settings
 from ..db import event, json_dumps, json_loads, log, new_id, now_iso, row_to_dict, session
+from .schedule import should_capture_now
 
 
 @dataclass
@@ -222,10 +224,29 @@ def capture_interval_seconds() -> int:
     return max(1, int(row["interval_seconds"]))
 
 
+def current_schedule() -> dict[str, Any]:
+    with session() as conn:
+        row = conn.execute("SELECT * FROM capture_schedule LIMIT 1").fetchone()
+    return decode_row(row_to_dict(row)) or {}
+
+
+def schedule_allows_capture() -> bool:
+    schedule = current_schedule()
+    return should_capture_now(schedule)
+
+
 def capture_is_running() -> bool:
     with session() as conn:
         row = conn.execute("SELECT status FROM capture_state WHERE id=1").fetchone()
     return bool(row and row["status"] == "running")
+
+
+def update_daemon_heartbeat(pid: int | None = None) -> None:
+    with session() as conn:
+        conn.execute(
+            "UPDATE capture_state SET daemon_heartbeat_at=?, daemon_pid=?, updated_at=? WHERE id=1",
+            (now_iso(), pid if pid is not None else os.getpid(), now_iso()),
+        )
 
 
 def analyze_image(path: Path) -> dict[str, Any]:

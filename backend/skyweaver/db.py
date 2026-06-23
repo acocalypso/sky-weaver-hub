@@ -44,7 +44,8 @@ CREATE TABLE IF NOT EXISTS capture_schedule (
 );
 CREATE TABLE IF NOT EXISTS capture_state (
   id INTEGER PRIMARY KEY CHECK (id = 1), status TEXT NOT NULL, current_mode TEXT NOT NULL,
-  active_camera_id TEXT, last_image_id TEXT, last_error TEXT, started_at TEXT, updated_at TEXT NOT NULL
+  active_camera_id TEXT, last_image_id TEXT, last_error TEXT, started_at TEXT,
+  daemon_heartbeat_at TEXT, daemon_pid INTEGER, updated_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS capture_jobs (
   id TEXT PRIMARY KEY, type TEXT NOT NULL, status TEXT NOT NULL, request TEXT NOT NULL,
@@ -140,7 +141,15 @@ def init_db(path: Path | None = None) -> None:
     settings = get_settings()
     with session(path) as conn:
         conn.executescript(SCHEMA)
+        ensure_columns(conn, "capture_state", {"daemon_heartbeat_at": "TEXT", "daemon_pid": "INTEGER"})
         seed_defaults(conn, settings.admin_username, settings.admin_password)
+
+
+def ensure_columns(conn: sqlite3.Connection, table: str, columns: dict[str, str]) -> None:
+    existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+    for name, definition in columns.items():
+        if name not in existing:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
 
 
 def seed_defaults(conn: sqlite3.Connection, admin_username: str, admin_password: str | None) -> None:

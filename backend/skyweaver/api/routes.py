@@ -1,5 +1,6 @@
 import asyncio
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Annotated
 
@@ -11,7 +12,8 @@ from ..camera.registry import adapters, get_adapter
 from ..config import get_settings
 from ..db import event, init_db, json_dumps, json_loads, new_id, now_iso, row_to_dict, session
 from ..security import create_api_key, hash_password, make_token, verify_password
-from ..services.capture import CaptureCommand, all_rows, count_files, create_capture_job, decode_row, enqueue_capture, execute_capture, get_primary_camera, system_metrics
+from ..services.capture import CaptureCommand, all_rows, count_files, create_capture_job, current_schedule, decode_row, enqueue_capture, execute_capture, get_primary_camera, system_metrics
+from ..services.schedule import active_window
 from .deps import current_principal, require_scope
 from .responses import ok
 
@@ -99,9 +101,20 @@ def metrics(_principal: Annotated[dict, Depends(require_scope("read:status"))]):
 
 @router.get("/system/services")
 def services(_principal: Annotated[dict, Depends(require_scope("read:status"))]):
+    with session() as conn:
+        state = decode_row(row_to_dict(conn.execute("SELECT daemon_heartbeat_at, daemon_pid FROM capture_state WHERE id=1").fetchone())) or {}
+    heartbeat = state.get("daemon_heartbeat_at")
+    age_seconds = None
+    capture_status = "idle"
+    if heartbeat:
+        try:
+            age_seconds = int((datetime.now(UTC) - datetime.fromisoformat(heartbeat)).total_seconds())
+            capture_status = "running" if age_seconds <= 120 else "stale"
+        except ValueError:
+            capture_status = "unknown"
     return ok([
         {"name": "skyweaver-api", "status": "running", "managed_by": "systemd"},
-        {"name": "skyweaver-capture", "status": "idle", "managed_by": "systemd"},
+        {"name": "skyweaver-capture", "status": capture_status, "managed_by": "systemd", "heartbeat_at": heartbeat, "heartbeat_age_seconds": age_seconds, "pid": state.get("daemon_pid")},
         {"name": "skyweaver-worker", "status": "idle", "managed_by": "systemd"},
     ])
 
@@ -471,7 +484,11 @@ def put_schedule(body: SchedulePut, _principal: Annotated[dict, Depends(require_
 
 @router.post("/schedule/preview-tonight")
 def preview_tonight(payload: dict[str, Any], _principal: Annotated[dict, Depends(require_scope("read:settings"))]):
-    return ok({"sun_angle": payload.get("sun_angle", -6), "note": "Astral transition preview will be expanded in the capture daemon phase."})
+    schedule = {**current_schedule(), **payload}
+    preview_now = None
+    if isinstance(schedule.get("now"), str):
+        preview_now = datetime.fromisoformat(schedule.pop("now"))
+    return ok(active_window(schedule, preview_now))
 
 
 @router.post("/schedule/recalculate")

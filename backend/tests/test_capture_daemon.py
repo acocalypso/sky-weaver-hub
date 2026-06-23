@@ -51,6 +51,21 @@ def test_daemon_respects_interval(tmp_path: Path):
     assert len(images) == 1
 
 
+def test_daemon_skips_scheduled_capture_when_schedule_disabled(tmp_path: Path):
+    client = make_client(tmp_path)
+    token = login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+    assert client.post("/api/v1/capture/start", headers=headers).status_code == 200
+
+    from skyweaver.capture_daemon import CaptureDaemon
+
+    daemon = CaptureDaemon()
+    assert asyncio.run(daemon.run_once()) is False
+
+    images = client.get("/api/v1/images", headers=headers).json()["data"]
+    assert images == []
+
+
 def test_daemon_consumes_queued_single_capture(tmp_path: Path):
     client = make_client(tmp_path)
     token = login(client)
@@ -79,3 +94,45 @@ def test_daemon_consumes_queued_single_capture(tmp_path: Path):
     images = client.get("/api/v1/images", headers=headers).json()["data"]
     assert len(images) == 1
     assert images[0]["mode"] == "manual"
+
+
+def test_schedule_preview_reports_active_fixed_window(tmp_path: Path):
+    client = make_client(tmp_path)
+    token = login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    preview = client.post(
+        "/api/v1/schedule/preview-tonight",
+        headers=headers,
+        json={
+            "enabled": True,
+            "start_mode": "fixed",
+            "end_mode": "fixed",
+            "fixed_start_time": "18:00",
+            "fixed_end_time": "06:00",
+            "timezone": "UTC",
+            "now": "2026-06-23T23:00:00+00:00",
+        },
+    ).json()["data"]
+
+    assert preview["active"] is True
+    assert preview["next_state"] == "inactive"
+    assert preview["window_start"].startswith("2026-06-23T18:00:00")
+    assert preview["window_end"].startswith("2026-06-24T06:00:00")
+
+
+def test_daemon_heartbeat_is_reported_by_services(tmp_path: Path):
+    client = make_client(tmp_path)
+    token = login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    from skyweaver.capture_daemon import CaptureDaemon
+
+    daemon = CaptureDaemon()
+    assert asyncio.run(daemon.run_once()) is False
+
+    services = client.get("/api/v1/system/services", headers=headers).json()["data"]
+    capture = next(item for item in services if item["name"] == "skyweaver-capture")
+    assert capture["status"] == "running"
+    assert capture["heartbeat_at"]
+    assert capture["pid"]

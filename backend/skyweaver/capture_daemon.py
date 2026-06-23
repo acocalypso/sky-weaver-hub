@@ -7,7 +7,17 @@ from typing import Iterator
 
 from .config import get_settings
 from .db import init_db, log, session
-from .services.capture import capture_interval_seconds, capture_is_running, claim_next_capture_job, create_capture_job, execute_capture, execute_capture_job, schedule_command
+from .services.capture import (
+    capture_interval_seconds,
+    capture_is_running,
+    claim_next_capture_job,
+    create_capture_job,
+    execute_capture,
+    execute_capture_job,
+    schedule_allows_capture,
+    schedule_command,
+    update_daemon_heartbeat,
+)
 
 
 class CaptureDaemon:
@@ -15,6 +25,7 @@ class CaptureDaemon:
         self.last_capture_monotonic: float | None = None
 
     async def run_once(self, force: bool = False) -> bool:
+        update_daemon_heartbeat()
         if not capture_is_running():
             return False
 
@@ -28,6 +39,8 @@ class CaptureDaemon:
         interval = capture_interval_seconds()
         now = time.monotonic()
         if not force and self.last_capture_monotonic is not None and now - self.last_capture_monotonic < interval:
+            return False
+        if not force and not schedule_allows_capture():
             return False
 
         command = schedule_command()
