@@ -307,8 +307,13 @@ def list_cameras(_principal: Annotated[dict, Depends(require_scope("read:setting
 @router.post("/cameras/detect")
 async def detect_cameras(_principal: Annotated[dict, Depends(require_scope("read:settings"))]):
     found = []
+    seen = set()
     for adapter in adapters().values():
         for cam in await adapter.detect():
+            key = (cam.backend, cam.id)
+            if key in seen:
+                continue
+            seen.add(key)
             found.append(cam.__dict__)
     return ok(found)
 

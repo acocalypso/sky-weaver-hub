@@ -1,4 +1,5 @@
 import asyncio
+import re
 import shutil
 from pathlib import Path
 
@@ -28,7 +29,7 @@ class RpiCamAdapter(CameraAdapter):
         text = stdout.decode(errors="replace")
         if proc.returncode != 0 or "Available cameras" not in text:
             return []
-        lines = [line.strip() for line in text.splitlines() if line.strip() and ")" in line]
+        lines = [line.strip() for line in text.splitlines() if re.match(r"^\d+\s*:", line.strip())]
         cameras: list[DetectedCamera] = []
         for index, line in enumerate(lines):
             cameras.append(DetectedCamera(id=f"rpicam://{index}", name=f"Pi camera {index}", backend=self.backend, model=line, metadata={"raw": line}))
