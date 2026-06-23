@@ -96,6 +96,38 @@ def test_daemon_consumes_queued_single_capture(tmp_path: Path):
     assert images[0]["mode"] == "manual"
 
 
+def test_daemon_consumes_queued_sequence_capture(tmp_path: Path):
+    client = make_client(tmp_path)
+    token = login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+    assert client.post("/api/v1/capture/start", headers=headers).status_code == 200
+
+    queued = client.post(
+        "/api/v1/capture/sequence",
+        headers=headers,
+        json={
+            "count": 3,
+            "delay_seconds": 0,
+            "capture": {"exposure_ms": 250, "gain": 1.5, "mode": "sequence"},
+        },
+    ).json()["data"]
+    assert queued["status"] == "pending"
+
+    from skyweaver.capture_daemon import CaptureDaemon
+
+    daemon = CaptureDaemon()
+    assert asyncio.run(daemon.run_once()) is True
+
+    after = client.get(f"/api/v1/capture/jobs/{queued['id']}", headers=headers).json()["data"]
+    assert after["status"] == "completed"
+    assert after["result"]["requested_count"] == 3
+    assert after["result"]["completed_count"] == 3
+    assert len(after["result"]["image_ids"]) == 3
+
+    images = client.get("/api/v1/images?mode=sequence", headers=headers).json()["data"]
+    assert len(images) == 3
+
+
 def test_schedule_preview_reports_active_fixed_window(tmp_path: Path):
     client = make_client(tmp_path)
     token = login(client)

@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import shutil
@@ -93,7 +94,7 @@ def enqueue_capture(command: CaptureCommand, job_type: str = "single") -> dict[s
     return {"id": job_id, "status": "pending", "type": job_type}
 
 
-def claim_next_capture_job(job_types: tuple[str, ...] = ("single", "scheduled")) -> dict[str, Any] | None:
+def claim_next_capture_job(job_types: tuple[str, ...] = ("single", "scheduled", "sequence")) -> dict[str, Any] | None:
     placeholders = ",".join("?" for _ in job_types)
     with session() as conn:
         conn.execute("BEGIN IMMEDIATE")
@@ -109,7 +110,42 @@ def claim_next_capture_job(job_types: tuple[str, ...] = ("single", "scheduled"))
 
 
 async def execute_capture_job(job: dict[str, Any]) -> dict[str, Any]:
+    if job["type"] == "sequence":
+        return await execute_sequence_job(job)
     return await execute_capture(CaptureCommand.from_mapping(job["request"]), job["type"], job_id=job["id"])
+
+
+async def execute_sequence_job(job: dict[str, Any]) -> dict[str, Any]:
+    request = job["request"]
+    count = max(1, min(100, int(request.get("count", request.get("frames", 1)))))
+    delay_seconds = max(0.0, float(request.get("delay_seconds", request.get("interval_seconds", 0))))
+    capture_payload = request.get("capture") if isinstance(request.get("capture"), dict) else request
+    command = CaptureCommand.from_mapping({**capture_payload, "mode": capture_payload.get("mode", "sequence")})
+    image_ids: list[str] = []
+
+    with session() as conn:
+        conn.execute("UPDATE capture_jobs SET status='running', started_at=? WHERE id=?", (now_iso(), job["id"]))
+
+    try:
+        for index in range(count):
+            if not capture_is_running():
+                break
+            result = await execute_capture(command, "sequence_item")
+            image_ids.append(result["image"]["id"])
+            if index < count - 1 and delay_seconds:
+                await asyncio.sleep(delay_seconds)
+
+        status = "completed" if len(image_ids) == count else "stopped"
+        payload = {"image_ids": image_ids, "requested_count": count, "completed_count": len(image_ids)}
+        with session() as conn:
+            conn.execute("UPDATE capture_jobs SET status=?, result=?, completed_at=? WHERE id=?", (status, json_dumps(payload), now_iso(), job["id"]))
+            event(conn, "capture_sequence_completed", {"job_id": job["id"], **payload})
+        return {"job_id": job["id"], **payload}
+    except Exception as exc:
+        with session() as conn:
+            conn.execute("UPDATE capture_jobs SET status='failed', error=?, completed_at=? WHERE id=?", (str(exc), now_iso(), job["id"]))
+            event(conn, "camera_error", {"job_id": job["id"], "error": str(exc)})
+        raise
 
 
 async def execute_capture(command: CaptureCommand, job_type: str = "manual", job_id: str | None = None) -> dict[str, Any]:
