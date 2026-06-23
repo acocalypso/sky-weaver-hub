@@ -27,6 +27,8 @@ cp -a /etc/skyweaver "$BACKUP_DIR/config" 2>/dev/null || true
 cp -a /var/lib/skyweaver/skyweaver.db "$BACKUP_DIR/skyweaver.db" 2>/dev/null || true
 grant_hardware_groups
 rsync -a --delete --exclude .git --exclude node_modules --exclude data --exclude logs "$ROOT_DIR/" "$INSTALL_DIR/"
+python3 -m venv "$INSTALL_DIR/backend/.venv"
+"$INSTALL_DIR/backend/.venv/bin/pip" install --upgrade pip
 "$INSTALL_DIR/backend/.venv/bin/pip" install -r "$INSTALL_DIR/backend/requirements.txt"
 npm ci --prefix "$INSTALL_DIR"
 npm run build --prefix "$INSTALL_DIR"
