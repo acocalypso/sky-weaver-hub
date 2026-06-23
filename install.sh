@@ -50,7 +50,7 @@ detect_os() {
 
 install_packages() {
   run apt-get update
-  run apt-get install -y git curl jq python3 python3-venv python3-pip ffmpeg imagemagick v4l-utils gphoto2 sqlite3 build-essential
+  run apt-get install -y git curl jq nodejs npm python3 python3-venv python3-pip ffmpeg imagemagick v4l-utils gphoto2 sqlite3 build-essential
   if [[ "$DRY_RUN" == "1" ]]; then
     run apt-get install -y rpicam-apps
     echo "+ apt-get install -y libcamera-apps # fallback if rpicam-apps is unavailable"
