@@ -112,9 +112,10 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 - Thumbnail reprocess jobs regenerate thumbnails for existing image rows.
 - Keogram jobs generate a real JPEG night product from same-day image center columns.
 - Timelapse jobs generate downloadable MP4/WebM night products through `ffmpeg`.
-- Completed keograms and timelapses are inserted into `night_products` and are downloadable through `/api/v1/products/{id}/download`.
+- Startrail jobs generate downloadable JPEG night products through lighten blending.
+- Completed keograms, timelapses, and startrails are inserted into `night_products` and are downloadable through `/api/v1/products/{id}/download`.
 - `/api/v1/processing/jobs` exposes queued/running/completed processing jobs for UI progress.
-- Backend tests verify keogram and timelapse product generation from mock captures.
+- Backend tests verify keogram, timelapse, and startrail product generation from mock captures.
 
 ### Documentation
 
@@ -131,7 +132,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 | Phase 3: Camera adapters and test shot | Partial | Mock and rpicam/libcamera implemented. ZWO, gPhoto2, V4L2, INDI, custom command are placeholders. |
 | Phase 4: Capture daemon and realtime | Partial | Scheduled daemon loop, shared capture service, persistent job claiming for single/scheduled/sequence captures, pause/resume/stop queue semantics, active-window checks and UI preview, interval gating, lock-file duplicate-loop guard, heartbeat/activity reporting, and SSE endpoint exist. Reboot recovery is open. |
 | Phase 5: Image storage/gallery/latest/metadata | Partial | Mock capture artifacts, metadata, thumbnails, image rows, gallery, latest image exist. Latest symlink/copy and broader metadata extraction are open. |
-| Phase 6: Processing worker/products/retention | Partial | Worker claims jobs, thumbnail reprocess exists, keogram JPEG generation and ffmpeg timelapse generation exist, and product job progress is visible in the UI. Startrail, mini timelapse, cleanup, and upload execution are open. |
+| Phase 6: Processing worker/products/retention | Partial | Worker claims jobs, thumbnail reprocess exists, keogram JPEG generation, ffmpeg timelapse generation, and startrail generation exist, and product job progress is visible in the UI. Mini timelapse, cleanup, and upload execution are open. |
 | Phase 7: Overlay/modules | Early scaffold | Module tables/endpoints exist. Overlay editor, processor, built-in modules, safe module execution are open. |
 | Phase 8: Installer/systemd/support/docs | Partial | Scripts and units exist. Interactive setup, nginx option, shellcheck, idempotency tests, and Pi verification are open. |
 | Phase 9: Allsky migration/remote upload | Early scaffold | Detection and dry-run count preview exist. Real import, rollback, unsupported-setting report, and remote upload execution are open. |
@@ -202,7 +203,6 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 
 - Expand keogram generation options and UI progress.
 - Implement mini timelapse generation.
-- Implement startrail generation.
 - Expand product progress reporting with detailed per-frame/per-stage progress.
 - Add regenerate by date/date range.
 - Add download-ready UI states.
@@ -325,8 +325,8 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 ## Known Current Limitations
 
 - Capture daemon now performs scheduled captures and consumes queued single-capture and sequence jobs. Pause/resume/stop queue semantics, daemon activity visibility, and Dashboard capture job progress exist; reboot recovery is still open.
-- Worker now generates thumbnails, keograms, and ffmpeg timelapses, but mini timelapse, startrail, retention cleanup, and upload execution are still open.
-- Product endpoints queue jobs; keogram and timelapse currently produce downloadable night products.
+- Worker now generates thumbnails, keograms, ffmpeg timelapses, and startrails, but mini timelapse, retention cleanup, and upload execution are still open.
+- Product endpoints queue jobs; keogram, timelapse, and startrail currently produce downloadable night products.
 - Public page is not implemented.
 - Remote upload is not implemented.
 - Allsky migration does not yet import data.
@@ -343,7 +343,7 @@ Most recent checks run during implementation:
 - `npm test`: passed
 - `npm run lint`: passed with zero warnings
 - `npm audit --audit-level=high`: passed with 0 vulnerabilities
-- `backend\\.venv\\Scripts\\python -m pytest backend\\tests`: passed with 16 tests
+- `backend\\.venv\\Scripts\\python -m pytest backend\\tests`: passed with 17 tests
 
 ## Recommended Next Phase
 
@@ -351,7 +351,7 @@ The next development phase should focus on the next processing products, because
 
 Suggested next tasks:
 
-1. Implement mini timelapse or startrail generation.
+1. Implement mini timelapse generation.
 2. Add reboot recovery rules for claimed/running capture and processing jobs.
 3. Add a dedicated system health page with service controls and diagnostics export.
 4. Run a mock-camera overnight simulation that creates multiple captures and verifies latest/gallery updates.

@@ -3,14 +3,14 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from PIL import Image
+from PIL import Image, ImageChops
 
 from ..config import get_settings
 from ..db import event, json_dumps, log, now_iso, row_to_dict, session
 from .capture import decode_row, make_thumbnail
 
 
-def claim_next_processing_job(job_types: tuple[str, ...] = ("thumbnail", "keogram", "timelapse")) -> dict[str, Any] | None:
+def claim_next_processing_job(job_types: tuple[str, ...] = ("thumbnail", "keogram", "timelapse", "startrail")) -> dict[str, Any] | None:
     placeholders = ",".join("?" for _ in job_types)
     with session() as conn:
         conn.execute("BEGIN IMMEDIATE")
@@ -33,6 +33,8 @@ async def execute_processing_job(job: dict[str, Any]) -> dict[str, Any]:
             result = generate_keogram(job)
         elif job["type"] == "timelapse":
             result = generate_timelapse(job)
+        elif job["type"] == "startrail":
+            result = generate_startrail(job)
         else:
             raise ValueError(f"Unsupported processing job type: {job['type']}")
 
@@ -123,6 +125,52 @@ def generate_keogram(job: dict[str, Any]) -> dict[str, Any]:
     return {"product_id": product_id, "day_key": day_key, "file_path": str(output), "thumbnail_path": str(thumb) if thumb else None, "source_images": len(images)}
 
 
+def generate_startrail(job: dict[str, Any]) -> dict[str, Any]:
+    day_key = job["input"].get("day_key") or latest_day_key()
+    if not day_key:
+        raise ValueError("startrail job requires day_key or at least one image")
+
+    with session() as conn:
+        images = [
+            decode_row(row_to_dict(row))
+            for row in conn.execute("SELECT * FROM images WHERE day_key=? ORDER BY captured_at", (day_key,)).fetchall()
+        ]
+    images = [image for image in images if image and Path(image["file_path"]).exists()]
+    if not images:
+        raise ValueError(f"No images found for day {day_key}")
+
+    settings = get_settings()
+    product_dir = settings.product_dir / day_key
+    product_dir.mkdir(parents=True, exist_ok=True)
+    product_id = job["id"]
+    output = product_dir / f"startrail_{day_key}_{product_id[:8]}.jpg"
+    max_width = max(320, min(3840, int(job["input"].get("max_width", 1920))))
+
+    trail: Image.Image | None = None
+    for index, image in enumerate(images):
+        with Image.open(image["file_path"]) as img:
+            frame = normalize_still_frame(img.convert("RGB"), max_width)
+        if trail is None:
+            trail = frame
+        else:
+            if frame.size != trail.size:
+                frame = frame.resize(trail.size)
+            trail = ImageChops.lighter(trail, frame)
+        update_processing_progress(product_id, 0.05 + ((index + 1) / len(images)) * 0.8)
+
+    if trail is None:
+        raise ValueError(f"No readable images found for day {day_key}")
+    trail.save(output, quality=94)
+    thumb = make_thumbnail(output, settings.thumbnail_dir / day_key / output.name)
+    metadata = {"day_key": day_key, "source_images": len(images), "kind": "lighten-blend", "max_width": max_width}
+    with session() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO night_products (id, type, day_key, file_path, thumbnail_path, status, metadata, created_at) VALUES (?, 'startrail', ?, ?, ?, 'completed', ?, ?)",
+            (product_id, day_key, str(output), str(thumb) if thumb else None, json_dumps(metadata), now_iso()),
+        )
+    return {"product_id": product_id, "day_key": day_key, "file_path": str(output), "thumbnail_path": str(thumb) if thumb else None, "source_images": len(images)}
+
+
 def generate_timelapse(job: dict[str, Any]) -> dict[str, Any]:
     day_key = job["input"].get("day_key") or latest_day_key()
     if not day_key:
@@ -192,6 +240,13 @@ def normalize_video_frame(frame: Image.Image, max_width: int) -> Image.Image:
     if width != frame.width or height != frame.height:
         frame = frame.crop((0, 0, width, height))
     return frame
+
+
+def normalize_still_frame(frame: Image.Image, max_width: int) -> Image.Image:
+    if frame.width <= max_width:
+        return frame
+    scale = max_width / frame.width
+    return frame.resize((max_width, max(1, int(frame.height * scale))))
 
 
 def ffmpeg_command(ffmpeg: str, input_pattern: Path, output: Path, fps: int, codec: str) -> list[str]:
