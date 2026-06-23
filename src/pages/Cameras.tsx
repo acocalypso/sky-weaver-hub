@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,21 +30,25 @@ export default function Cameras() {
   const [settings, setSettings] = useState<Record<string, any>>({});
   const [dlgOpen, setDlgOpen] = useState(false);
   const [editing, setEditing] = useState<CameraRow | null>(null);
+  const selectedId = selected?.id;
 
-  useEffect(() => { document.title = "Cameras - Sky Weaver Hub"; load(); }, []);
+  const pick = useCallback((camera: CameraRow, profs = profiles) => {
+    setSelected(camera);
+    setSettings(profs.find((p) => p.camera_id === camera.id && p.mode === "nighttime")?.settings ?? {});
+  }, [profiles]);
 
-  async function load() {
+  const load = useCallback(async () => {
     const [cams, profs] = await Promise.all([SkyApi.cameras(), SkyApi.cameraProfiles()]);
     setCameras(cams);
     setProfiles(profs);
-    const first = selected ? cams.find((c) => c.id === selected.id) : cams[0];
-    if (first) pick(first, profs);
-  }
+    const first = selectedId ? cams.find((c) => c.id === selectedId) : cams[0];
+    if (first) {
+      setSelected(first);
+      setSettings(profs.find((p) => p.camera_id === first.id && p.mode === "nighttime")?.settings ?? {});
+    }
+  }, [selectedId]);
 
-  function pick(camera: CameraRow, profs = profiles) {
-    setSelected(camera);
-    setSettings(profs.find((p) => p.camera_id === camera.id && p.mode === "nighttime")?.settings ?? {});
-  }
+  useEffect(() => { document.title = "Cameras - Sky Weaver Hub"; load(); }, [load]);
 
   async function runDetect() {
     try {

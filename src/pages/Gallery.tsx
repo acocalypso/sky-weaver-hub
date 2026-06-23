@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -19,10 +19,7 @@ export default function Gallery() {
   const [quality, setQuality] = useState<string>("any");
   const [selected, setSelected] = useState<ImageRow | null>(null);
 
-  useEffect(() => { document.title = "Gallery - Sky Weaver Hub"; }, []);
-  useEffect(() => { load(); }, [date, mode, quality]);
-
-  async function load() {
+  const load = useCallback(async () => {
     const params = new URLSearchParams({ limit: "200" });
     if (date) params.set("day_key", date.replaceAll("-", ""));
     if (mode !== "all") params.set("mode", mode);
@@ -32,7 +29,10 @@ export default function Gallery() {
     } catch (e: any) {
       toast.error(e.message ?? "Unable to load images");
     }
-  }
+  }, [date, mode, quality]);
+
+  useEffect(() => { document.title = "Gallery - Sky Weaver Hub"; }, []);
+  useEffect(() => { load(); }, [load]);
 
   const apiPreview = useMemo(() => selected && {
     id: selected.id,

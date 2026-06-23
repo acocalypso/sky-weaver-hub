@@ -4,7 +4,7 @@ import {
   Settings, KeyRound, Code2, ServerCog, LogOut, Telescope, Menu, X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useAuth } from "@/hooks/useAuth";
+import { useAuth } from "@/hooks/auth-context";
 import { Starfield } from "@/components/Starfield";
 import { useState } from "react";
 import { cn } from "@/lib/utils";

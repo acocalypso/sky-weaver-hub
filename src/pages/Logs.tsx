@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -14,16 +14,16 @@ export default function Logs() {
   const [level, setLevel] = useState("all");
   const [source, setSource] = useState("");
 
-  useEffect(() => { document.title = "Logs - Sky Weaver Hub"; }, []);
-  useEffect(() => { load(); const t = setInterval(load, 5000); return () => clearInterval(t); }, [level, source]);
-
-  async function load() {
+  const load = useCallback(async () => {
     const params = new URLSearchParams();
     if (level !== "all") params.set("level", level);
     if (source) params.set("source", source);
     const query = params.toString() ? `?${params}` : "";
     try { setLogs(await SkyApi.logs(query)); } catch { /* keep last log view */ }
-  }
+  }, [level, source]);
+
+  useEffect(() => { document.title = "Logs - Sky Weaver Hub"; }, []);
+  useEffect(() => { load(); const t = setInterval(load, 5000); return () => clearInterval(t); }, [load]);
 
   return (
     <div className="space-y-6">

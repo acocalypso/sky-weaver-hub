@@ -1,19 +1,6 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from "react";
+import { useEffect, useState, ReactNode } from "react";
 import { getToken, setToken, SkyApi, type SkyUserPrincipal } from "@/lib/api";
-
-type Role = "admin" | "operator" | "viewer";
-
-interface AuthCtx {
-  user: SkyUserPrincipal | null;
-  token: string | null;
-  loading: boolean;
-  roles: Role[];
-  isAdmin: boolean;
-  signIn: (username: string, password: string) => Promise<void>;
-  signOut: () => Promise<void>;
-}
-
-const Ctx = createContext<AuthCtx | undefined>(undefined);
+import { AuthContext, type AuthCtx, type Role } from "@/hooks/auth-context";
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [tokenState, setTokenState] = useState<string | null>(getToken());
@@ -70,11 +57,5 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
   };
 
-  return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
-}
-
-export function useAuth() {
-  const c = useContext(Ctx);
-  if (!c) throw new Error("useAuth must be used inside AuthProvider");
-  return c;
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
