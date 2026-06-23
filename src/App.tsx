@@ -15,7 +15,9 @@ import Gallery from "@/pages/Gallery";
 import Timelapses from "@/pages/Timelapses";
 import Logs from "@/pages/Logs";
 import SettingsPage from "@/pages/Settings";
-import { ApiKeys, DeveloperApi, Deployment } from "@/pages/Placeholder";
+import ApiKeys from "@/pages/ApiKeys";
+import DeveloperApi from "@/pages/DeveloperApi";
+import { Deployment } from "@/pages/Placeholder";
 
 const queryClient = new QueryClient();
 

@@ -47,6 +47,8 @@ export const SkyApi = {
   createProduct: (type: string, body: any) => api<any>(`/api/v1/products/${type}`, { method: "POST", body: JSON.stringify(body) }),
   apiKeys: () => api<ApiKeyRow[]>("/api/v1/api-keys"),
   createApiKey: (body: { name: string; scopes: string[] }) => api<any>("/api/v1/api-keys", { method: "POST", body: JSON.stringify(body) }),
+  patchApiKey: (id: string, body: { enabled?: boolean }) => api<any>(`/api/v1/api-keys/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  deleteApiKey: (id: string) => api<{ deleted: string }>(`/api/v1/api-keys/${id}`, { method: "DELETE" }),
   migrationDetect: () => api<any[]>("/api/v1/migration/allsky/detect"),
 };
 
