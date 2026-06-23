@@ -629,10 +629,11 @@ def product(product_id: str, _principal: Annotated[dict, Depends(require_scope("
 def create_product(product_type: str, payload: dict[str, Any], _principal: Annotated[dict, Depends(require_scope("write:processing"))]):
     if product_type not in {"keogram", "startrail", "timelapse", "mini-timelapse"}:
         raise HTTPException(404, "Unknown product type")
+    job_type = product_type.replace("-", "_")
     with session() as conn:
         job_id = new_id()
-        conn.execute("INSERT INTO processing_jobs (id, type, status, input, created_at) VALUES (?, ?, 'pending', ?, ?)", (job_id, product_type.replace("-", "_"), json_dumps(payload), now_iso()))
-    return ok({"id": job_id, "status": "pending"})
+        conn.execute("INSERT INTO processing_jobs (id, type, status, input, created_at) VALUES (?, ?, 'pending', ?, ?)", (job_id, job_type, json_dumps(payload), now_iso()))
+    return ok({"id": job_id, "type": job_type, "status": "pending", "input": payload, "progress": 0})
 
 
 @router.get("/products/{product_id}/download")
