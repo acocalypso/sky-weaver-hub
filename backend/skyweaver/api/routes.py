@@ -457,7 +457,7 @@ def single_capture(body: CaptureBody, _principal: dict = Depends(require_scope("
 def capture_sequence(body: dict[str, Any], _principal: Annotated[dict, Depends(require_scope("write:capture"))]):
     with session() as conn:
         job_id = create_capture_job(conn, "sequence", body)
-    return ok({"id": job_id, "status": "pending"})
+    return ok({"id": job_id, "status": "pending", "type": "sequence", "request": body, "progress": 0})
 
 
 @router.get("/capture/jobs")

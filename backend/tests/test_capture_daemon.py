@@ -163,6 +163,8 @@ def test_daemon_consumes_queued_sequence_capture(tmp_path: Path):
         },
     ).json()["data"]
     assert queued["status"] == "pending"
+    assert queued["type"] == "sequence"
+    assert queued["progress"] == 0
 
     from skyweaver.capture_daemon import CaptureDaemon
 

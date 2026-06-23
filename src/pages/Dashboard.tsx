@@ -204,7 +204,7 @@ export default function Dashboard() {
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    <p className="font-medium capitalize">{job.type.replaceAll("_", " ")}</p>
+                    <p className="font-medium capitalize">{formatJobType(job)}</p>
                     <StatusBadge variant={jobStatusVariant(job.status)}>{job.status}</StatusBadge>
                   </div>
                   <p className="text-xs text-muted-foreground font-mono-data truncate">{formatJobDetail(job)}</p>
@@ -293,6 +293,10 @@ function formatJobDetail(job: CaptureJob) {
   if (job.type === "sequence") return `${completed ?? 0}/${count ?? "-"} frames - job ${job.id}`;
   if (result?.image_id) return `image ${result.image_id} - job ${job.id}`;
   return `${capture?.exposure_ms ?? "-"} ms, gain ${capture?.gain ?? "-"} - job ${job.id}`;
+}
+
+function formatJobType(job: CaptureJob) {
+  return (job.type ?? "capture").replaceAll("_", " ");
 }
 
 function jobStatusVariant(status?: string): "ok" | "warn" | "error" | "idle" | "active" {
