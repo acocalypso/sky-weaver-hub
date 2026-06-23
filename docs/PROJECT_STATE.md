@@ -18,7 +18,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 | Backend | FastAPI under `backend/skyweaver`, OpenAPI docs at `/api/docs`, REST API under `/api/v1`. |
 | Database | SQLite via stdlib `sqlite3`, schema seeded in `backend/skyweaver/db.py`. No external database dependency. |
 | Storage | Local filesystem storage for images, thumbnails, products, logs, and config. Dev defaults are local paths; system install targets `/var/lib/skyweaver`, `/etc/skyweaver`, `/var/log/skyweaver`. |
-| Auth | Local admin JWT login plus hashed API keys with scopes. Installer can seed a configured admin password hash during first setup. In-app first-setup enforcement is still open. |
+| Auth | Local admin JWT login plus hashed API keys with scopes. Installer can seed a configured admin password hash during first setup, and the app now enforces guided setup completion before normal admin use. |
 | Camera abstraction | `CameraAdapter` base class plus working `mock` adapter and initial `rpicam`/`libcamera` adapter. Other adapters are placeholders with actionable errors. |
 | UI/API integration | Dashboard, Cameras, Schedule, Gallery, Night Products, Logs, Settings, API Keys, and Developer API call the local backend. |
 | Deployment | `install.sh`, `upgrade.sh`, `uninstall.sh`, `support.sh`, and systemd units exist. Fresh interactive installs prompt for first-setup values. |
@@ -85,6 +85,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 ### Frontend
 
 - Local login page.
+- First-setup page that blocks normal admin routes until observatory details, timezone, primary camera, public page mode, and bootstrap password status are confirmed.
 - Dashboard with latest image, start/pause/resume/stop/test-shot controls, queued single/sequence capture controls, capture job progress, daemon activity, status, metrics, and recent captures.
 - Cameras page with detection, adapter selection, night-profile editing, and test shot.
 - Schedule page with sun-angle/fixed/manual mode settings.
@@ -137,7 +138,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 | --- | --- | --- |
 | Phase 0: Repo inspection | Done | React/Vite Lovable-style frontend identified; Supabase flow replaced by local API direction. |
 | Phase 1: API skeleton and SQLite | Mostly done | Backend, schema, health/status, API client, core routes, and mock capture exist. Dedicated migration framework still needed. |
-| Phase 2: Auth/API keys/settings/docs | Mostly done | JWT login, API-key scopes, settings, API Keys UI, Developer API UI, and installer-seeded first setup values exist. In-app first-setup enforcement and rate limiting are still open. |
+| Phase 2: Auth/API keys/settings/docs | Mostly done | JWT login, API-key scopes, settings, API Keys UI, Developer API UI, installer-seeded first setup values, and in-app first-setup enforcement exist. Rate limiting is still open. |
 | Phase 3: Camera adapters and test shot | Partial | Mock and rpicam/libcamera implemented. ZWO, gPhoto2, V4L2, INDI, custom command are placeholders. |
 | Phase 4: Capture daemon and realtime | Partial | Scheduled daemon loop, shared capture service, persistent job claiming for single/scheduled/sequence captures, pause/resume/stop queue semantics, active-window checks and UI preview, interval gating, lock-file duplicate-loop guard with stale lock recovery, heartbeat/activity reporting, interrupted job recovery, SSE endpoint, and Pi reboot service startup acceptance exist. Broader real-camera Pi acceptance is open. |
 | Phase 5: Image storage/gallery/latest/metadata | Partial | Mock capture artifacts, metadata, thumbnails, image rows, gallery, latest image exist. Latest symlink/copy and broader metadata extraction are open. |
@@ -159,9 +160,9 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 - Complete mock acceptance flow end to end:
   - run longer manual/dev overnight simulations outside pytest
   - validate behavior with real service restarts
-- Add in-app first-run setup enforcement:
-  - block normal admin use while bootstrap credentials are still active
-  - guide users to verify observatory location, timezone, primary camera adapter, and public page mode
+- Harden first-run setup:
+  - add stronger bootstrap-password detection after manual database/config edits
+  - add camera-presence suggestions during setup when no hardware adapter is detected
 
 ### Raspberry Pi Deployment
 
@@ -243,7 +244,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 ### Security
 
 - Remove any permanent reliance on bootstrap `admin / skyweaver-change-me`.
-- Add first-setup-required enforcement.
+- Expand first-setup enforcement with password-strength guidance and rate limiting.
 - Add auth endpoint rate limiting.
 - Add CSRF protection if cookie auth is introduced.
 - Add better secret handling for remote targets.
@@ -338,7 +339,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 Most recent checks run during implementation:
 
 - `npm run build`: passed
-- `npm test`: passed with 4 tests
+- `npm test`: passed with 5 tests
 - `npm run lint`: passed with zero warnings
 - `npm audit --audit-level=high`: passed with 0 vulnerabilities
 - `backend\\.venv\\Scripts\\python -m pytest backend\\tests`: passed with 22 tests
@@ -346,9 +347,9 @@ Most recent checks run during implementation:
 Most recent local follow-up checks on 2026-06-23:
 
 - `npm run lint`: passed
-- `npm test`: passed with 4 tests
+- `npm test`: passed with 5 tests
 - `npm run build`: passed
-- `backend\\.venv\\Scripts\\python -m pytest backend\\tests`: passed with 24 tests
+- `backend\\.venv\\Scripts\\python -m pytest backend\\tests`: passed with 26 tests
 - `bash scripts/test_install.sh`: passed
 - `bash -n install.sh scripts/test_install.sh upgrade.sh uninstall.sh support.sh`: passed
 - `shellcheck install.sh scripts/test_install.sh upgrade.sh uninstall.sh support.sh`: not run locally because ShellCheck is not installed on this Windows host; CI installs ShellCheck on Ubuntu.
@@ -369,6 +370,6 @@ The next development phase should focus on operational hardening, because interr
 
 Suggested next tasks:
 
-1. Add in-app first-setup-required enforcement and guided setup completion.
-2. Expand system health service controls after systemd validation.
-3. Validate real camera capture behavior across service restart and reboot.
+1. Expand system health service controls after systemd validation.
+2. Validate real camera capture behavior across service restart and reboot.
+3. Add camera-presence suggestions and stronger password guidance to first setup.

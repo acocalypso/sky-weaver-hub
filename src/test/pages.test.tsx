@@ -1,10 +1,12 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import Dashboard from "@/pages/Dashboard";
 import Gallery from "@/pages/Gallery";
 import SettingsPage from "@/pages/Settings";
 import ApiKeys from "@/pages/ApiKeys";
+import SetupPage from "@/pages/Setup";
 import { SkyApi } from "@/lib/api";
 
 vi.mock("sonner", () => ({
@@ -31,6 +33,8 @@ vi.mock("@/lib/api", async () => {
       createApiKey: vi.fn(),
       patchApiKey: vi.fn(),
       deleteApiKey: vi.fn(),
+      setupStatus: vi.fn(),
+      completeSetup: vi.fn(),
     },
   };
 });
@@ -91,6 +95,14 @@ beforeEach(() => {
   vi.mocked(SkyApi.apiKeys).mockResolvedValue([
     { id: "key-1", name: "Mobile app", prefix: "swh_1234", scopes: ["read:status", "read:images"], enabled: true, created_at: "2026-06-23T12:00:00+00:00" },
   ]);
+  vi.mocked(SkyApi.setupStatus).mockResolvedValue({
+    required: true,
+    observatory: mockSettings.observatory,
+    public_page: mockSettings.public_page,
+    schedule: { timezone: "Europe/Berlin", latitude: 47.1, longitude: 15.4 },
+    cameras: [{ id: "cam-1", name: "Mock all-sky camera", adapter: "mock", enabled: true, is_primary: true }],
+  } as any);
+  vi.mocked(SkyApi.completeSetup).mockResolvedValue({ required: false });
 });
 
 describe("main pages", () => {
@@ -127,5 +139,23 @@ describe("main pages", () => {
     expect(screen.getByText("swh_1234")).toBeInTheDocument();
     expect(screen.getByText("read:images")).toBeInTheDocument();
     await waitFor(() => expect(SkyApi.apiKeys).toHaveBeenCalled());
+  });
+
+  it("submits first setup values", async () => {
+    render(<MemoryRouter><SetupPage /></MemoryRouter>);
+
+    expect(await screen.findByRole("heading", { name: /first setup/i })).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("New admin password"), { target: { value: "new-setup-secret" } });
+    fireEvent.change(screen.getByLabelText("Confirm password"), { target: { value: "new-setup-secret" } });
+    fireEvent.click(screen.getByRole("button", { name: /complete setup/i }));
+
+    await waitFor(() => expect(SkyApi.completeSetup).toHaveBeenCalledWith(expect.objectContaining({
+      admin_password: "new-setup-secret",
+      observatory_name: "Test Observatory",
+      latitude: 47.1,
+      longitude: 15.4,
+      timezone: "Europe/Berlin",
+      primary_camera_id: "cam-1",
+    })));
   });
 });

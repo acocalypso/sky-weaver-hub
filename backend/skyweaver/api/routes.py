@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 
 from ..camera.registry import adapters, get_adapter
 from ..config import get_settings
-from ..db import event, init_db, json_dumps, json_loads, new_id, now_iso, row_to_dict, session
+from ..db import event, init_db, json_dumps, json_loads, log, new_id, now_iso, row_to_dict, session
 from ..security import create_api_key, hash_password, make_token, verify_password
 from ..services.capture import CaptureCommand, all_rows, count_files, create_capture_job, current_schedule, decode_row, enqueue_capture, execute_capture, get_primary_camera, system_metrics
 from ..services.schedule import active_window
@@ -66,6 +66,16 @@ class CaptureBody(BaseModel):
 
 class SettingsPatch(BaseModel):
     values: dict[str, Any]
+
+
+class SetupComplete(BaseModel):
+    admin_password: str | None = Field(default=None, min_length=8, max_length=128)
+    observatory_name: str = Field(default="Sky Weaver Observatory", min_length=1, max_length=120)
+    latitude: float = Field(default=0, ge=-90, le=90)
+    longitude: float = Field(default=0, ge=-180, le=180)
+    timezone: str = "UTC"
+    public_page_enabled: bool = True
+    primary_camera_id: str | None = None
 
 
 class SchedulePut(BaseModel):
@@ -218,6 +228,55 @@ def logout():
 @router.get("/auth/me")
 def me(principal: Annotated[dict, Depends(current_principal)]):
     return ok(principal)
+
+
+@router.get("/setup/status")
+def setup_status(_principal: Annotated[dict, Depends(require_scope("admin"))]):
+    with session() as conn:
+        settings_rows = {row["key"]: row["value"] for row in all_rows(conn, "SELECT * FROM system_settings")}
+        schedule = decode_row(row_to_dict(conn.execute("SELECT * FROM capture_schedule LIMIT 1").fetchone())) or {}
+        cameras = all_rows(conn, "SELECT id, name, adapter, model, is_primary FROM cameras ORDER BY is_primary DESC, created_at")
+    security = settings_rows.get("security", {})
+    observatory = settings_rows.get("observatory", {})
+    public_page = settings_rows.get("public_page", {})
+    return ok({
+        "required": bool(security.get("first_setup_required", False)),
+        "observatory": observatory,
+        "public_page": public_page,
+        "schedule": schedule,
+        "cameras": cameras,
+    })
+
+
+@router.post("/setup/complete")
+def setup_complete(body: SetupComplete, principal: Annotated[dict, Depends(require_scope("admin"))]):
+    with session() as conn:
+        settings_rows = {row["key"]: row["value"] for row in all_rows(conn, "SELECT * FROM system_settings")}
+        security = {**settings_rows.get("security", {}), "first_setup_required": False}
+        observatory = {
+            "name": body.observatory_name,
+            "latitude": body.latitude,
+            "longitude": body.longitude,
+            "timezone": body.timezone,
+        }
+        public_page = {**settings_rows.get("public_page", {}), "enabled": body.public_page_enabled}
+        for key, value in {"security": security, "observatory": observatory, "public_page": public_page}.items():
+            conn.execute("INSERT OR REPLACE INTO system_settings (key, value, updated_at) VALUES (?, ?, ?)", (key, json_dumps(value), now_iso()))
+        conn.execute(
+            "UPDATE capture_schedule SET timezone=?, latitude=?, longitude=?, updated_at=? WHERE id=(SELECT id FROM capture_schedule LIMIT 1)",
+            (body.timezone, body.latitude, body.longitude, now_iso()),
+        )
+        if body.primary_camera_id:
+            exists = conn.execute("SELECT id FROM cameras WHERE id=?", (body.primary_camera_id,)).fetchone()
+            if not exists:
+                raise HTTPException(404, "Primary camera not found")
+            conn.execute("UPDATE cameras SET is_primary=0")
+            conn.execute("UPDATE cameras SET is_primary=1, updated_at=? WHERE id=?", (now_iso(), body.primary_camera_id))
+            conn.execute("UPDATE capture_state SET active_camera_id=?, updated_at=? WHERE id=1", (body.primary_camera_id, now_iso()))
+        if body.admin_password:
+            conn.execute("UPDATE users SET password_hash=?, updated_at=? WHERE id=?", (hash_password(body.admin_password), now_iso(), principal["id"]))
+        log(conn, "info", "setup", "First setup completed", {"user_id": principal["id"]})
+    return ok({"required": False})
 
 
 @router.patch("/users/me/password")

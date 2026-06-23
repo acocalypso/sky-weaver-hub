@@ -26,6 +26,8 @@ export const SkyApi = {
   login: (username: string, password: string) =>
     api<{ token: string; user: SkyUser }>("/api/v1/auth/login", { method: "POST", body: JSON.stringify({ username, password }) }),
   me: () => api<SkyUserPrincipal>("/api/v1/auth/me"),
+  setupStatus: () => api<SetupStatus>("/api/v1/setup/status"),
+  completeSetup: (body: SetupComplete) => api<{ required: boolean }>("/api/v1/setup/complete", { method: "POST", body: JSON.stringify(body) }),
   status: () => api<SkyStatus>("/api/v1/status"),
   metrics: () => api<SystemMetrics>("/api/v1/system/metrics"),
   systemServices: () => api<SystemService[]>("/api/v1/system/services"),
@@ -64,6 +66,8 @@ export const SkyApi = {
 
 export interface SkyUser { id: string; username: string; role: string; }
 export interface SkyUserPrincipal extends SkyUser { type: string; scopes: string[]; }
+export interface SetupStatus { required: boolean; observatory: Record<string, any>; public_page: Record<string, any>; schedule: Partial<ScheduleRow>; cameras: CameraRow[]; }
+export interface SetupComplete { admin_password?: string; observatory_name: string; latitude: number; longitude: number; timezone: string; public_page_enabled: boolean; primary_camera_id?: string | null; }
 export interface SkyStatus { capture: any; camera: CameraRow | null; latest_image: ImageRow | null; }
 export interface SystemMetrics { cpu_percent: number; memory_percent: number; disk_percent: number; disk_free_gb: number; temperature_c: number | null; uptime_seconds: number; }
 export interface SystemService { name: string; status: string; managed_by?: string; heartbeat_at?: string | null; heartbeat_age_seconds?: number | null; pid?: number | null; last_claimed_job_id?: string | null; last_claimed_job_type?: string | null; last_claimed_at?: string | null; last_success_at?: string | null; }

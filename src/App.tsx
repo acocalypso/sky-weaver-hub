@@ -20,6 +20,7 @@ const Logs = lazy(() => import("@/pages/Logs"));
 const SettingsPage = lazy(() => import("@/pages/Settings"));
 const ApiKeys = lazy(() => import("@/pages/ApiKeys"));
 const DeveloperApi = lazy(() => import("@/pages/DeveloperApi"));
+const Setup = lazy(() => import("@/pages/Setup"));
 const Deployment = lazy(() => import("@/pages/Placeholder").then((module) => ({ default: module.Deployment })));
 
 const queryClient = new QueryClient();
@@ -34,6 +35,7 @@ const App = () => (
           <Suspense fallback={<RouteLoading />}>
             <Routes>
               <Route path="/auth" element={<AuthPage />} />
+              <Route path="/setup" element={<ProtectedRoute><Setup /></ProtectedRoute>} />
               <Route element={<ProtectedRoute><AppShell /></ProtectedRoute>}>
                 <Route path="/" element={<Dashboard />} />
                 <Route path="/cameras" element={<Cameras />} />
