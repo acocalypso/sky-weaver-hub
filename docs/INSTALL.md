@@ -6,7 +6,7 @@ Primary target is Raspberry Pi OS Bookworm 64-bit.
 sudo ./install.sh
 ```
 
-The installer detects OS and architecture, installs apt dependencies including Node/npm and Python, creates the `skyweaver` system user, creates `/opt/skyweaver`, `/etc/skyweaver`, `/var/lib/skyweaver`, and `/var/log/skyweaver`, builds the frontend, creates the Python virtualenv, installs systemd units, and starts `skyweaver.target`.
+The installer detects OS and architecture, installs apt dependencies including Node/npm and Python, creates the `skyweaver` system user, adds it to available camera hardware groups (`video`, `render`, `input`, `gpio`, `i2c`, `spi`), creates `/opt/skyweaver`, `/etc/skyweaver`, `/var/lib/skyweaver`, and `/var/log/skyweaver`, builds the frontend, creates the Python virtualenv, installs systemd units, and starts `skyweaver.target`.
 
 On a fresh interactive install, it asks for:
 

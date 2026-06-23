@@ -37,6 +37,20 @@ write_fake chown <<'EOF'
 echo "chown $*" >>"$SKYWEAVER_TEST_COMMAND_LOG"
 EOF
 
+write_fake getent <<'EOF'
+#!/usr/bin/env bash
+echo "getent $*" >>"$SKYWEAVER_TEST_COMMAND_LOG"
+case "$2" in
+  video|render|input|gpio|i2c|spi) exit 0 ;;
+esac
+exit 2
+EOF
+
+write_fake usermod <<'EOF'
+#!/usr/bin/env bash
+echo "usermod $*" >>"$SKYWEAVER_TEST_COMMAND_LOG"
+EOF
+
 write_fake systemctl <<'EOF'
 #!/usr/bin/env bash
 echo "systemctl $*" >>"$SKYWEAVER_TEST_COMMAND_LOG"
@@ -154,6 +168,8 @@ cmp "$TMP_DIR/skyweaver.env.first" "$TMP_DIR/config/skyweaver.env"
 
 assert_contains "Keeping existing $TMP_DIR/config/skyweaver.env" "$TMP_DIR/install-2.out"
 assert_contains "systemctl restart skyweaver.target" "$COMMAND_LOG"
+assert_contains "usermod -a -G video" "$COMMAND_LOG"
+assert_contains "usermod -a -G render" "$COMMAND_LOG"
 [[ -f "$TMP_DIR/data/web/index.html" ]]
 assert_contains "SKYWEAVER_ADMIN_PASSWORD_HASH='\$2b\$12\$0123456789abcdefghijklmnopqrstuv0123456789abcdefghij'" "$TMP_DIR/config/skyweaver.env"
 assert_contains "SKYWEAVER_OBSERVATORY_TIMEZONE='" "$TMP_DIR/config/skyweaver.env"
@@ -162,5 +178,8 @@ assert_contains "SKYWEAVER_PRIMARY_CAMERA_ADAPTER='mock'" "$TMP_DIR/config/skywe
 assert_contains "Environment=PYTHONPATH=/opt/skyweaver/backend" "$TMP_DIR/systemd/skyweaver-api.service"
 assert_contains "Environment=PYTHONPATH=/opt/skyweaver/backend" "$TMP_DIR/systemd/skyweaver-capture.service"
 assert_contains "Environment=PYTHONPATH=/opt/skyweaver/backend" "$TMP_DIR/systemd/skyweaver-worker.service"
+assert_contains "SupplementaryGroups=video render input gpio i2c spi" "$TMP_DIR/systemd/skyweaver-api.service"
+assert_contains "SupplementaryGroups=video render input gpio i2c spi" "$TMP_DIR/systemd/skyweaver-capture.service"
+assert_contains "SupplementaryGroups=video render input gpio i2c spi" "$TMP_DIR/systemd/skyweaver-worker.service"
 
 echo "install.sh dry-run and idempotency checks passed"

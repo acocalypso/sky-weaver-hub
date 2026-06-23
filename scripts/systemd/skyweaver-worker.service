@@ -7,6 +7,7 @@ PartOf=skyweaver.target
 Type=simple
 User=skyweaver
 Group=skyweaver
+SupplementaryGroups=video render input gpio i2c spi
 WorkingDirectory=/opt/skyweaver
 EnvironmentFile=-/etc/skyweaver/skyweaver.env
 Environment=PYTHONPATH=/opt/skyweaver/backend

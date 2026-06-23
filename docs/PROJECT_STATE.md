@@ -105,6 +105,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 - `skyweaver-capture.service`
 - `skyweaver-worker.service`
 - Installer creates directories, system user, Python venv, frontend build, config, and services.
+- Installer grants the `skyweaver` service user available camera hardware groups and systemd supplementary groups for Pi camera access.
 - Installer dry-run no longer requires root or writes config, and CI has a temp-dir test harness for dry-run and repeat-install idempotency.
 - Fresh interactive installer setup asks for admin credentials, observatory location/timezone, primary camera adapter, and public page mode; noninteractive installs use defaults or explicit environment values.
 - Full installer, repeat-install, service restart, and reboot acceptance passed on a Raspberry Pi 3 Model B running Debian 13/trixie.

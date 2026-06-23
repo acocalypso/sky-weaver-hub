@@ -12,6 +12,7 @@ SERVICE_GROUP="${SKYWEAVER_SERVICE_GROUP:-skyweaver}"
 CONFIG_OWNER="${SKYWEAVER_CONFIG_OWNER:-root}"
 DRY_RUN="${SKYWEAVER_DRY_RUN:-0}"
 ALLOW_NON_ROOT="${SKYWEAVER_ALLOW_NON_ROOT:-0}"
+HARDWARE_GROUPS="${SKYWEAVER_HARDWARE_GROUPS:-video,render,input,gpio,i2c,spi}"
 DEFAULT_ADMIN_PASSWORD="skyweaver-change-me"
 
 SETUP_ADMIN_USERNAME=""
@@ -174,6 +175,13 @@ install_packages() {
 
 create_user_dirs() {
   if ! id "$SERVICE_USER" >/dev/null 2>&1; then run useradd --system --home "$DATA_DIR" --shell /usr/sbin/nologin "$SERVICE_USER"; fi
+  local group
+  IFS="," read -r -a groups <<<"$HARDWARE_GROUPS"
+  for group in "${groups[@]}"; do
+    if getent group "$group" >/dev/null 2>&1; then
+      run usermod -a -G "$group" "$SERVICE_USER"
+    fi
+  done
   run mkdir -p "$INSTALL_DIR" "$CONFIG_DIR" "$DATA_DIR" "$DATA_DIR/images" "$DATA_DIR/thumbnails" "$DATA_DIR/products" "$LOG_DIR"
   run chown -R "$SERVICE_USER:$SERVICE_GROUP" "$DATA_DIR" "$LOG_DIR"
 }
