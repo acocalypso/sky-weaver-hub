@@ -84,11 +84,38 @@ def create_capture_job(conn, job_type: str, request: dict[str, Any]) -> str:
     return job_id
 
 
-async def execute_capture(command: CaptureCommand, job_type: str = "manual") -> dict[str, Any]:
+def enqueue_capture(command: CaptureCommand, job_type: str = "single") -> dict[str, Any]:
+    with session() as conn:
+        job_id = create_capture_job(conn, job_type, command.as_dict())
+        event(conn, "capture_queued", {"job_id": job_id, "type": job_type})
+    return {"id": job_id, "status": "pending", "type": job_type}
+
+
+def claim_next_capture_job(job_types: tuple[str, ...] = ("single", "scheduled")) -> dict[str, Any] | None:
+    placeholders = ",".join("?" for _ in job_types)
+    with session() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute(
+            f"SELECT * FROM capture_jobs WHERE status='pending' AND type IN ({placeholders}) ORDER BY created_at LIMIT 1",
+            job_types,
+        ).fetchone()
+        if not row:
+            return None
+        conn.execute("UPDATE capture_jobs SET status='claimed' WHERE id=? AND status='pending'", (row["id"],))
+        event(conn, "capture_job_claimed", {"job_id": row["id"], "type": row["type"]})
+        return decode_row(row_to_dict(row))
+
+
+async def execute_capture_job(job: dict[str, Any]) -> dict[str, Any]:
+    return await execute_capture(CaptureCommand.from_mapping(job["request"]), job["type"], job_id=job["id"])
+
+
+async def execute_capture(command: CaptureCommand, job_type: str = "manual", job_id: str | None = None) -> dict[str, Any]:
     settings = get_settings()
     with session() as conn:
         cam = get_primary_camera(conn, command.camera_id)
-        job_id = create_capture_job(conn, job_type, command.as_dict())
+        if job_id is None:
+            job_id = create_capture_job(conn, job_type, command.as_dict())
         conn.execute("UPDATE capture_jobs SET status='running', started_at=? WHERE id=?", (now_iso(), job_id))
 
     captured_at = datetime.now(UTC)

@@ -49,3 +49,33 @@ def test_daemon_respects_interval(tmp_path: Path):
 
     images = client.get("/api/v1/images", headers={"Authorization": f"Bearer {token}"}).json()["data"]
     assert len(images) == 1
+
+
+def test_daemon_consumes_queued_single_capture(tmp_path: Path):
+    client = make_client(tmp_path)
+    token = login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+    assert client.post("/api/v1/capture/start", headers=headers).status_code == 200
+
+    queued = client.post(
+        "/api/v1/capture/single",
+        headers=headers,
+        json={"exposure_ms": 500, "gain": 2, "mode": "manual"},
+    ).json()["data"]
+    assert queued["status"] == "pending"
+
+    before = client.get(f"/api/v1/capture/jobs/{queued['id']}", headers=headers).json()["data"]
+    assert before["status"] == "pending"
+
+    from skyweaver.capture_daemon import CaptureDaemon
+
+    daemon = CaptureDaemon()
+    assert asyncio.run(daemon.run_once()) is True
+
+    after = client.get(f"/api/v1/capture/jobs/{queued['id']}", headers=headers).json()["data"]
+    assert after["status"] == "completed"
+    assert after["result"]["image_id"]
+
+    images = client.get("/api/v1/images", headers=headers).json()["data"]
+    assert len(images) == 1
+    assert images[0]["mode"] == "manual"

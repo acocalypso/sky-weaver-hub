@@ -11,7 +11,7 @@ from ..camera.registry import adapters, get_adapter
 from ..config import get_settings
 from ..db import event, init_db, json_dumps, json_loads, new_id, now_iso, row_to_dict, session
 from ..security import create_api_key, hash_password, make_token, verify_password
-from ..services.capture import CaptureCommand, all_rows, count_files, create_capture_job, decode_row, execute_capture, get_primary_camera, system_metrics
+from ..services.capture import CaptureCommand, all_rows, count_files, create_capture_job, decode_row, enqueue_capture, execute_capture, get_primary_camera, system_metrics
 from .deps import current_principal, require_scope
 from .responses import ok
 
@@ -409,8 +409,8 @@ async def test_shot(body: CaptureBody, principal: dict = Depends(require_scope("
 
 
 @router.post("/capture/single")
-async def single_capture(body: CaptureBody, principal: dict = Depends(require_scope("write:capture"))):
-    return await capture_image(body, principal, "single")
+def single_capture(body: CaptureBody, _principal: dict = Depends(require_scope("write:capture"))):
+    return ok(enqueue_capture(CaptureCommand.from_mapping(body.model_dump()), "single"))
 
 
 @router.post("/capture/sequence")

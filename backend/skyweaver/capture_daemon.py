@@ -7,7 +7,7 @@ from typing import Iterator
 
 from .config import get_settings
 from .db import init_db, log, session
-from .services.capture import capture_interval_seconds, capture_is_running, execute_capture, schedule_command
+from .services.capture import capture_interval_seconds, capture_is_running, claim_next_capture_job, create_capture_job, execute_capture, execute_capture_job, schedule_command
 
 
 class CaptureDaemon:
@@ -18,13 +18,22 @@ class CaptureDaemon:
         if not capture_is_running():
             return False
 
+        queued_job = claim_next_capture_job()
+        if queued_job:
+            await execute_capture_job(queued_job)
+            if queued_job["type"] == "scheduled":
+                self.last_capture_monotonic = time.monotonic()
+            return True
+
         interval = capture_interval_seconds()
         now = time.monotonic()
         if not force and self.last_capture_monotonic is not None and now - self.last_capture_monotonic < interval:
             return False
 
         command = schedule_command()
-        await execute_capture(command, job_type="scheduled")
+        with session() as conn:
+            job_id = create_capture_job(conn, "scheduled", command.as_dict())
+        await execute_capture(command, job_type="scheduled", job_id=job_id)
         self.last_capture_monotonic = time.monotonic()
         return True
 
