@@ -3,8 +3,8 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { StatusBadge } from "@/components/StatusBadge";
-import { SkyApi, type SystemDiagnostics, type SystemMetrics, type SystemService } from "@/lib/api";
-import { Activity, Cpu, Download, HardDrive, MemoryStick, RefreshCw, RotateCw, ServerCog, Thermometer } from "lucide-react";
+import { SkyApi, type ServiceAction, type SystemDiagnostics, type SystemMetrics, type SystemService } from "@/lib/api";
+import { Activity, Cpu, Download, HardDrive, Loader2, MemoryStick, Play, RefreshCw, RotateCw, ServerCog, Square, Thermometer } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { toast } from "sonner";
 
@@ -12,6 +12,7 @@ export default function Health() {
   const [metrics, setMetrics] = useState<SystemMetrics | null>(null);
   const [services, setServices] = useState<SystemService[]>([]);
   const [diagnostics, setDiagnostics] = useState<SystemDiagnostics | null>(null);
+  const [pendingAction, setPendingAction] = useState<string | null>(null);
 
   useEffect(() => { document.title = "System health - Sky Weaver Hub"; load(); }, []);
 
@@ -26,12 +27,17 @@ export default function Health() {
     }
   }
 
-  async function restart(name: string) {
+  async function serviceAction(name: string, action: ServiceAction) {
+    const key = `${name}:${action}`;
+    setPendingAction(key);
     try {
-      const res = await SkyApi.restartService(name);
-      toast.message(res.note ?? `${name} restart queued`);
+      const res = await SkyApi.controlService(name, action);
+      toast.message(res.note ?? `${action} ${res.status}`);
+      await load();
     } catch (e: any) {
-      toast.error(e.message ?? "Restart request failed");
+      toast.error(e.message ?? "Service request failed");
+    } finally {
+      setPendingAction(null);
     }
   }
 
@@ -81,7 +87,11 @@ export default function Health() {
               </p>
               {service.last_claimed_job_id && <p className="text-xs text-muted-foreground font-mono-data mt-1">last job {service.last_claimed_job_type} {service.last_claimed_job_id}</p>}
             </div>
-            <Button variant="outline" size="sm" onClick={() => restart(service.name)}><RotateCw className="h-4 w-4 mr-2" /> Restart</Button>
+            <div className="flex flex-wrap gap-2">
+              <ServiceButton service={service.name} action="start" icon={<Play className="h-4 w-4" />} pendingAction={pendingAction} onClick={serviceAction} />
+              <ServiceButton service={service.name} action="stop" icon={<Square className="h-4 w-4" />} pendingAction={pendingAction} onClick={serviceAction} />
+              <ServiceButton service={service.name} action="restart" icon={<RotateCw className="h-4 w-4" />} pendingAction={pendingAction} onClick={serviceAction} />
+            </div>
           </div>
         ))}
       </Card>
@@ -113,6 +123,17 @@ export default function Health() {
         </div>
       </Card>
     </div>
+  );
+}
+
+function ServiceButton({ service, action, icon, pendingAction, onClick }: { service: string; action: ServiceAction; icon: React.ReactNode; pendingAction: string | null; onClick: (service: string, action: ServiceAction) => void }) {
+  const key = `${service}:${action}`;
+  const pending = pendingAction === key;
+  return (
+    <Button variant="outline" size="sm" onClick={() => onClick(service, action)} disabled={pending}>
+      {pending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <span className="mr-2">{icon}</span>}
+      <span className="capitalize">{action}</span>
+    </Button>
   );
 }
 

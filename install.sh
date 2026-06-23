@@ -7,9 +7,11 @@ CONFIG_DIR="${SKYWEAVER_CONFIG_DIR:-/etc/skyweaver}"
 DATA_DIR="${SKYWEAVER_DATA_DIR:-/var/lib/skyweaver}"
 LOG_DIR="${SKYWEAVER_LOG_DIR:-/var/log/skyweaver}"
 SYSTEMD_DIR="${SKYWEAVER_SYSTEMD_DIR:-/etc/systemd/system}"
+SUDOERS_DIR="${SKYWEAVER_SUDOERS_DIR:-/etc/sudoers.d}"
 SERVICE_USER="${SKYWEAVER_SERVICE_USER:-skyweaver}"
 SERVICE_GROUP="${SKYWEAVER_SERVICE_GROUP:-skyweaver}"
 CONFIG_OWNER="${SKYWEAVER_CONFIG_OWNER:-root}"
+SYSTEMCTL_BIN="${SKYWEAVER_SYSTEMCTL_BIN:-/usr/bin/systemctl}"
 DRY_RUN="${SKYWEAVER_DRY_RUN:-0}"
 ALLOW_NON_ROOT="${SKYWEAVER_ALLOW_NON_ROOT:-0}"
 HARDWARE_GROUPS="${SKYWEAVER_HARDWARE_GROUPS:-video,render,input,gpio,i2c,spi}"
@@ -186,6 +188,37 @@ create_user_dirs() {
   run chown -R "$SERVICE_USER:$SERVICE_GROUP" "$DATA_DIR" "$LOG_DIR"
 }
 
+install_service_controls() {
+  local sudoers_file="$SUDOERS_DIR/skyweaver"
+  local sudoers_tmp="$SUDOERS_DIR/skyweaver.tmp"
+  local units=(skyweaver.target skyweaver-api.service skyweaver-capture.service skyweaver-worker.service)
+  local actions=(start stop restart)
+  if [[ "$DRY_RUN" == "1" ]]; then
+    echo "+ install -m 440 skyweaver sudoers $sudoers_file"
+    return
+  fi
+  mkdir -p "$SUDOERS_DIR"
+  {
+    printf "%s ALL=(root) NOPASSWD:" "$SERVICE_USER"
+    local first=1 action unit
+    for action in "${actions[@]}"; do
+      for unit in "${units[@]}"; do
+        if [[ "$first" -eq 1 ]]; then first=0; else printf ","; fi
+        printf " %s %s %s" "$SYSTEMCTL_BIN" "$action" "$unit"
+        if [[ "$unit" == "skyweaver.target" || "$unit" == "skyweaver-api.service" ]]; then
+          printf ", %s --no-block %s %s" "$SYSTEMCTL_BIN" "$action" "$unit"
+        fi
+      done
+    done
+    printf "\n"
+  } >"$sudoers_tmp"
+  chmod 440 "$sudoers_tmp"
+  if command -v visudo >/dev/null 2>&1; then
+    visudo -cf "$sudoers_tmp"
+  fi
+  mv "$sudoers_tmp" "$sudoers_file"
+}
+
 copy_code() {
   run rsync -a --delete --exclude .git --exclude node_modules --exclude data --exclude logs "$ROOT_DIR/" "$INSTALL_DIR/"
 }
@@ -258,6 +291,7 @@ main() {
   detect_os
   install_packages
   create_user_dirs
+  install_service_controls
   copy_code
   build_backend
   build_frontend

@@ -146,6 +146,7 @@ run_installer() {
     SKYWEAVER_DATA_DIR="$TMP_DIR/data" \
     SKYWEAVER_LOG_DIR="$TMP_DIR/logs" \
     SKYWEAVER_SYSTEMD_DIR="$TMP_DIR/systemd" \
+    SKYWEAVER_SUDOERS_DIR="$TMP_DIR/sudoers" \
     SKYWEAVER_SERVICE_USER="$(id -un)" \
     SKYWEAVER_SERVICE_GROUP="$(id -gn)" \
     SKYWEAVER_CONFIG_OWNER="$(id -un)" \
@@ -175,6 +176,11 @@ assert_contains "SKYWEAVER_ADMIN_PASSWORD_HASH='\$2b\$12\$0123456789abcdefghijkl
 assert_contains "SKYWEAVER_OBSERVATORY_TIMEZONE='" "$TMP_DIR/config/skyweaver.env"
 assert_contains "SKYWEAVER_PRIMARY_CAMERA_ADAPTER='mock'" "$TMP_DIR/config/skyweaver.env"
 [[ -f "$TMP_DIR/systemd/skyweaver-api.service" ]]
+[[ -f "$TMP_DIR/sudoers/skyweaver" ]]
+assert_contains "NOPASSWD:" "$TMP_DIR/sudoers/skyweaver"
+assert_contains "/usr/bin/systemctl restart skyweaver-capture.service" "$TMP_DIR/sudoers/skyweaver"
+assert_contains "/usr/bin/systemctl --no-block restart skyweaver-api.service" "$TMP_DIR/sudoers/skyweaver"
+assert_contains "/usr/bin/systemctl --no-block stop skyweaver.target" "$TMP_DIR/sudoers/skyweaver"
 assert_contains "Environment=PYTHONPATH=/opt/skyweaver/backend" "$TMP_DIR/systemd/skyweaver-api.service"
 assert_contains "Environment=PYTHONPATH=/opt/skyweaver/backend" "$TMP_DIR/systemd/skyweaver-capture.service"
 assert_contains "Environment=PYTHONPATH=/opt/skyweaver/backend" "$TMP_DIR/systemd/skyweaver-worker.service"

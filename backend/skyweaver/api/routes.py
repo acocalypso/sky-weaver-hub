@@ -1,6 +1,9 @@
 import asyncio
 import json
+import os
 import platform
+import shutil
+import subprocess
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
@@ -20,6 +23,18 @@ from .deps import current_principal, require_scope
 from .responses import ok
 
 router = APIRouter(prefix="/api/v1", tags=["api-v1"])
+
+SERVICE_UNITS = {
+    "skyweaver": "skyweaver.target",
+    "skyweaver.target": "skyweaver.target",
+    "skyweaver-api": "skyweaver-api.service",
+    "skyweaver-api.service": "skyweaver-api.service",
+    "skyweaver-capture": "skyweaver-capture.service",
+    "skyweaver-capture.service": "skyweaver-capture.service",
+    "skyweaver-worker": "skyweaver-worker.service",
+    "skyweaver-worker.service": "skyweaver-worker.service",
+}
+SERVICE_ACTIONS = {"start", "stop", "restart"}
 
 
 class LoginRequest(BaseModel):
@@ -131,11 +146,14 @@ def service_rows() -> list[dict[str, Any]]:
         except ValueError:
             capture_status = "unknown"
     return [
-        {"name": "skyweaver-api", "status": "running", "managed_by": "systemd"},
+        {"name": "skyweaver", "unit": "skyweaver.target", "status": "running", "managed_by": "systemd", "actions": sorted(SERVICE_ACTIONS)},
+        {"name": "skyweaver-api", "unit": "skyweaver-api.service", "status": "running", "managed_by": "systemd", "actions": sorted(SERVICE_ACTIONS)},
         {
             "name": "skyweaver-capture",
+            "unit": "skyweaver-capture.service",
             "status": capture_status,
             "managed_by": "systemd",
+            "actions": sorted(SERVICE_ACTIONS),
             "heartbeat_at": heartbeat,
             "heartbeat_age_seconds": age_seconds,
             "pid": state.get("daemon_pid"),
@@ -144,7 +162,7 @@ def service_rows() -> list[dict[str, Any]]:
             "last_claimed_at": state.get("daemon_last_claimed_at"),
             "last_success_at": state.get("daemon_last_success_at"),
         },
-        {"name": "skyweaver-worker", "status": "idle", "managed_by": "systemd"},
+        {"name": "skyweaver-worker", "unit": "skyweaver-worker.service", "status": "idle", "managed_by": "systemd", "actions": sorted(SERVICE_ACTIONS)},
     ]
 
 
@@ -187,9 +205,52 @@ def diagnostics(_principal: Annotated[dict, Depends(require_scope("read:status")
     })
 
 
+def systemctl_command() -> list[str] | None:
+    systemctl = shutil.which("systemctl")
+    if not systemctl:
+        return None
+    if hasattr(os, "geteuid") and os.geteuid() == 0:
+        return [systemctl]
+    sudo = shutil.which("sudo")
+    if sudo:
+        return [sudo, "-n", systemctl]
+    return [systemctl]
+
+
+def run_service_action(name: str, action: str) -> dict[str, str]:
+    unit = SERVICE_UNITS.get(name)
+    if not unit:
+        raise HTTPException(404, "Unknown Sky Weaver service")
+    if action not in SERVICE_ACTIONS:
+        raise HTTPException(400, "Unsupported service action")
+    command = systemctl_command()
+    if not command:
+        return {"name": name, "unit": unit, "action": action, "status": "unavailable", "note": "systemctl is not available on this host."}
+
+    if unit in {"skyweaver-api.service", "skyweaver.target"} and action in {"stop", "restart"}:
+        full_command = [*command, "--no-block", action, unit]
+        result = subprocess.run(full_command, capture_output=True, text=True, timeout=20, check=False)
+        if result.returncode != 0:
+            note = (result.stderr or result.stdout or "systemctl command failed").strip()
+            return {"name": name, "unit": unit, "action": action, "status": "failed", "note": note}
+        return {"name": name, "unit": unit, "action": action, "status": "queued", "note": f"{action} queued for {unit}."}
+
+    full_command = [*command, action, unit]
+    result = subprocess.run(full_command, capture_output=True, text=True, timeout=20, check=False)
+    if result.returncode != 0:
+        note = (result.stderr or result.stdout or "systemctl command failed").strip()
+        return {"name": name, "unit": unit, "action": action, "status": "failed", "note": note}
+    return {"name": name, "unit": unit, "action": action, "status": "completed", "note": f"{action} completed for {unit}."}
+
+
+@router.post("/system/services/{name}/{action}")
+def control_service(name: str, action: str, _principal: Annotated[dict, Depends(require_scope("admin"))]):
+    return ok(run_service_action(name, action))
+
+
 @router.post("/system/services/{name}/restart")
 def restart_service(name: str, _principal: Annotated[dict, Depends(require_scope("admin"))]):
-    return ok({"name": name, "status": "queued", "note": "Use systemctl restart on deployed Raspberry Pi installations."})
+    return ok(run_service_action(name, "restart"))
 
 
 @router.get("/logs")

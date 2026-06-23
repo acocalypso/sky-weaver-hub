@@ -151,6 +151,72 @@ def test_system_diagnostics_export_is_redacted(tmp_path):
     assert "dev-change-me" not in res.text
 
 
+def test_system_service_control_runs_allowlisted_actions(tmp_path, monkeypatch):
+    from skyweaver.api import routes
+
+    client = make_client(tmp_path)
+    token = login(client)
+    calls = []
+
+    class Result:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    def fake_run(command, **_kwargs):
+        calls.append(command)
+        return Result()
+
+    monkeypatch.setattr(routes, "systemctl_command", lambda: ["systemctl"])
+    monkeypatch.setattr(routes.subprocess, "run", fake_run)
+
+    res = client.post("/api/v1/system/services/skyweaver-capture/restart", headers={"Authorization": f"Bearer {token}"})
+    assert res.status_code == 200, res.text
+    assert res.json()["data"]["status"] == "completed"
+    assert calls == [["systemctl", "restart", "skyweaver-capture.service"]]
+
+    assert client.post("/api/v1/system/services/not-skyweaver/restart", headers={"Authorization": f"Bearer {token}"}).status_code == 404
+    assert client.post("/api/v1/system/services/skyweaver-capture/reload", headers={"Authorization": f"Bearer {token}"}).status_code == 400
+
+
+def test_system_service_control_queues_api_restart(tmp_path, monkeypatch):
+    from skyweaver.api import routes
+
+    client = make_client(tmp_path)
+    token = login(client)
+    calls = []
+
+    class Result:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    def fake_run(command, **_kwargs):
+        calls.append(command)
+        return Result()
+
+    monkeypatch.setattr(routes, "systemctl_command", lambda: ["sudo", "-n", "/usr/bin/systemctl"])
+    monkeypatch.setattr(routes.subprocess, "run", fake_run)
+
+    res = client.post("/api/v1/system/services/skyweaver-api/restart", headers={"Authorization": f"Bearer {token}"})
+    assert res.status_code == 200, res.text
+    assert res.json()["data"]["status"] == "queued"
+    assert calls == [["sudo", "-n", "/usr/bin/systemctl", "--no-block", "restart", "skyweaver-api.service"]]
+
+
+def test_system_service_control_requires_admin_scope(tmp_path):
+    client = make_client(tmp_path)
+    token = login(client)
+    key_res = client.post(
+        "/api/v1/api-keys",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"name": "readonly", "scopes": ["read:status"]},
+    )
+    api_key = key_res.json()["data"]["key"]
+    res = client.post("/api/v1/system/services/skyweaver-capture/restart", headers={"Authorization": f"Bearer {api_key}"})
+    assert res.status_code == 403
+
+
 def test_allsky_preview(tmp_path):
     client = make_client(tmp_path)
     token = login(client)

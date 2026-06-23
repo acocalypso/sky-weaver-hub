@@ -6,6 +6,8 @@ INSTALL_DIR="${SKYWEAVER_INSTALL_DIR:-/opt/skyweaver}"
 BACKUP_DIR="${SKYWEAVER_BACKUP_DIR:-/var/lib/skyweaver/backups/$(date +%Y%m%d-%H%M%S)}"
 SERVICE_USER="${SKYWEAVER_SERVICE_USER:-skyweaver}"
 HARDWARE_GROUPS="${SKYWEAVER_HARDWARE_GROUPS:-video,render,input,gpio,i2c,spi}"
+SUDOERS_DIR="${SKYWEAVER_SUDOERS_DIR:-/etc/sudoers.d}"
+SYSTEMCTL_BIN="${SKYWEAVER_SYSTEMCTL_BIN:-/usr/bin/systemctl}"
 
 grant_hardware_groups() {
   local group
@@ -20,12 +22,40 @@ grant_hardware_groups() {
   done
 }
 
+install_service_controls() {
+  local sudoers_file="$SUDOERS_DIR/skyweaver"
+  local sudoers_tmp="$SUDOERS_DIR/skyweaver.tmp"
+  local units=(skyweaver.target skyweaver-api.service skyweaver-capture.service skyweaver-worker.service)
+  local actions=(start stop restart)
+  mkdir -p "$SUDOERS_DIR"
+  {
+    printf "%s ALL=(root) NOPASSWD:" "$SERVICE_USER"
+    local first=1 action unit
+    for action in "${actions[@]}"; do
+      for unit in "${units[@]}"; do
+        if [[ "$first" -eq 1 ]]; then first=0; else printf ","; fi
+        printf " %s %s %s" "$SYSTEMCTL_BIN" "$action" "$unit"
+        if [[ "$unit" == "skyweaver.target" || "$unit" == "skyweaver-api.service" ]]; then
+          printf ", %s --no-block %s %s" "$SYSTEMCTL_BIN" "$action" "$unit"
+        fi
+      done
+    done
+    printf "\n"
+  } >"$sudoers_tmp"
+  chmod 440 "$sudoers_tmp"
+  if command -v visudo >/dev/null 2>&1; then
+    visudo -cf "$sudoers_tmp"
+  fi
+  mv "$sudoers_tmp" "$sudoers_file"
+}
+
 if [[ "${EUID}" -ne 0 ]]; then echo "Please run with sudo"; exit 1; fi
 mkdir -p "$BACKUP_DIR"
 systemctl stop skyweaver.target || true
 cp -a /etc/skyweaver "$BACKUP_DIR/config" 2>/dev/null || true
 cp -a /var/lib/skyweaver/skyweaver.db "$BACKUP_DIR/skyweaver.db" 2>/dev/null || true
 grant_hardware_groups
+install_service_controls
 rsync -a --delete --exclude .git --exclude node_modules --exclude data --exclude logs "$ROOT_DIR/" "$INSTALL_DIR/"
 python3 -m venv "$INSTALL_DIR/backend/.venv"
 "$INSTALL_DIR/backend/.venv/bin/pip" install --upgrade pip

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -7,6 +7,7 @@ import Gallery from "@/pages/Gallery";
 import SettingsPage from "@/pages/Settings";
 import ApiKeys from "@/pages/ApiKeys";
 import SetupPage from "@/pages/Setup";
+import Health from "@/pages/Health";
 import { SkyApi } from "@/lib/api";
 
 vi.mock("sonner", () => ({
@@ -26,6 +27,10 @@ vi.mock("@/lib/api", async () => {
       images: vi.fn(),
       settings: vi.fn(),
       metrics: vi.fn(),
+      systemServices: vi.fn(),
+      diagnostics: vi.fn(),
+      controlService: vi.fn(),
+      restartService: vi.fn(),
       schedulePreview: vi.fn(),
       captureJobs: vi.fn(),
       apiKeys: vi.fn(),
@@ -79,6 +84,25 @@ beforeEach(() => {
   vi.mocked(SkyApi.images).mockResolvedValue([mockImage] as any);
   vi.mocked(SkyApi.settings).mockResolvedValue(mockSettings);
   vi.mocked(SkyApi.metrics).mockResolvedValue({ cpu_percent: 12, memory_percent: 34, disk_percent: 45, disk_free_gb: 12.3, temperature_c: 41, uptime_seconds: 7200 });
+  vi.mocked(SkyApi.systemServices).mockResolvedValue([
+    { name: "skyweaver", unit: "skyweaver.target", status: "running", managed_by: "systemd", actions: ["start", "stop", "restart"] },
+    { name: "skyweaver-api", unit: "skyweaver-api.service", status: "running", managed_by: "systemd", actions: ["start", "stop", "restart"] },
+    { name: "skyweaver-capture", unit: "skyweaver-capture.service", status: "running", managed_by: "systemd", actions: ["start", "stop", "restart"], heartbeat_at: "2026-06-23T22:16:00+00:00" },
+    { name: "skyweaver-worker", unit: "skyweaver-worker.service", status: "idle", managed_by: "systemd", actions: ["start", "stop", "restart"] },
+  ]);
+  vi.mocked(SkyApi.diagnostics).mockResolvedValue({
+    generated_at: "2026-06-23T22:16:00+00:00",
+    app: { name: "Sky Weaver Hub" },
+    platform: { system: "Linux", release: "test", python: "3.12" },
+    paths: {},
+    database: { size_bytes: 2048 },
+    metrics: { cpu_percent: 12, memory_percent: 34, disk_percent: 45, disk_free_gb: 12.3, temperature_c: 41, uptime_seconds: 7200 },
+    services: [],
+    counts: { images: 1, products: 0, capture_jobs_pending: 0, capture_jobs_running: 0, processing_jobs_pending: 0, processing_jobs_running: 0 },
+    recent_logs: [],
+    redaction: "Secrets redacted",
+  });
+  vi.mocked(SkyApi.controlService).mockResolvedValue({ name: "skyweaver-capture", unit: "skyweaver-capture.service", action: "restart", status: "completed", note: "restart completed" });
   vi.mocked(SkyApi.schedulePreview).mockResolvedValue({
     enabled: true,
     active: true,
@@ -139,6 +163,16 @@ describe("main pages", () => {
     expect(screen.getByText("swh_1234")).toBeInTheDocument();
     expect(screen.getByText("read:images")).toBeInTheDocument();
     await waitFor(() => expect(SkyApi.apiKeys).toHaveBeenCalled());
+  });
+
+  it("runs service controls from health", async () => {
+    render(<Health />);
+
+    const serviceName = await screen.findByText("skyweaver-capture");
+    const serviceRow = serviceName.closest(".rounded-md") as HTMLElement;
+    fireEvent.click(within(serviceRow).getByRole("button", { name: /restart/i }));
+
+    await waitFor(() => expect(SkyApi.controlService).toHaveBeenCalledWith("skyweaver-capture", "restart"));
   });
 
   it("submits first setup values", async () => {

@@ -22,7 +22,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 | Camera abstraction | `CameraAdapter` base class plus working `mock` adapter and initial `rpicam`/`libcamera` adapter. Other adapters are placeholders with actionable errors. |
 | UI/API integration | Dashboard, Cameras, Schedule, Gallery, Night Products, Logs, Settings, API Keys, and Developer API call the local backend. |
 | Deployment | `install.sh`, `upgrade.sh`, `uninstall.sh`, `support.sh`, and systemd units exist. Fresh interactive installs prompt for first-setup values. |
-| Tests | Backend pytest coverage for health/status, login, API keys, mock capture, scheduled daemon capture, queued single-capture execution, queued sequence capture, pause/resume/stop queue semantics, schedule preview, daemon heartbeat/activity, interrupted job recovery, mock overnight acceptance flow, night product generation, migration preview, and mock adapter. Frontend component tests cover Dashboard, Gallery, Settings, and API Keys. Shell tests cover installer dry-run and repeat-install idempotency with mocked system commands. |
+| Tests | Backend pytest coverage for health/status, login, API keys, mock capture, system service controls, scheduled daemon capture, queued single-capture execution, queued sequence capture, pause/resume/stop queue semantics, schedule preview, daemon heartbeat/activity, interrupted job recovery, mock overnight acceptance flow, night product generation, migration preview, and mock adapter. Frontend component tests cover Dashboard, Gallery, Health, Settings, API Keys, and first setup. Shell tests cover installer dry-run, service-control sudoers generation, and repeat-install idempotency with mocked system commands. |
 
 ## Implemented Capabilities
 
@@ -32,6 +32,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 - `/api/v1/status`
 - `/api/v1/system/metrics`
 - `/api/v1/system/services`
+- `/api/v1/system/services/{name}/{action}` for allowlisted start/stop/restart controls
 - `/api/v1/system/diagnostics`
 - `/api/v1/logs`
 - `/api/v1/auth/login`
@@ -93,7 +94,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 - Dashboard Tonight panel displays capture-window status and the next schedule transition.
 - Gallery page with day/mode/quality filters and image detail.
 - Night Products page queues product jobs, shows processing job progress, and lists generated downloads.
-- System Health page shows metrics, service status, restart actions, queue counts, recent logs, and diagnostics JSON export.
+- System Health page shows metrics, service status, start/stop/restart actions, queue counts, recent logs, and diagnostics JSON export.
 - Logs page reads backend logs.
 - Settings page edits local settings groups.
 - API Keys page creates scoped keys, shows full key once, enables/disables, and revokes.
@@ -107,6 +108,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 - `skyweaver-worker.service`
 - Installer creates directories, system user, Python venv, frontend build, config, and services.
 - Installer grants the `skyweaver` service user available camera hardware groups and systemd supplementary groups for Pi camera access.
+- Installer and upgrade grant the `skyweaver` service user constrained sudoers permissions for Sky Weaver `systemctl` start/stop/restart controls only.
 - Installer dry-run no longer requires root or writes config, and CI has a temp-dir test harness for dry-run and repeat-install idempotency.
 - Fresh interactive installer setup asks for admin credentials, observatory location/timezone, primary camera adapter, and public page mode; noninteractive installs use defaults or explicit environment values.
 - Full installer, repeat-install, service restart, and reboot acceptance passed on a Raspberry Pi 3 Model B running Debian 13/trixie.
@@ -144,7 +146,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 | Phase 5: Image storage/gallery/latest/metadata | Partial | Mock capture artifacts, metadata, thumbnails, image rows, gallery, latest image exist. Latest symlink/copy and broader metadata extraction are open. |
 | Phase 6: Processing worker/products/retention | Partial | Worker claims jobs, thumbnail reprocess exists, keogram JPEG generation, ffmpeg timelapse/mini-timelapse generation, and startrail generation exist, and product job progress is visible in the UI. Cleanup and upload execution are open. |
 | Phase 7: Overlay/modules | Early scaffold | Module tables/endpoints exist. Overlay editor, processor, built-in modules, safe module execution are open. |
-| Phase 8: Installer/systemd/support/docs | Partial | Scripts and units exist. Shellcheck CI, installer dry-run/idempotency tests, interactive first-setup prompts, real Pi install, repeat install, service restart, and reboot verification exist. Nginx option and broader Pi camera verification are open. |
+| Phase 8: Installer/systemd/support/docs | Partial | Scripts and units exist. Shellcheck CI, installer dry-run/idempotency tests, service-control sudoers generation, interactive first-setup prompts, real Pi install, repeat install, service restart, and reboot verification exist. Nginx option and broader Pi camera verification are open. |
 | Phase 9: Allsky migration/remote upload | Early scaffold | Detection and dry-run count preview exist. Real import, rollback, unsupported-setting report, and remote upload execution are open. |
 | Phase 10: Polish/mobile/tests/hardening | Partial | Mobile API docs, latest/status/gallery endpoints, route bundle splitting, system health/diagnostics UI, initial frontend component tests, and CI workflow exist. Broader tests, UX polish, performance, and security hardening remain. |
 
@@ -220,7 +222,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 - Add module/plugin manager.
 - Add dark frames page.
 - Add remote upload page.
-- Expand system health service controls beyond restart placeholders after real Pi/systemd validation.
+- Add system health journal/service detail views beyond start/stop/restart controls.
 - Add Allsky migration page.
 - Add deployment/installer docs page.
 - Improve mobile layouts after real data flows are in place.
@@ -339,7 +341,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 Most recent checks run during implementation:
 
 - `npm run build`: passed
-- `npm test`: passed with 5 tests
+- `npm test`: passed with 6 tests
 - `npm run lint`: passed with zero warnings
 - `npm audit --audit-level=high`: passed with 0 vulnerabilities
 - `backend\\.venv\\Scripts\\python -m pytest backend\\tests`: passed with 22 tests
@@ -347,9 +349,9 @@ Most recent checks run during implementation:
 Most recent local follow-up checks on 2026-06-23:
 
 - `npm run lint`: passed
-- `npm test`: passed with 5 tests
+- `npm test`: passed with 6 tests
 - `npm run build`: passed
-- `backend\\.venv\\Scripts\\python -W error::DeprecationWarning -m pytest backend\\tests`: passed with 26 tests
+- `backend\\.venv\\Scripts\\python -W error::DeprecationWarning -m pytest backend\\tests`: passed with 29 tests
 - `bash scripts/test_install.sh`: passed
 - `bash -n install.sh scripts/test_install.sh upgrade.sh uninstall.sh support.sh`: passed
 - `shellcheck install.sh scripts/test_install.sh upgrade.sh uninstall.sh support.sh`: not run locally because ShellCheck is not installed on this Windows host; CI installs ShellCheck on Ubuntu.
@@ -370,6 +372,6 @@ The next development phase should focus on operational hardening, because interr
 
 Suggested next tasks:
 
-1. Expand system health service controls after systemd validation.
-2. Validate real camera capture behavior across service restart and reboot.
-3. Add camera-presence suggestions and stronger password guidance to first setup.
+1. Validate real camera capture behavior across service restart and reboot.
+2. Add camera-presence suggestions and stronger password guidance to first setup.
+3. Add system health journal/service detail views.
