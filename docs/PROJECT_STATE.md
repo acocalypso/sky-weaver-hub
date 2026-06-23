@@ -89,7 +89,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 - Schedule page displays the backend active window, next transition, and fixed-time controls.
 - Dashboard Tonight panel displays capture-window status and the next schedule transition.
 - Gallery page with day/mode/quality filters and image detail.
-- Night Products page queues product jobs.
+- Night Products page queues product jobs, shows processing job progress, and lists generated downloads.
 - Logs page reads backend logs.
 - Settings page edits local settings groups.
 - API Keys page creates scoped keys, shows full key once, enables/disables, and revokes.
@@ -112,6 +112,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 - Thumbnail reprocess jobs regenerate thumbnails for existing image rows.
 - Keogram jobs generate a real JPEG night product from same-day image center columns.
 - Completed keograms are inserted into `night_products` and are downloadable through `/api/v1/products/{id}/download`.
+- `/api/v1/processing/jobs` exposes queued/running/completed processing jobs for UI progress.
 - Backend tests verify keogram product generation from mock captures.
 
 ### Documentation
@@ -129,7 +130,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 | Phase 3: Camera adapters and test shot | Partial | Mock and rpicam/libcamera implemented. ZWO, gPhoto2, V4L2, INDI, custom command are placeholders. |
 | Phase 4: Capture daemon and realtime | Partial | Scheduled daemon loop, shared capture service, persistent job claiming for single/scheduled/sequence captures, pause/resume/stop queue semantics, active-window checks and UI preview, interval gating, lock-file duplicate-loop guard, heartbeat/activity reporting, and SSE endpoint exist. Reboot recovery is open. |
 | Phase 5: Image storage/gallery/latest/metadata | Partial | Mock capture artifacts, metadata, thumbnails, image rows, gallery, latest image exist. Latest symlink/copy and broader metadata extraction are open. |
-| Phase 6: Processing worker/products/retention | Partial | Worker claims jobs, thumbnail reprocess exists, and keogram JPEG generation exists. Timelapse, startrail, mini timelapse, cleanup, progress UI, and upload execution are open. |
+| Phase 6: Processing worker/products/retention | Partial | Worker claims jobs, thumbnail reprocess exists, keogram JPEG generation exists, and product job progress is visible in the UI. Timelapse, startrail, mini timelapse, cleanup, and upload execution are open. |
 | Phase 7: Overlay/modules | Early scaffold | Module tables/endpoints exist. Overlay editor, processor, built-in modules, safe module execution are open. |
 | Phase 8: Installer/systemd/support/docs | Partial | Scripts and units exist. Interactive setup, nginx option, shellcheck, idempotency tests, and Pi verification are open. |
 | Phase 9: Allsky migration/remote upload | Early scaffold | Detection and dry-run count preview exist. Real import, rollback, unsupported-setting report, and remote upload execution are open. |
@@ -202,7 +203,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 - Implement timelapse generation via ffmpeg.
 - Implement mini timelapse generation.
 - Implement startrail generation.
-- Add product progress reporting.
+- Expand product progress reporting with detailed per-frame/per-stage progress.
 - Add regenerate by date/date range.
 - Add download-ready UI states.
 - Add skip bad/overexposed image rules.
@@ -346,11 +347,11 @@ Most recent checks run during implementation:
 
 ## Recommended Next Phase
 
-The next development phase should focus on product progress UI and the next processing products, because keogram generation now exists.
+The next development phase should focus on the next processing products, because keogram generation and product progress UI now exist.
 
 Suggested next tasks:
 
-1. Add sequence capture controls and capture/processing job progress in the UI.
+1. Add sequence capture controls and capture job progress in the UI.
 2. Implement timelapse or mini timelapse generation.
 3. Add reboot recovery rules for claimed/running capture and processing jobs.
 4. Add a dedicated system health page with service controls and diagnostics export.

@@ -21,10 +21,16 @@ def test_worker_generates_keogram_product(tmp_path: Path):
 
     queued = client.post("/api/v1/products/keogram", headers=headers, json={"day_key": day_key}).json()["data"]
     assert queued["status"] == "pending"
+    pending_jobs = client.get("/api/v1/processing/jobs", headers=headers).json()["data"]
+    assert pending_jobs[0]["id"] == queued["id"]
+    assert pending_jobs[0]["status"] == "pending"
 
     from skyweaver.services.processing import run_once
 
     assert asyncio.run(run_once()) is True
+    completed_job = client.get(f"/api/v1/processing/jobs/{queued['id']}", headers=headers).json()["data"]
+    assert completed_job["status"] == "completed"
+    assert completed_job["progress"] == 1
 
     products = client.get("/api/v1/products", headers=headers).json()["data"]
     assert len(products) == 1

@@ -5,34 +5,38 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { StatusBadge } from "@/components/StatusBadge";
-import { SkyApi } from "@/lib/api";
-import { Film, Plus } from "lucide-react";
+import { SkyApi, type ProcessingJob, type ProductRow } from "@/lib/api";
+import { Download, Film, Plus, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 
-interface ProductJob {
-  id: string;
-  type: string;
-  day_key?: string;
-  status?: string;
-  progress?: number;
-  created_at?: string;
-}
-
 export default function Timelapses() {
-  const [jobs, setJobs] = useState<ProductJob[]>([]);
+  const [jobs, setJobs] = useState<ProcessingJob[]>([]);
+  const [products, setProducts] = useState<ProductRow[]>([]);
   const [form, setForm] = useState({ day_key: new Date().toISOString().slice(0, 10).replaceAll("-", ""), fps: 30, codec: "h264" });
 
-  useEffect(() => { document.title = "Night products - Sky Weaver Hub"; load(); }, []);
+  useEffect(() => {
+    document.title = "Night products - Sky Weaver Hub";
+    load();
+    const timer = window.setInterval(load, 5000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   async function load() {
-    try { setJobs(await SkyApi.products()); } catch { setJobs([]); }
+    try {
+      const [nextJobs, nextProducts] = await Promise.all([SkyApi.processingJobs(), SkyApi.products()]);
+      setJobs(nextJobs.filter((job) => ["thumbnail", "keogram", "timelapse", "mini_timelapse", "startrail"].includes(job.type)));
+      setProducts(nextProducts);
+    } catch {
+      setJobs([]);
+      setProducts([]);
+    }
   }
 
   async function create(type: string) {
     try {
       const job = await SkyApi.createProduct(type, { day_key: form.day_key, fps: form.fps, codec: form.codec });
       toast.success(`${type} queued`);
-      setJobs([{ id: job.id, type, day_key: form.day_key, status: job.status, progress: 0 }, ...jobs]);
+      setJobs([{ ...job, type: type.replace("-", "_"), input: { day_key: form.day_key, fps: form.fps, codec: form.codec }, progress: job.progress ?? 0 }, ...jobs]);
     } catch (e: any) {
       toast.error(e.message ?? "Queue failed");
     }
@@ -56,19 +60,43 @@ export default function Timelapses() {
       </Card>
 
       <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Processing queue</h2>
+          <Button variant="ghost" size="sm" onClick={load}><RefreshCw className="h-4 w-4 mr-2" /> Refresh</Button>
+        </div>
         {jobs.map((j) => (
           <Card key={j.id} className="telemetry-card flex items-center gap-4">
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-3">
-                <p className="font-medium truncate">{j.type}</p>
-                <StatusBadge variant={j.status === "completed" ? "ok" : j.status === "failed" ? "error" : "warn"}>{j.status ?? "queued"}</StatusBadge>
+                <p className="font-medium truncate">{prettyType(j.type)}</p>
+                <StatusBadge variant={statusVariant(j.status)}>{j.status ?? "queued"}</StatusBadge>
               </div>
-              <p className="text-xs text-muted-foreground font-mono-data mt-1">day {j.day_key ?? "-"} - job {j.id}</p>
-              <Progress value={j.progress ?? 0} className="h-1 mt-3" />
+              <p className="text-xs text-muted-foreground font-mono-data mt-1">day {j.input?.day_key ?? j.output?.day_key ?? "-"} - job {j.id}</p>
+              {j.error && <p className="text-xs text-status-error mt-2">{j.error}</p>}
+              <Progress value={Math.round((j.progress ?? 0) * 100)} className="h-1 mt-3" />
             </div>
           </Card>
         ))}
-        {jobs.length === 0 && <p className="text-sm text-muted-foreground">No generated products yet. Queue one from a mock capture day.</p>}
+        {jobs.length === 0 && <p className="text-sm text-muted-foreground">No processing jobs yet. Queue one from a mock capture day.</p>}
+      </div>
+
+      <div className="space-y-3">
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Generated products</h2>
+        {products.map((product) => (
+          <Card key={product.id} className="telemetry-card flex items-center gap-4">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-3">
+                <p className="font-medium truncate">{prettyType(product.type)}</p>
+                <StatusBadge variant={statusVariant(product.status)}>{product.status}</StatusBadge>
+              </div>
+              <p className="text-xs text-muted-foreground font-mono-data mt-1">day {product.day_key} - {product.metadata?.source_images ?? "-"} source images</p>
+            </div>
+            <Button asChild variant="outline" size="sm">
+              <a href={`/api/v1/products/${product.id}/download`} target="_blank" rel="noreferrer"><Download className="h-4 w-4 mr-2" /> Download</a>
+            </Button>
+          </Card>
+        ))}
+        {products.length === 0 && <p className="text-sm text-muted-foreground">No generated products yet.</p>}
       </div>
     </div>
   );
@@ -76,4 +104,16 @@ export default function Timelapses() {
 
 function Labelled({ label, children }: { label: string; children: React.ReactNode }) {
   return <div className="space-y-2"><Label>{label}</Label>{children}</div>;
+}
+
+function prettyType(type: string) {
+  return type.replaceAll("_", " ").replaceAll("-", " ");
+}
+
+function statusVariant(status?: string): "ok" | "warn" | "error" | "idle" | "active" {
+  if (status === "completed") return "ok";
+  if (status === "failed") return "error";
+  if (status === "running") return "active";
+  if (status === "pending") return "warn";
+  return "idle";
 }

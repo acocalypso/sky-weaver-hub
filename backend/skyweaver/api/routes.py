@@ -593,6 +593,22 @@ def reprocess_image(image_id: str, _principal: Annotated[dict, Depends(require_s
     return ok({"id": job_id, "status": "pending"})
 
 
+@router.get("/processing/jobs")
+def processing_jobs(_principal: Annotated[dict, Depends(require_scope("read:images"))]):
+    with session() as conn:
+        rows = all_rows(conn, "SELECT * FROM processing_jobs ORDER BY created_at DESC LIMIT 100")
+    return ok(rows)
+
+
+@router.get("/processing/jobs/{job_id}")
+def processing_job(job_id: str, _principal: Annotated[dict, Depends(require_scope("read:images"))]):
+    with session() as conn:
+        row = decode_row(row_to_dict(conn.execute("SELECT * FROM processing_jobs WHERE id=?", (job_id,)).fetchone()))
+    if not row:
+        raise HTTPException(404, "Processing job not found")
+    return ok(row)
+
+
 @router.get("/products")
 def products(_principal: Annotated[dict, Depends(require_scope("read:images"))]):
     with session() as conn:
