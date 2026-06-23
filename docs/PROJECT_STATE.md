@@ -349,7 +349,7 @@ Most recent local follow-up checks on 2026-06-23:
 - `npm run lint`: passed
 - `npm test`: passed with 5 tests
 - `npm run build`: passed
-- `backend\\.venv\\Scripts\\python -m pytest backend\\tests`: passed with 26 tests
+- `backend\\.venv\\Scripts\\python -W error::DeprecationWarning -m pytest backend\\tests`: passed with 26 tests
 - `bash scripts/test_install.sh`: passed
 - `bash -n install.sh scripts/test_install.sh upgrade.sh uninstall.sh support.sh`: passed
 - `shellcheck install.sh scripts/test_install.sh upgrade.sh uninstall.sh support.sh`: not run locally because ShellCheck is not installed on this Windows host; CI installs ShellCheck on Ubuntu.

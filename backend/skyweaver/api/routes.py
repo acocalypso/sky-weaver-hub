@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 
 from ..camera.registry import adapters, get_adapter
 from ..config import get_settings
-from ..db import event, init_db, json_dumps, json_loads, log, new_id, now_iso, row_to_dict, session
+from ..db import event, json_dumps, json_loads, log, new_id, now_iso, row_to_dict, session
 from ..security import create_api_key, hash_password, make_token, verify_password
 from ..services.capture import CaptureCommand, all_rows, count_files, create_capture_job, current_schedule, decode_row, enqueue_capture, execute_capture, get_primary_camera, system_metrics
 from ..services.schedule import active_window
@@ -896,8 +896,3 @@ async def event_stream(_principal: Annotated[dict, Depends(require_scope("read:s
             await asyncio.sleep(2)
 
     return StreamingResponse(stream(), media_type="text/event-stream")
-
-
-@router.on_event("startup")
-def startup():
-    init_db()
