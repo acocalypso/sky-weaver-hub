@@ -9,10 +9,13 @@ import { AppShell } from "@/components/AppShell";
 import Dashboard from "@/pages/Dashboard";
 import AuthPage from "@/pages/Auth";
 import NotFound from "@/pages/NotFound";
-import {
-  Cameras, Schedule, Gallery, Timelapses, Logs,
-  Settings, ApiKeys, DeveloperApi, Deployment,
-} from "@/pages/Placeholder";
+import Cameras from "@/pages/Cameras";
+import Schedule from "@/pages/Schedule";
+import Gallery from "@/pages/Gallery";
+import Timelapses from "@/pages/Timelapses";
+import Logs from "@/pages/Logs";
+import SettingsPage from "@/pages/Settings";
+import { ApiKeys, DeveloperApi, Deployment } from "@/pages/Placeholder";
 
 const queryClient = new QueryClient();
 
@@ -32,7 +35,7 @@ const App = () => (
               <Route path="/gallery" element={<Gallery />} />
               <Route path="/timelapses" element={<Timelapses />} />
               <Route path="/logs" element={<Logs />} />
-              <Route path="/settings" element={<Settings />} />
+              <Route path="/settings" element={<SettingsPage />} />
               <Route path="/api-keys" element={<ApiKeys />} />
               <Route path="/developer" element={<DeveloperApi />} />
               <Route path="/deployment" element={<Deployment />} />
