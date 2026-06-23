@@ -8,7 +8,7 @@ This document tracks the current implementation state against the all-sky platfo
 
 Sky Weaver Hub has moved from a mock dashboard toward a local-first Raspberry Pi/Linux all-sky platform. The repository now has a FastAPI backend, SQLite persistence, a camera adapter interface, mock capture with real image artifacts, an initial Raspberry Pi camera adapter, a daemon-owned scheduled capture loop, API-key authentication, systemd and installer scaffolding, and a React UI wired to the local API.
 
-The product is not yet Allsky feature-complete. The main missing areas are full image-product generation, public sky page, overlay/module workflows, remote upload execution, complete Allsky import, and Raspberry Pi acceptance testing.
+The product is not yet Allsky feature-complete. The main missing areas are full image-product generation, public sky page, overlay/module workflows, remote upload execution, complete Allsky import, and broader Raspberry Pi camera/hardware acceptance testing.
 
 ## Repo Map
 
@@ -106,6 +106,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 - `skyweaver-worker.service`
 - Installer creates directories, system user, Python venv, frontend build, config, and services.
 - Installer dry-run no longer requires root or writes config, and CI has a temp-dir test harness for dry-run and repeat-install idempotency.
+- Full installer, repeat-install, service restart, and reboot acceptance passed on a Raspberry Pi 3 Model B running Debian 13/trixie.
 - Upgrade script backs up config/database and rebuilds.
 - Uninstall script removes services and optionally data.
 - Support script collects OS, camera, service, journal, disk, config-redacted, and API health details.
@@ -136,11 +137,11 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 | Phase 1: API skeleton and SQLite | Mostly done | Backend, schema, health/status, API client, core routes, and mock capture exist. Dedicated migration framework still needed. |
 | Phase 2: Auth/API keys/settings/docs | Mostly done | JWT login, API-key scopes, settings, API Keys UI, and Developer API UI exist. First-run setup and rate limiting are still open. |
 | Phase 3: Camera adapters and test shot | Partial | Mock and rpicam/libcamera implemented. ZWO, gPhoto2, V4L2, INDI, custom command are placeholders. |
-| Phase 4: Capture daemon and realtime | Partial | Scheduled daemon loop, shared capture service, persistent job claiming for single/scheduled/sequence captures, pause/resume/stop queue semantics, active-window checks and UI preview, interval gating, lock-file duplicate-loop guard, heartbeat/activity reporting, interrupted job recovery, and SSE endpoint exist. Pi reboot acceptance testing is open. |
+| Phase 4: Capture daemon and realtime | Partial | Scheduled daemon loop, shared capture service, persistent job claiming for single/scheduled/sequence captures, pause/resume/stop queue semantics, active-window checks and UI preview, interval gating, lock-file duplicate-loop guard with stale lock recovery, heartbeat/activity reporting, interrupted job recovery, SSE endpoint, and Pi reboot service startup acceptance exist. Broader real-camera Pi acceptance is open. |
 | Phase 5: Image storage/gallery/latest/metadata | Partial | Mock capture artifacts, metadata, thumbnails, image rows, gallery, latest image exist. Latest symlink/copy and broader metadata extraction are open. |
 | Phase 6: Processing worker/products/retention | Partial | Worker claims jobs, thumbnail reprocess exists, keogram JPEG generation, ffmpeg timelapse/mini-timelapse generation, and startrail generation exist, and product job progress is visible in the UI. Cleanup and upload execution are open. |
 | Phase 7: Overlay/modules | Early scaffold | Module tables/endpoints exist. Overlay editor, processor, built-in modules, safe module execution are open. |
-| Phase 8: Installer/systemd/support/docs | Partial | Scripts and units exist. Shellcheck CI and installer dry-run/idempotency tests exist. Interactive setup, nginx option, and Pi verification are open. |
+| Phase 8: Installer/systemd/support/docs | Partial | Scripts and units exist. Shellcheck CI, installer dry-run/idempotency tests, real Pi install, repeat install, service restart, and reboot verification exist. Interactive setup, nginx option, and broader Pi camera verification are open. |
 | Phase 9: Allsky migration/remote upload | Early scaffold | Detection and dry-run count preview exist. Real import, rollback, unsupported-setting report, and remote upload execution are open. |
 | Phase 10: Polish/mobile/tests/hardening | Partial | Mobile API docs, latest/status/gallery endpoints, route bundle splitting, system health/diagnostics UI, initial frontend component tests, and CI workflow exist. Broader tests, UX polish, performance, and security hardening remain. |
 
@@ -150,7 +151,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 
 - Expand the capture daemon into complete queue ownership:
   - move all remaining long-running capture execution out of direct API request path
-  - validate reboot recovery on real Pi/systemd services
+  - validate capture behavior with a real camera attached across reboot/service restart
   - gracefully stop after current exposure
 - Keep schedule preview and daemon state visible across Dashboard and Schedule as the daemon model evolves.
 - Complete mock acceptance flow end to end:
@@ -165,7 +166,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 
 ### Raspberry Pi Deployment
 
-- Test `install.sh` on fresh Raspberry Pi OS Bookworm 64-bit.
+- Test `install.sh` on fresh Raspberry Pi OS Bookworm 64-bit; Raspberry Pi 3 Model B on Debian 13/trixie has passed install/repeat-install/service-restart/reboot acceptance.
 - Add interactive setup questions required by the prompt.
 - Add explicit Raspberry Pi model and Bookworm detection messages.
 - Add camera presence check during install.
@@ -173,7 +174,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 - Add `skyweaver` convenience command or documented aliases for start/stop/restart/status.
 - Keep shellcheck coverage passing as installer scripts evolve.
 - Expand installer tests when interactive setup and nginx options are added.
-- Confirm service permissions and ownership on real Pi.
+- Continue confirming service permissions and ownership on real Pi as camera and upload paths are added.
 
 ### Camera Hardware
 
@@ -331,7 +332,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 - API server currently still performs test-shot capture inline through the shared service for UX; other long capture paths should continue moving toward daemon/queue ownership.
 - Tailwind is intentionally pinned to 3.4.19 to preserve the original design. Tailwind 4 requires a separate design-system migration.
 - Lint passes with warnings from existing generated UI/hook patterns.
-- Real Raspberry Pi hardware acceptance has not been run in this environment.
+- Real Raspberry Pi install, service restart, and reboot acceptance passed on a Raspberry Pi 3 Model B running Debian 13/trixie. Real-camera capture acceptance is still open.
 
 ## Recent Verification
 
@@ -348,10 +349,20 @@ Most recent local follow-up checks on 2026-06-23:
 - `npm run lint`: passed
 - `npm test`: passed with 4 tests
 - `npm run build`: passed
-- `backend\\.venv\\Scripts\\python -m pytest backend\\tests`: passed with 22 tests
+- `backend\\.venv\\Scripts\\python -m pytest backend\\tests`: passed with 23 tests
 - `bash scripts/test_install.sh`: passed
 - `bash -n install.sh scripts/test_install.sh upgrade.sh uninstall.sh support.sh`: passed
 - `shellcheck install.sh scripts/test_install.sh upgrade.sh uninstall.sh support.sh`: not run locally because ShellCheck is not installed on this Windows host; CI installs ShellCheck on Ubuntu.
+
+Raspberry Pi acceptance on 2026-06-23:
+
+- Host: Raspberry Pi 3 Model B Rev 1.2, aarch64, Debian GNU/Linux 13/trixie.
+- `/home/pi/sky-weaver-hub` fast-forwarded to `639dde2`.
+- `sudo ./install.sh`: passed, including apt dependencies, backend venv, npm frontend build, config creation, systemd unit install, and target start.
+- Repeat `sudo ./install.sh`: passed and preserved existing `/etc/skyweaver/skyweaver.env`.
+- API smoke test: `/api/v1/health`, login, `/api/v1/status`, `/api/v1/capture/test-shot`, and `/api/v1/images/latest` passed.
+- `systemctl restart skyweaver.target`: all Sky Weaver units returned active, API health passed, no failed units were listed, and restart counters were zero.
+- Controlled Pi reboot: SSH returned, `skyweaver.target`, `skyweaver-api.service`, `skyweaver-capture.service`, and `skyweaver-worker.service` were active, no failed units were listed, API health passed, latest image persisted, and restart counters were zero.
 
 ## Recommended Next Phase
 
@@ -359,6 +370,6 @@ The next development phase should focus on operational hardening, because interr
 
 Suggested next tasks:
 
-1. Validate reboot recovery on real Raspberry Pi/systemd services.
+1. Add interactive installer setup questions for admin password, observatory location, timezone, camera adapter, and public page mode.
 2. Expand system health service controls after systemd validation.
-3. Add interactive installer setup questions for admin password, observatory location, timezone, camera adapter, and public page mode.
+3. Validate real camera capture behavior across service restart and reboot.
