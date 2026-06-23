@@ -46,9 +46,12 @@ export default function Dashboard() {
   const camera = status?.camera as CameraRow | null;
   const latest = images[0] ?? status?.latest_image;
   const captureStatus = status?.capture?.status ?? "idle";
+  const latitude = Number(observatory.latitude);
+  const longitude = Number(observatory.longitude);
+  const validLocation = Number.isFinite(latitude) && Number.isFinite(longitude);
 
-  const timeline = useMemo(() => getTonightTimeline(Number(observatory.latitude), Number(observatory.longitude)), [observatory.latitude, observatory.longitude]);
-  const sunAlt = useMemo(() => getSunAltitude(Number(observatory.latitude), Number(observatory.longitude)), [observatory.latitude, observatory.longitude]);
+  const timeline = useMemo(() => getTonightTimeline(validLocation ? latitude : 0, validLocation ? longitude : 0), [latitude, longitude, validLocation]);
+  const sunAlt = useMemo(() => validLocation ? getSunAltitude(latitude, longitude) : null, [latitude, longitude, validLocation]);
 
   async function quickAction(type: string) {
     try {
@@ -72,7 +75,7 @@ export default function Dashboard() {
           <p className="text-xs uppercase tracking-widest text-muted-foreground">Observatory</p>
           <h1 className="text-3xl font-semibold tracking-tight">{observatory.name}</h1>
           <p className="text-sm text-muted-foreground mt-1 font-mono-data">
-            {Number(observatory.latitude).toFixed(4)} deg, {Number(observatory.longitude).toFixed(4)} deg - Sun alt {sunAlt.toFixed(1)} deg
+            {formatCoordinate(latitude)} deg, {formatCoordinate(longitude)} deg - Sun alt {typeof sunAlt === "number" && Number.isFinite(sunAlt) ? `${sunAlt.toFixed(1)} deg` : "-"}
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -152,7 +155,7 @@ export default function Dashboard() {
           </div>
         </div>
         <div className="grid grid-cols-4 lg:grid-cols-8 gap-2 text-xs font-mono-data">
-          {Object.entries(timeline).map(([key, value]) => <div key={key}><p className="text-muted-foreground">{key}</p><p>{isNaN(value.getTime()) ? "-" : format(value, "HH:mm")}</p></div>)}
+          {Object.entries(timeline).map(([key, value]) => <div key={key}><p className="text-muted-foreground">{key}</p><p>{formatTimelineValue(value)}</p></div>)}
         </div>
         <div className="mt-4 pt-4 border-t border-border flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs font-mono-data">
           <span className="text-muted-foreground">Capture window: {formatScheduleTime(schedulePreview?.window_start)} to {formatScheduleTime(schedulePreview?.window_end)}</span>
@@ -200,16 +203,30 @@ function MetricCard({ icon, label, value, pct, accent = false }: { icon: React.R
 
 function formatScheduleTime(value?: string | null) {
   if (!value) return "-";
-  return format(new Date(value), "HH:mm");
+  const date = new Date(value);
+  return isValidDate(date) ? format(date, "HH:mm") : "-";
 }
 
 function formatRelative(value?: string | null) {
   if (!value) return "-";
-  return formatDistanceToNow(new Date(value), { addSuffix: true });
+  const date = new Date(value);
+  return isValidDate(date) ? formatDistanceToNow(date, { addSuffix: true }) : "-";
 }
 
 function formatDaemonJob(capture: any) {
   if (!capture?.daemon_last_claimed_job_type) return "-";
   const when = formatRelative(capture.daemon_last_claimed_at);
   return `${capture.daemon_last_claimed_job_type} ${when}`;
+}
+
+function formatCoordinate(value: number) {
+  return Number.isFinite(value) ? value.toFixed(4) : "-";
+}
+
+function formatTimelineValue(value?: Date | null) {
+  return isValidDate(value) ? format(value, "HH:mm") : "-";
+}
+
+function isValidDate(value?: Date | null): value is Date {
+  return value instanceof Date && Number.isFinite(value.getTime());
 }

@@ -1,14 +1,14 @@
 import * as SunCalc from "suncalc";
 
 export interface TwilightTimeline {
-  sunset: Date;
-  civilDusk: Date;       // civil twilight end
-  nauticalDusk: Date;
-  astronomicalDusk: Date; // night start
-  astronomicalDawn: Date; // night end
-  nauticalDawn: Date;
-  civilDawn: Date;
-  sunrise: Date;
+  sunset: Date | null;
+  civilDusk: Date | null;       // civil twilight end
+  nauticalDusk: Date | null;
+  astronomicalDusk: Date | null; // night start
+  astronomicalDawn: Date | null; // night end
+  nauticalDawn: Date | null;
+  civilDawn: Date | null;
+  sunrise: Date | null;
 }
 
 export function getTonightTimeline(lat: number, lon: number, date = new Date()): TwilightTimeline {
