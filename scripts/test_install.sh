@@ -182,4 +182,7 @@ assert_contains "SupplementaryGroups=video render input gpio i2c spi" "$TMP_DIR/
 assert_contains "SupplementaryGroups=video render input gpio i2c spi" "$TMP_DIR/systemd/skyweaver-capture.service"
 assert_contains "SupplementaryGroups=video render input gpio i2c spi" "$TMP_DIR/systemd/skyweaver-worker.service"
 
+bash -n "$ROOT_DIR/upgrade.sh"
+assert_contains "usermod -a -G i2c" "$COMMAND_LOG"
+
 echo "install.sh dry-run and idempotency checks passed"
