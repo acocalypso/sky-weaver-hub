@@ -37,6 +37,8 @@ export const SkyApi = {
   patchProfile: (id: string, settings: any) => api(`/api/v1/camera-profiles/${id}`, { method: "PATCH", body: JSON.stringify({ settings }) }),
   captureStart: () => api("/api/v1/capture/start", { method: "POST" }),
   captureStop: () => api("/api/v1/capture/stop", { method: "POST" }),
+  capturePause: () => api("/api/v1/capture/pause", { method: "POST" }),
+  captureResume: () => api("/api/v1/capture/resume", { method: "POST" }),
   testShot: (body: any = {}) => api<any>("/api/v1/capture/test-shot", { method: "POST", body: JSON.stringify(body) }),
   images: (query = "") => api<ImageRow[]>(`/api/v1/images${query}`),
   settings: () => api<Record<string, any>>("/api/v1/settings"),

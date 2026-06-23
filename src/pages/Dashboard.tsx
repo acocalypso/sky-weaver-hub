@@ -6,7 +6,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { SkyApi, type CameraRow, type ImageRow, type SchedulePreview, type SkyStatus, type SystemMetrics } from "@/lib/api";
 import { getTonightTimeline, getSunAltitude } from "@/lib/sun";
 import sampleSky from "@/assets/sample-sky-1.jpg";
-import { Play, Square, Camera, RefreshCw, Film, RotateCw, Cpu, MemoryStick, HardDrive, Thermometer, Activity, Clock } from "lucide-react";
+import { Play, Pause, Square, Camera, RefreshCw, Film, RotateCw, Cpu, MemoryStick, HardDrive, Thermometer, Activity, Clock } from "lucide-react";
 import { toast } from "sonner";
 import { format, formatDistanceToNow } from "date-fns";
 
@@ -53,6 +53,8 @@ export default function Dashboard() {
   async function quickAction(type: string) {
     try {
       if (type === "start") await SkyApi.captureStart();
+      if (type === "pause") await SkyApi.capturePause();
+      if (type === "resume") await SkyApi.captureResume();
       if (type === "stop") await SkyApi.captureStop();
       if (type === "test") await SkyApi.testShot({ camera_id: camera?.id, exposure_ms: 1000, gain: 1, mode: "manual" });
       if (type === "timelapse") await SkyApi.createProduct("timelapse", { day_key: latest?.day_key });
@@ -81,6 +83,11 @@ export default function Dashboard() {
 
       <div className="flex flex-wrap gap-2">
         <Button onClick={() => quickAction("start")} className="bg-gradient-primary text-primary-foreground hover:opacity-90"><Play className="h-4 w-4 mr-2" /> Start capture</Button>
+        {captureStatus === "paused" ? (
+          <Button variant="outline" onClick={() => quickAction("resume")}><Play className="h-4 w-4 mr-2" /> Resume</Button>
+        ) : (
+          <Button variant="outline" onClick={() => quickAction("pause")} disabled={captureStatus !== "running"}><Pause className="h-4 w-4 mr-2" /> Pause</Button>
+        )}
         <Button variant="outline" onClick={() => quickAction("stop")}><Square className="h-4 w-4 mr-2" /> Stop</Button>
         <Button variant="outline" onClick={() => quickAction("test")}><Camera className="h-4 w-4 mr-2" /> Test shot</Button>
         <Button variant="outline" onClick={load}><RefreshCw className="h-4 w-4 mr-2" /> Refresh</Button>

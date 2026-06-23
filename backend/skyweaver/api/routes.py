@@ -390,7 +390,10 @@ def capture_state(_principal: Annotated[dict, Depends(require_scope("read:status
 @router.post("/capture/start")
 def capture_start(_principal: Annotated[dict, Depends(require_scope("write:capture"))]):
     with session() as conn:
-        conn.execute("UPDATE capture_state SET status='running', started_at=COALESCE(started_at, ?), updated_at=? WHERE id=1", (now_iso(), now_iso()))
+        conn.execute(
+            "UPDATE capture_state SET status='running', current_mode='automation', last_error=NULL, started_at=COALESCE(started_at, ?), updated_at=? WHERE id=1",
+            (now_iso(), now_iso()),
+        )
         event(conn, "capture_started", {})
     return ok({"status": "running"})
 
@@ -398,22 +401,33 @@ def capture_start(_principal: Annotated[dict, Depends(require_scope("write:captu
 @router.post("/capture/stop")
 def capture_stop(_principal: Annotated[dict, Depends(require_scope("write:capture"))]):
     with session() as conn:
-        conn.execute("UPDATE capture_state SET status='stopped', updated_at=? WHERE id=1", (now_iso(),))
-        event(conn, "capture_stopped", {})
-    return ok({"status": "stopped"})
+        ts = now_iso()
+        conn.execute("UPDATE capture_state SET status='stopped', current_mode='manual', updated_at=? WHERE id=1", (ts,))
+        cur = conn.execute(
+            "UPDATE capture_jobs SET status='canceled', completed_at=?, error='Canceled by operator stop' WHERE status IN ('pending', 'claimed') AND type IN ('single', 'scheduled', 'sequence')",
+            (ts,),
+        )
+        event(conn, "capture_stopped", {"canceled_jobs": cur.rowcount})
+    return ok({"status": "stopped", "canceled_jobs": cur.rowcount})
 
 
 @router.post("/capture/pause")
 def capture_pause(_principal: Annotated[dict, Depends(require_scope("write:capture"))]):
     with session() as conn:
-        conn.execute("UPDATE capture_state SET status='paused', updated_at=? WHERE id=1", (now_iso(),))
+        conn.execute("UPDATE capture_state SET status='paused', current_mode='paused', updated_at=? WHERE id=1", (now_iso(),))
         event(conn, "capture_paused", {})
     return ok({"status": "paused"})
 
 
 @router.post("/capture/resume")
 def capture_resume(_principal: Annotated[dict, Depends(require_scope("write:capture"))]):
-    return capture_start(_principal)
+    with session() as conn:
+        conn.execute(
+            "UPDATE capture_state SET status='running', current_mode='automation', last_error=NULL, started_at=COALESCE(started_at, ?), updated_at=? WHERE id=1",
+            (now_iso(), now_iso()),
+        )
+        event(conn, "capture_resumed", {})
+    return ok({"status": "running"})
 
 
 @router.post("/capture/test-shot")

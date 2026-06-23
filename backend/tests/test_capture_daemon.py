@@ -96,6 +96,49 @@ def test_daemon_consumes_queued_single_capture(tmp_path: Path):
     assert images[0]["mode"] == "manual"
 
 
+def test_pause_holds_queued_capture_until_resume(tmp_path: Path):
+    client = make_client(tmp_path)
+    token = login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+    assert client.post("/api/v1/capture/start", headers=headers).status_code == 200
+    assert client.post("/api/v1/capture/pause", headers=headers).status_code == 200
+
+    queued = client.post(
+        "/api/v1/capture/single",
+        headers=headers,
+        json={"exposure_ms": 250, "gain": 1, "mode": "manual"},
+    ).json()["data"]
+
+    from skyweaver.capture_daemon import CaptureDaemon
+
+    daemon = CaptureDaemon()
+    assert asyncio.run(daemon.run_once()) is False
+    paused_job = client.get(f"/api/v1/capture/jobs/{queued['id']}", headers=headers).json()["data"]
+    assert paused_job["status"] == "pending"
+    assert client.get("/api/v1/images", headers=headers).json()["data"] == []
+
+    assert client.post("/api/v1/capture/resume", headers=headers).status_code == 200
+    assert asyncio.run(daemon.run_once()) is True
+    completed_job = client.get(f"/api/v1/capture/jobs/{queued['id']}", headers=headers).json()["data"]
+    assert completed_job["status"] == "completed"
+
+
+def test_stop_cancels_pending_capture_jobs(tmp_path: Path):
+    client = make_client(tmp_path)
+    token = login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+    assert client.post("/api/v1/capture/start", headers=headers).status_code == 200
+    queued = client.post("/api/v1/capture/single", headers=headers, json={"mode": "manual"}).json()["data"]
+
+    stopped = client.post("/api/v1/capture/stop", headers=headers).json()["data"]
+    assert stopped["status"] == "stopped"
+    assert stopped["canceled_jobs"] == 1
+
+    after = client.get(f"/api/v1/capture/jobs/{queued['id']}", headers=headers).json()["data"]
+    assert after["status"] == "canceled"
+    assert after["error"] == "Canceled by operator stop"
+
+
 def test_daemon_consumes_queued_sequence_capture(tmp_path: Path):
     client = make_client(tmp_path)
     token = login(client)
