@@ -9,6 +9,7 @@ User=skyweaver
 Group=skyweaver
 WorkingDirectory=/opt/skyweaver
 EnvironmentFile=-/etc/skyweaver/skyweaver.env
+Environment=PYTHONPATH=/opt/skyweaver/backend
 ExecStart=/opt/skyweaver/backend/.venv/bin/python -m skyweaver.worker
 Restart=on-failure
 RestartSec=5

@@ -10,6 +10,7 @@ User=skyweaver
 Group=skyweaver
 WorkingDirectory=/opt/skyweaver
 EnvironmentFile=-/etc/skyweaver/skyweaver.env
+Environment=PYTHONPATH=/opt/skyweaver/backend
 ExecStart=/opt/skyweaver/backend/.venv/bin/uvicorn skyweaver.main:app --host ${SKYWEAVER_HOST} --port ${SKYWEAVER_PORT}
 Restart=on-failure
 RestartSec=5

@@ -92,10 +92,9 @@ case "$dest" in
     mkdir -p "$dest/backend" "$dest/scripts/systemd"
     printf '{}\n' >"$dest/package.json"
     printf '# test requirements\n' >"$dest/backend/requirements.txt"
-    printf '[Unit]\nDescription=api\n' >"$dest/scripts/systemd/skyweaver-api.service"
-    printf '[Unit]\nDescription=capture\n' >"$dest/scripts/systemd/skyweaver-capture.service"
-    printf '[Unit]\nDescription=worker\n' >"$dest/scripts/systemd/skyweaver-worker.service"
-    printf '[Unit]\nDescription=target\n' >"$dest/scripts/systemd/skyweaver.target"
+    if [[ -d "$src/scripts/systemd" ]]; then
+      cp "$src/scripts/systemd/"* "$dest/scripts/systemd/"
+    fi
     ;;
   */web/)
     if [[ -d "$src" ]]; then
@@ -151,5 +150,8 @@ assert_contains "Keeping existing $TMP_DIR/config/skyweaver.env" "$TMP_DIR/insta
 assert_contains "systemctl restart skyweaver.target" "$COMMAND_LOG"
 [[ -f "$TMP_DIR/data/web/index.html" ]]
 [[ -f "$TMP_DIR/systemd/skyweaver-api.service" ]]
+assert_contains "Environment=PYTHONPATH=/opt/skyweaver/backend" "$TMP_DIR/systemd/skyweaver-api.service"
+assert_contains "Environment=PYTHONPATH=/opt/skyweaver/backend" "$TMP_DIR/systemd/skyweaver-capture.service"
+assert_contains "Environment=PYTHONPATH=/opt/skyweaver/backend" "$TMP_DIR/systemd/skyweaver-worker.service"
 
 echo "install.sh dry-run and idempotency checks passed"
