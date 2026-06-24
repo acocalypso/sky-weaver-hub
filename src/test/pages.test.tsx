@@ -8,6 +8,7 @@ import SettingsPage from "@/pages/Settings";
 import ApiKeys from "@/pages/ApiKeys";
 import SetupPage from "@/pages/Setup";
 import Health from "@/pages/Health";
+import PublicSky from "@/pages/PublicSky";
 import { SkyApi } from "@/lib/api";
 
 vi.mock("sonner", () => ({
@@ -43,6 +44,7 @@ vi.mock("@/lib/api", async () => {
       completeSetup: vi.fn(),
       detectCameras: vi.fn(),
       createCamera: vi.fn(),
+      publicLatest: vi.fn(),
     },
   };
 });
@@ -75,6 +77,21 @@ const mockSettings = {
   storage: { images: "./data/images", videos: "./data/videos", retention_days: 30, min_free_gb: 2 },
   public_page: { enabled: true, iframe_enabled: true },
   security: { cors_origins: ["http://localhost:8080"], first_setup_required: true },
+};
+
+const mockPublicLatest = {
+  id: "img-1",
+  captured_at: "2026-06-23T22:15:00+00:00",
+  day_key: "20260623",
+  mode: "night",
+  format: "jpg",
+  width: 1280,
+  height: 960,
+  size_bytes: 12345,
+  camera_id: "cam-1",
+  download_url: "/api/v1/public/latest/download",
+  metadata_url: "/api/v1/public/latest",
+  thumbnail_url: "/api/v1/public/latest/thumbnail",
 };
 
 beforeEach(() => {
@@ -141,6 +158,7 @@ beforeEach(() => {
   vi.mocked(SkyApi.completeSetup).mockResolvedValue({ required: false });
   vi.mocked(SkyApi.detectCameras).mockResolvedValue([]);
   vi.mocked(SkyApi.createCamera).mockResolvedValue({ id: "cam-2" });
+  vi.mocked(SkyApi.publicLatest).mockResolvedValue(mockPublicLatest);
 });
 
 describe("main pages", () => {
@@ -219,5 +237,16 @@ describe("main pages", () => {
       timezone: "Europe/Berlin",
       primary_camera_id: "cam-1",
     })));
+  });
+
+  it("renders public sky from unauthenticated latest endpoint", async () => {
+    render(<PublicSky />);
+
+    expect(await screen.findByRole("heading", { name: /sky weaver public sky/i })).toBeInTheDocument();
+    expect(screen.getByText("live")).toBeInTheDocument();
+    expect(screen.getByText("night")).toBeInTheDocument();
+    expect(screen.getByText("1280 x 960")).toBeInTheDocument();
+    expect(screen.getByAltText("Latest public all-sky capture")).toHaveAttribute("src", "/api/v1/public/latest/download?v=img-1");
+    await waitFor(() => expect(SkyApi.publicLatest).toHaveBeenCalled());
   });
 });

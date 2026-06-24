@@ -21,6 +21,7 @@ const SettingsPage = lazy(() => import("@/pages/Settings"));
 const ApiKeys = lazy(() => import("@/pages/ApiKeys"));
 const DeveloperApi = lazy(() => import("@/pages/DeveloperApi"));
 const Setup = lazy(() => import("@/pages/Setup"));
+const PublicSky = lazy(() => import("@/pages/PublicSky"));
 const Deployment = lazy(() => import("@/pages/Placeholder").then((module) => ({ default: module.Deployment })));
 
 const queryClient = new QueryClient();
@@ -34,6 +35,7 @@ const App = () => (
         <AuthProvider>
           <Suspense fallback={<RouteLoading />}>
             <Routes>
+              <Route path="/public" element={<PublicSky />} />
               <Route path="/auth" element={<AuthPage />} />
               <Route path="/setup" element={<ProtectedRoute><Setup /></ProtectedRoute>} />
               <Route element={<ProtectedRoute><AppShell /></ProtectedRoute>}>

@@ -22,6 +22,7 @@ const endpoints = [
   ["Health", "GET", "/api/v1/health", "No auth health probe."],
   ["Status", "GET", "/api/v1/status", "Capture state, active camera, latest image."],
   ["Latest image", "GET", "/api/v1/images/latest", "Mobile-friendly latest image metadata."],
+  ["Public latest", "GET", "/api/v1/public/latest", "Unauthenticated public display metadata."],
   ["Gallery", "GET", "/api/v1/images?limit=50&offset=0", "Paginated image list."],
   ["Start capture", "POST", "/api/v1/capture/start", "Requires write:capture."],
   ["Stop capture", "POST", "/api/v1/capture/stop", "Requires write:capture."],

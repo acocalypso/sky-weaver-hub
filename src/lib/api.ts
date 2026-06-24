@@ -51,6 +51,7 @@ export const SkyApi = {
   queueSequenceCapture: (body: any = {}) => api<CaptureJob>("/api/v1/capture/sequence", { method: "POST", body: JSON.stringify(body) }),
   captureJobs: () => api<CaptureJob[]>("/api/v1/capture/jobs"),
   images: (query = "") => api<ImageRow[]>(`/api/v1/images${query}`),
+  publicLatest: () => api<PublicLatestImage>("/api/v1/public/latest"),
   settings: () => api<Record<string, any>>("/api/v1/settings"),
   patchSettings: (values: Record<string, any>) => api<Record<string, any>>("/api/v1/settings", { method: "PATCH", body: JSON.stringify({ values }) }),
   schedule: () => api<ScheduleRow>("/api/v1/schedule"),
@@ -82,6 +83,7 @@ export interface CameraRow { id: string; name: string; adapter: string; device_i
 export interface DetectedCamera { id: string; name: string; backend: string; model?: string | null; serial?: string | null; metadata?: any; }
 export interface CameraProfile { id: string; camera_id: string; name: string; mode: string; settings: Record<string, any>; }
 export interface ImageRow { id: string; camera_id: string | null; captured_at: string; day_key: string; mode: string; file_path: string; public_url: string | null; thumbnail_path: string | null; format: string; width: number | null; height: number | null; size_bytes: number | null; exposure_ms: number | null; gain: number | null; temperature_c: number | null; mean_brightness: number | null; star_count: number | null; cloud_score: number | null; bad_image: boolean; metadata: any; }
+export interface PublicLatestImage { id: string; captured_at: string; day_key: string; mode: string; format: string; width: number | null; height: number | null; size_bytes: number | null; camera_id?: string | null; download_url: string; metadata_url: string; thumbnail_url?: string | null; latest_file?: string; latest_thumbnail_file?: string; }
 export interface ScheduleRow { id?: string; enabled: boolean; start_mode: string; end_mode: string; sun_angle: number; fixed_start_time?: string | null; fixed_end_time?: string | null; timezone: string; latitude: number; longitude: number; interval_seconds: number; exposure_ramping_enabled: boolean; }
 export interface SchedulePreview { enabled: boolean; active: boolean; now: string; window_start: string | null; window_end: string | null; next_transition_at: string | null; next_state: string; timezone: string; }
 export interface ProductRow { id: string; type: string; day_key: string; file_path: string | null; thumbnail_path: string | null; status: string; metadata: any; created_at: string; }

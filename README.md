@@ -14,11 +14,12 @@ This repository now contains a working local-first platform slice:
 - Versioned REST endpoints, OpenAPI docs at `/api/docs`, and SSE events at `/api/v1/events/stream`.
 - Daemon-owned scheduled capture loop with queued test/single/sequence captures, pause/resume/stop queue semantics, best-effort rpicam hard-cancel wiring, graceful fallback for unsupported adapters, heartbeat reporting, interrupted job recovery, and stale daemon lock recovery.
 - Processing worker for thumbnail reprocess, keogram JPEGs, ffmpeg timelapses, mini timelapses, and startrail JPEGs.
+- Public unauthenticated sky page at `/public`, backed by stable latest-image artifacts and public latest API endpoints.
 - System Health UI with service controls, per-service detail, recent journal output, diagnostics export, and queue/metric summaries.
 - Systemd units and installer scripts for Pi deployment, with first-setup prompts, constrained service-control permissions, and dry-run/idempotency tests.
 - Allsky migration detection and dry-run preview endpoints. Real import is still scaffolded.
 
-Some Allsky parity items are intentionally scaffolded for later phases: public unauthenticated sky page, remote upload execution, overlay editing, dark-frame median combine, full Allsky import, and custom module sandboxing.
+Some Allsky parity items are intentionally scaffolded for later phases: remote upload execution, overlay editing, dark-frame median combine, full Allsky import, and custom module sandboxing.
 
 ## Supported Targets
 
@@ -108,9 +109,8 @@ curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8765/api/v1/capture/jobs
 JavaScript:
 
 ```js
-fetch("http://skyweaver.local:8765/api/v1/images/latest", {
-  headers: { Authorization: `Bearer ${apiKey}` },
-});
+const latest = await fetch("http://skyweaver.local:8765/api/v1/public/latest").then((res) => res.json());
+const imageUrl = `http://skyweaver.local:8765${latest.data.download_url}`;
 ```
 
 Python:
