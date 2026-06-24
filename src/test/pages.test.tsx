@@ -28,6 +28,7 @@ vi.mock("@/lib/api", async () => {
       settings: vi.fn(),
       metrics: vi.fn(),
       systemServices: vi.fn(),
+      serviceDetail: vi.fn(),
       diagnostics: vi.fn(),
       controlService: vi.fn(),
       restartService: vi.fn(),
@@ -92,6 +93,14 @@ beforeEach(() => {
     { name: "skyweaver-capture", unit: "skyweaver-capture.service", status: "running", managed_by: "systemd", actions: ["start", "stop", "restart"], heartbeat_at: "2026-06-23T22:16:00+00:00" },
     { name: "skyweaver-worker", unit: "skyweaver-worker.service", status: "idle", managed_by: "systemd", actions: ["start", "stop", "restart"] },
   ]);
+  vi.mocked(SkyApi.serviceDetail).mockResolvedValue({
+    service: { name: "skyweaver-capture", unit: "skyweaver-capture.service", status: "running", managed_by: "systemd" },
+    unit: "skyweaver-capture.service",
+    properties: { ActiveState: "active", MainPID: "123" },
+    systemctl_status: "ok",
+    journal: ["2026-06-24T05:00:00 skyweaver-capture started"],
+    journal_status: "ok",
+  });
   vi.mocked(SkyApi.diagnostics).mockResolvedValue({
     generated_at: "2026-06-23T22:16:00+00:00",
     app: { name: "Sky Weaver Hub" },
@@ -178,6 +187,18 @@ describe("main pages", () => {
     fireEvent.click(within(serviceRow).getByRole("button", { name: /restart/i }));
 
     await waitFor(() => expect(SkyApi.controlService).toHaveBeenCalledWith("skyweaver-capture", "restart"));
+  });
+
+  it("opens service detail journal from health", async () => {
+    render(<Health />);
+
+    const serviceName = await screen.findByText("skyweaver-capture");
+    const serviceRow = serviceName.closest(".rounded-md") as HTMLElement;
+    fireEvent.click(within(serviceRow).getByRole("button", { name: /details/i }));
+
+    expect(await screen.findByText("skyweaver-capture details")).toBeInTheDocument();
+    expect(await screen.findByText("2026-06-24T05:00:00 skyweaver-capture started")).toBeInTheDocument();
+    await waitFor(() => expect(SkyApi.serviceDetail).toHaveBeenCalledWith("skyweaver-capture"));
   });
 
   it("submits first setup values", async () => {

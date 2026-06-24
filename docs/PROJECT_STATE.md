@@ -32,6 +32,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 - `/api/v1/status`
 - `/api/v1/system/metrics`
 - `/api/v1/system/services`
+- `/api/v1/system/services/{name}` for per-service `systemctl show` detail and recent `journalctl` output when available
 - `/api/v1/system/services/{name}/{action}` for allowlisted start/stop/restart controls
 - `/api/v1/system/diagnostics`
 - `/api/v1/logs`
@@ -94,7 +95,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 - Dashboard Tonight panel displays capture-window status and the next schedule transition.
 - Gallery page with day/mode/quality filters and image detail.
 - Night Products page queues product jobs, shows processing job progress, and lists generated downloads.
-- System Health page shows metrics, service status, start/stop/restart actions, queue counts, recent logs, and diagnostics JSON export.
+- System Health page shows metrics, service status, start/stop/restart actions, per-service detail/journal output, queue counts, recent logs, and diagnostics JSON export.
 - Logs page reads backend logs.
 - Settings page edits local settings groups.
 - API Keys page creates scoped keys, shows full key once, enables/disables, and revokes.
@@ -148,7 +149,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 | Phase 7: Overlay/modules | Early scaffold | Module tables/endpoints exist. Overlay editor, processor, built-in modules, safe module execution are open. |
 | Phase 8: Installer/systemd/support/docs | Partial | Scripts and units exist. Shellcheck CI, installer dry-run/idempotency tests, service-control sudoers generation, interactive first-setup prompts, real Pi install, repeat install, service restart, and reboot verification exist. Nginx option and broader Pi camera verification are open. |
 | Phase 9: Allsky migration/remote upload | Early scaffold | Detection and dry-run count preview exist. Real import, rollback, unsupported-setting report, and remote upload execution are open. |
-| Phase 10: Polish/mobile/tests/hardening | Partial | Mobile API docs, latest/status/gallery endpoints, route bundle splitting, system health/diagnostics UI, initial frontend component tests, and CI workflow exist. Broader tests, UX polish, performance, and security hardening remain. |
+| Phase 10: Polish/mobile/tests/hardening | Partial | Mobile API docs, latest/status/gallery endpoints, route bundle splitting, system health diagnostics/service detail UI, initial frontend component tests, and CI workflow exist. Broader tests, UX polish, performance, and security hardening remain. |
 
 ## Open Topics
 
@@ -220,7 +221,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 - Add module/plugin manager.
 - Add dark frames page.
 - Add remote upload page.
-- Add system health journal/service detail views beyond start/stop/restart controls.
+- Expand system health journal/service detail views with richer failure analysis and unit history.
 - Add Allsky migration page.
 - Add deployment/installer docs page.
 - Improve mobile layouts after real data flows are in place.
@@ -344,14 +345,13 @@ Most recent checks run during implementation:
 - `npm audit --audit-level=high`: passed with 0 vulnerabilities
 - `backend\\.venv\\Scripts\\python -m pytest backend\\tests`: passed with 22 tests
 
-Most recent local follow-up checks on 2026-06-23:
+Most recent local follow-up checks on 2026-06-24:
 
 - `npm run lint`: passed
-- `npm test`: passed with 6 tests
+- `npm test`: passed with 7 tests
 - `npm run build`: passed
-- `backend\\.venv\\Scripts\\python -W error::DeprecationWarning -m pytest backend\\tests`: passed with 30 tests
-- `bash scripts/test_install.sh`: passed
-- `bash -n install.sh scripts/test_install.sh upgrade.sh uninstall.sh support.sh`: passed
+- `backend\\.venv\\Scripts\\python -m pytest backend\\tests`: passed with 31 tests
+- Local OpenAPI generation plus `python -m json.tool artifacts\\openapi.json`: passed
 - `shellcheck install.sh scripts/test_install.sh upgrade.sh uninstall.sh support.sh`: not run locally because ShellCheck is not installed on this Windows host; CI installs ShellCheck on Ubuntu.
 
 Raspberry Pi acceptance on 2026-06-23:
@@ -380,6 +380,6 @@ The next development phase should focus on operational hardening, because interr
 
 Suggested next tasks:
 
-1. Add system health journal/service detail views.
-2. Continue moving long-running capture execution out of direct API request paths.
-3. Add auth/setup rate limiting.
+1. Continue moving long-running capture execution out of direct API request paths.
+2. Add auth/setup rate limiting.
+3. Expand system health journal/service detail views with richer failure analysis and unit history.

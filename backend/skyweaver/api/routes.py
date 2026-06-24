@@ -36,6 +36,22 @@ SERVICE_UNITS = {
 }
 SERVICE_ACTIONS = {"start", "stop", "restart"}
 BOOTSTRAP_PASSWORD = "skyweaver-change-me"
+SERVICE_DETAIL_PROPERTIES = [
+    "Id",
+    "Description",
+    "LoadState",
+    "ActiveState",
+    "SubState",
+    "UnitFileState",
+    "MainPID",
+    "ExecMainStatus",
+    "ExecMainCode",
+    "Restart",
+    "NRestarts",
+    "FragmentPath",
+    "DropInPaths",
+]
+SENSITIVE_WORDS = ("password", "passwd", "secret", "token", "api_key", "apikey", "key_hash", "authorization")
 
 
 class LoginRequest(BaseModel):
@@ -160,6 +176,11 @@ def services(_principal: Annotated[dict, Depends(require_scope("read:status"))])
     return ok(service_rows())
 
 
+@router.get("/system/services/{name}")
+def service_detail(name: str, journal_lines: int = Query(80, ge=0, le=500), _principal: Annotated[dict, Depends(require_scope("read:status"))] = None):
+    return ok(service_detail_row(name, journal_lines))
+
+
 def service_rows() -> list[dict[str, Any]]:
     with session() as conn:
         state = decode_row(row_to_dict(conn.execute(
@@ -193,6 +214,72 @@ def service_rows() -> list[dict[str, Any]]:
         },
         {"name": "skyweaver-worker", "unit": "skyweaver-worker.service", "status": "idle", "managed_by": "systemd", "actions": sorted(SERVICE_ACTIONS)},
     ]
+
+
+def redact_operational_text(value: str) -> str:
+    if any(word in value.lower() for word in SENSITIVE_WORDS):
+        return "[redacted]"
+    return value
+
+
+def parse_systemctl_show(output: str) -> dict[str, str]:
+    properties: dict[str, str] = {}
+    for line in output.splitlines():
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        properties[key] = redact_operational_text(value)
+    return properties
+
+
+def service_detail_row(name: str, journal_lines: int = 80) -> dict[str, Any]:
+    unit = SERVICE_UNITS.get(name)
+    if not unit:
+        raise HTTPException(404, "Unknown Sky Weaver service")
+    service = next((row for row in service_rows() if row["unit"] == unit), {"name": name, "unit": unit, "status": "unknown"})
+    detail: dict[str, Any] = {
+        "service": service,
+        "unit": unit,
+        "properties": {},
+        "systemctl_status": "unavailable",
+        "systemctl_error": None,
+        "journal": [],
+        "journal_status": "unavailable",
+        "journal_error": None,
+    }
+
+    command = systemctl_command()
+    if command:
+        result = subprocess.run(
+            [*command, "show", unit, "--no-pager", f"--property={','.join(SERVICE_DETAIL_PROPERTIES)}"],
+            capture_output=True,
+            text=True,
+            timeout=20,
+            check=False,
+        )
+        if result.returncode == 0:
+            detail["systemctl_status"] = "ok"
+            detail["properties"] = parse_systemctl_show(result.stdout)
+        else:
+            detail["systemctl_status"] = "failed"
+            detail["systemctl_error"] = redact_operational_text((result.stderr or result.stdout or "systemctl show failed").strip())
+
+    journalctl = shutil.which("journalctl")
+    if journalctl and journal_lines > 0:
+        result = subprocess.run(
+            [journalctl, "-u", unit, "-n", str(journal_lines), "--no-pager", "--output=short-iso"],
+            capture_output=True,
+            text=True,
+            timeout=20,
+            check=False,
+        )
+        if result.returncode == 0:
+            detail["journal_status"] = "ok"
+            detail["journal"] = [redact_operational_text(line) for line in result.stdout.splitlines() if line.strip()]
+        else:
+            detail["journal_status"] = "failed"
+            detail["journal_error"] = redact_operational_text((result.stderr or result.stdout or "journalctl failed").strip())
+    return detail
 
 
 @router.get("/system/diagnostics")

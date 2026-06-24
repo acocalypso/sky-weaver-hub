@@ -31,6 +31,7 @@ export const SkyApi = {
   status: () => api<SkyStatus>("/api/v1/status"),
   metrics: () => api<SystemMetrics>("/api/v1/system/metrics"),
   systemServices: () => api<SystemService[]>("/api/v1/system/services"),
+  serviceDetail: (name: string) => api<ServiceDetail>(`/api/v1/system/services/${name}`),
   controlService: (name: string, action: ServiceAction) => api<ServiceActionResult>(`/api/v1/system/services/${name}/${action}`, { method: "POST" }),
   restartService: (name: string) => api<ServiceActionResult>(`/api/v1/system/services/${name}/restart`, { method: "POST" }),
   diagnostics: () => api<SystemDiagnostics>("/api/v1/system/diagnostics"),
@@ -74,6 +75,7 @@ export interface SystemMetrics { cpu_percent: number; memory_percent: number; di
 export type ServiceAction = "start" | "stop" | "restart";
 export interface ServiceActionResult { name: string; unit: string; action: ServiceAction; status: string; note: string; }
 export interface SystemService { name: string; unit?: string; status: string; managed_by?: string; actions?: ServiceAction[]; heartbeat_at?: string | null; heartbeat_age_seconds?: number | null; pid?: number | null; last_claimed_job_id?: string | null; last_claimed_job_type?: string | null; last_claimed_at?: string | null; last_success_at?: string | null; }
+export interface ServiceDetail { service: SystemService; unit: string; properties: Record<string, string>; systemctl_status: string; systemctl_error?: string | null; journal: string[]; journal_status: string; journal_error?: string | null; }
 export interface SystemDiagnostics { generated_at: string; app: Record<string, any>; platform: Record<string, any>; paths: Record<string, string>; database: Record<string, any>; metrics: SystemMetrics; services: SystemService[]; counts: Record<string, number>; recent_logs: LogRow[]; redaction: string; }
 export interface CameraRow { id: string; name: string; adapter: string; device_id?: string | null; model?: string | null; serial?: string | null; enabled: boolean; is_primary: boolean; capabilities?: any; created_at?: string; updated_at?: string; }
 export interface DetectedCamera { id: string; name: string; backend: string; model?: string | null; serial?: string | null; metadata?: any; }
