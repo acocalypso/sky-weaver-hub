@@ -2,6 +2,9 @@
 
 Use this template when assigning implementation work to Codex or a multi-agent coding team.
 
+For dependency-specific work, report whether Context7 MCP was used and note any important documentation source, package version, or assumption that affected the implementation.
+
+
 ````text
 # Task For GPT-5.5 Codex Multi-Agent Team
 

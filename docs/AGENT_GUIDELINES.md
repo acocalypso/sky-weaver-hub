@@ -4,6 +4,20 @@ Sky Weaver Hub is a Raspberry Pi/Linux first, local-first all-sky camera platfor
 
 These rules apply to all coding, review, documentation, and automation work in this repository.
 
+## Documentation Freshness And Context7 MCP
+
+When working with third-party libraries, frameworks, APIs, SDKs, package configuration, or dependency-specific implementation details, use the Context7 MCP server before proposing or changing code.
+
+Required rules:
+
+* Prefer current Context7 documentation over built-in model knowledge for external dependencies.
+* Use Context7 before implementing or reviewing changes involving React, Vite, FastAPI, Pydantic, SQLAlchemy, pytest, npm packages, Python packages, Raspberry Pi camera tooling, Android/iOS-related tooling, or other external APIs.
+* Do not rely on outdated examples when library behavior, configuration syntax, CLI flags, or APIs may have changed.
+* If Context7 is unavailable, say so explicitly and continue only with repository inspection and clearly stated assumptions.
+* Mention relevant documentation sources or package versions in the plan, review notes, or final response when they affected the implementation.
+* Context7 supplements repository inspection; it does not replace reading the actual project files before editing.
+
+
 ## Product Priorities
 
 Implementations must respect these priorities, in this order:
