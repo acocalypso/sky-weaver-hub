@@ -54,4 +54,6 @@ OUT
 
     assert len(found) == 1
     assert found[0].id == "rpicam://0"
-    assert "imx290" in found[0].model
+    model = found[0].model
+    assert model is not None
+    assert "imx290" in model
