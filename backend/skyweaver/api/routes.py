@@ -711,13 +711,22 @@ def capture_start(_principal: Annotated[dict, Depends(require_scope("write:captu
 def capture_stop(_principal: Annotated[dict, Depends(require_scope("write:capture"))]):
     with session() as conn:
         ts = now_iso()
+        running = all_rows(conn, "SELECT id, type FROM capture_jobs WHERE status='running' AND type IN ('test', 'single', 'scheduled', 'sequence', 'sequence_item') ORDER BY started_at")
         conn.execute("UPDATE capture_state SET status='stopped', current_mode='manual', updated_at=? WHERE id=1", (ts,))
         cur = conn.execute(
             "UPDATE capture_jobs SET status='canceled', completed_at=?, error='Canceled by operator stop' WHERE status IN ('pending', 'claimed') AND type IN ('test', 'single', 'scheduled', 'sequence')",
             (ts,),
         )
-        event(conn, "capture_stopped", {"canceled_jobs": cur.rowcount})
-    return ok({"status": "stopped", "canceled_jobs": cur.rowcount})
+        payload = {
+            "status": "stopped",
+            "stop_mode": "graceful",
+            "canceled_jobs": cur.rowcount,
+            "in_progress_jobs": len(running),
+            "in_progress_job_ids": [job["id"] for job in running],
+            "message": "Queued capture jobs were canceled. Any exposure already in progress will finish before being marked stopped.",
+        }
+        event(conn, "capture_stopped", payload)
+    return ok(payload)
 
 
 @router.post("/capture/pause")

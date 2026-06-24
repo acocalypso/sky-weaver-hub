@@ -195,6 +195,16 @@ async def execute_capture(command: CaptureCommand, job_type: str = "manual", job
         thumb = make_thumbnail(result.file_path, settings.thumbnail_dir / day_key / result.file_path.name)
 
         with session() as conn:
+            state = conn.execute("SELECT status, updated_at FROM capture_state WHERE id=1").fetchone()
+            job = conn.execute("SELECT started_at FROM capture_jobs WHERE id=?", (job_id,)).fetchone()
+            stopped_after_start = bool(
+                state
+                and job
+                and state["status"] == "stopped"
+                and state["updated_at"]
+                and job["started_at"]
+                and state["updated_at"] > job["started_at"]
+            )
             conn.execute(
                 """INSERT INTO images
                    (id, camera_id, captured_at, day_key, mode, file_path, public_url, thumbnail_path, format, width, height,
@@ -228,7 +238,13 @@ async def execute_capture(command: CaptureCommand, job_type: str = "manual", job
                 "UPDATE capture_state SET last_image_id=?, active_camera_id=?, daemon_last_success_at=?, last_error=NULL, updated_at=? WHERE id=1",
                 (image_id, cam["id"], now_iso(), now_iso()),
             )
-            conn.execute("UPDATE capture_jobs SET status='completed', progress=1, result=?, completed_at=? WHERE id=?", (json_dumps({"image_id": image_id}), now_iso(), job_id))
+            job_result = {"image_id": image_id}
+            if stopped_after_start:
+                job_result.update({"completed_after_stop": True, "stop_mode": "graceful"})
+            conn.execute(
+                "UPDATE capture_jobs SET status=?, progress=1, result=?, completed_at=? WHERE id=?",
+                ("stopped" if stopped_after_start else "completed", json_dumps(job_result), now_iso(), job_id),
+            )
             event(conn, "new_image", {"image_id": image_id, "path": str(result.file_path)})
 
         return {"job_id": job_id, "image": {**metadata, "file_path": str(result.file_path), "thumbnail_path": str(thumb) if thumb else None}}

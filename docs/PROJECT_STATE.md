@@ -79,10 +79,10 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 - Test-shot, queued single, queued sequence, and scheduled captures now run through daemon-owned capture jobs and share the same capture execution path.
 - `/api/v1/capture/single` creates a persistent pending capture job for daemon execution.
 - `/api/v1/capture/sequence` creates a persistent parent job that the daemon expands into child capture artifacts.
-- Pause holds queued automation capture jobs, resume releases them, test-shot jobs still run for manual verification, and stop cancels pending/claimed queued capture jobs.
+- Pause holds queued automation capture jobs, resume releases them, test-shot jobs still run for manual verification, and stop gracefully cancels pending/claimed queued capture jobs while reporting in-progress exposures that must finish inside the adapter.
 - Capture daemon startup requeues interrupted claimed/running capture jobs after service restart.
 - `/api/v1/schedule/preview-tonight` returns a real active window and next transition for fixed or sun-angle schedules.
-- Backend tests verify daemon-run scheduled capture creation, interval gating, queued test-shot completion while automation is stopped, queued single-capture completion, queued sequence completion, pause/resume/stop semantics, schedule preview, heartbeat/activity reporting, interrupted job recovery, and a mock overnight flow that checks latest/gallery updates.
+- Backend tests verify daemon-run scheduled capture creation, interval gating, queued test-shot completion while automation is stopped, queued single-capture completion, queued sequence completion, graceful stop reporting, pause/resume/stop semantics, schedule preview, heartbeat/activity reporting, interrupted job recovery, and a mock overnight flow that checks latest/gallery updates.
 
 ### Frontend
 
@@ -144,7 +144,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 | Phase 1: API skeleton and SQLite | Mostly done | Backend, schema, health/status, API client, core routes, and mock capture exist. Dedicated migration framework still needed. |
 | Phase 2: Auth/API keys/settings/docs | Mostly done | JWT login, API-key scopes, settings, API Keys UI, Developer API UI, installer-seeded first setup values, in-app first-setup enforcement, bootstrap-password detection, and password-strength guidance exist. Rate limiting is still open. |
 | Phase 3: Camera adapters and test shot | Partial | Mock and rpicam/libcamera implemented and validated with an IMX290 on Raspberry Pi. ZWO, gPhoto2, V4L2, INDI, custom command are placeholders. |
-| Phase 4: Capture daemon and realtime | Partial | Scheduled daemon loop, shared capture service, persistent job claiming for test/single/scheduled/sequence captures, pause/resume/stop queue semantics, active-window checks and UI preview, interval gating, lock-file duplicate-loop guard with stale lock recovery, heartbeat/activity reporting, interrupted job recovery, SSE endpoint, Pi reboot service startup acceptance, and IMX290 capture after restart/reboot acceptance exist. Graceful in-progress exposure stop behavior is still open. |
+| Phase 4: Capture daemon and realtime | Partial | Scheduled daemon loop, shared capture service, persistent job claiming for test/single/scheduled/sequence captures, graceful stop reporting, pause/resume/stop queue semantics, active-window checks and UI preview, interval gating, lock-file duplicate-loop guard with stale lock recovery, heartbeat/activity reporting, interrupted job recovery, SSE endpoint, Pi reboot service startup acceptance, and IMX290 capture after restart/reboot acceptance exist. Adapter-level hard exposure cancellation is still open. |
 | Phase 5: Image storage/gallery/latest/metadata | Partial | Mock capture artifacts, metadata, thumbnails, image rows, gallery, latest image exist. Latest symlink/copy and broader metadata extraction are open. |
 | Phase 6: Processing worker/products/retention | Partial | Worker claims jobs, thumbnail reprocess exists, keogram JPEG generation, ffmpeg timelapse/mini-timelapse generation, and startrail generation exist, and product job progress is visible in the UI. Cleanup and upload execution are open. |
 | Phase 7: Overlay/modules | Early scaffold | Module tables/endpoints exist. Overlay editor, processor, built-in modules, safe module execution are open. |
@@ -157,8 +157,8 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 ### Highest Priority
 
 - Expand the capture daemon into complete queue ownership:
-  - gracefully stop after current exposure
-  - document and surface in-progress capture stop limits clearly
+  - add adapter-level hard cancellation where hardware safely supports it
+  - keep documenting and surfacing in-progress capture stop limits clearly
 - Keep schedule preview and daemon state visible across Dashboard and Schedule as the daemon model evolves.
 - Complete mock acceptance flow end to end:
   - run longer manual/dev overnight simulations outside pytest
@@ -325,7 +325,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 
 ## Known Current Limitations
 
-- Capture daemon now performs scheduled captures and consumes queued test-shot, single-capture, and sequence jobs. Pause/resume/stop queue semantics, daemon activity visibility, Dashboard capture job progress, and interrupted job requeue on service start exist; Raspberry Pi reboot and IMX290 capture-after-reboot acceptance have passed.
+- Capture daemon now performs scheduled captures and consumes queued test-shot, single-capture, and sequence jobs. Graceful stop reporting, pause/resume/stop queue semantics, daemon activity visibility, Dashboard capture job progress, and interrupted job requeue on service start exist; Raspberry Pi reboot and IMX290 capture-after-reboot acceptance have passed.
 - Worker now generates thumbnails, keograms, ffmpeg timelapses, mini timelapses, and startrails, but retention cleanup and upload execution are still open.
 - Product endpoints queue jobs; keogram, timelapse, mini timelapse, and startrail currently produce downloadable night products.
 - Public page is not implemented.
@@ -381,6 +381,6 @@ The next development phase should focus on operational hardening, because interr
 
 Suggested next tasks:
 
-1. Add graceful in-progress exposure stop behavior and clearer stop-limit reporting.
+1. Add adapter-level hard cancellation where hardware safely supports it.
 2. Add auth/setup rate limiting.
 3. Expand system health journal/service detail views with richer failure analysis and unit history.

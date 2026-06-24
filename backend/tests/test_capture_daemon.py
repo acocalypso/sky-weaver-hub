@@ -169,7 +169,11 @@ def test_stop_cancels_pending_capture_jobs(tmp_path: Path):
 
     stopped = client.post("/api/v1/capture/stop", headers=headers).json()["data"]
     assert stopped["status"] == "stopped"
+    assert stopped["stop_mode"] == "graceful"
     assert stopped["canceled_jobs"] == 2
+    assert stopped["in_progress_jobs"] == 0
+    assert stopped["in_progress_job_ids"] == []
+    assert "exposure already in progress" in stopped["message"]
 
     after = client.get(f"/api/v1/capture/jobs/{queued['id']}", headers=headers).json()["data"]
     assert after["status"] == "canceled"
@@ -177,6 +181,60 @@ def test_stop_cancels_pending_capture_jobs(tmp_path: Path):
     test_after = client.get(f"/api/v1/capture/jobs/{test_queued['id']}", headers=headers).json()["data"]
     assert test_after["status"] == "canceled"
     assert test_after["error"] == "Canceled by operator stop"
+
+
+def test_stop_reports_running_capture_jobs(tmp_path: Path):
+    client = make_client(tmp_path)
+    token = login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+    assert client.post("/api/v1/capture/start", headers=headers).status_code == 200
+    queued = client.post("/api/v1/capture/single", headers=headers, json={"mode": "manual"}).json()["data"]
+
+    from skyweaver.db import session
+
+    with session() as conn:
+        conn.execute(
+            "UPDATE capture_jobs SET status='running', progress=0.4, started_at='2026-06-23T00:00:00+00:00' WHERE id=?",
+            (queued["id"],),
+        )
+
+    stopped = client.post("/api/v1/capture/stop", headers=headers).json()["data"]
+    assert stopped["status"] == "stopped"
+    assert stopped["stop_mode"] == "graceful"
+    assert stopped["canceled_jobs"] == 0
+    assert stopped["in_progress_jobs"] == 1
+    assert stopped["in_progress_job_ids"] == [queued["id"]]
+
+
+def test_running_capture_finishes_as_stopped_after_stop_request(tmp_path: Path, monkeypatch):
+    client = make_client(tmp_path)
+    assert client.get("/api/v1/health").status_code == 200
+
+    from PIL import Image
+
+    from skyweaver.camera.base import CaptureRequest, CaptureResult
+    from skyweaver.db import now_iso, session
+    from skyweaver.services import capture as capture_service
+    from skyweaver.services.capture import CaptureCommand, execute_capture
+
+    class SlowAdapter:
+        async def capture(self, request: CaptureRequest) -> CaptureResult:
+            with session() as conn:
+                conn.execute("UPDATE capture_state SET status='stopped', current_mode='manual', updated_at=? WHERE id=1", (now_iso(),))
+            request.output_path.parent.mkdir(parents=True, exist_ok=True)
+            Image.new("RGB", (32, 32), color=(12, 18, 24)).save(request.output_path)
+            return CaptureResult(file_path=request.output_path, format="jpg", width=32, height=32, size_bytes=request.output_path.stat().st_size)
+
+    monkeypatch.setattr(capture_service, "get_adapter", lambda _adapter: SlowAdapter())
+
+    result = asyncio.run(execute_capture(CaptureCommand(exposure_ms=250, gain=1, format="jpg", mode="manual"), job_type="single"))
+
+    with session() as conn:
+        job = conn.execute("SELECT * FROM capture_jobs WHERE id=?", (result["job_id"],)).fetchone()
+
+    assert job["status"] == "stopped"
+    assert "completed_after_stop" in job["result"]
+    assert "stop_mode" in job["result"]
 
 
 def test_daemon_consumes_queued_sequence_capture(tmp_path: Path):
