@@ -62,6 +62,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
   - original image
   - metadata JSON sidecar
   - thumbnail
+  - stable latest image, thumbnail, and metadata copies under the local data directory
   - SQLite image row
   - capture job row
   - capture state update
@@ -82,6 +83,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 - Pause holds queued automation capture jobs, resume releases them, test-shot jobs still run for manual verification, and stop cancels pending/claimed queued capture jobs while recording best-effort cancel intent for in-progress exposures. The rpicam/libcamera adapter can terminate its active capture subprocess from inside the daemon process; adapters without hard-cancel support still finish gracefully.
 - Capture daemon startup requeues interrupted claimed/running capture jobs after service restart.
 - `/api/v1/schedule/preview-tonight` returns a real active window and next transition for fixed or sun-angle schedules.
+- Successful captures publish stable local latest artifacts and unauthenticated public latest metadata/download endpoints.
 - Backend tests verify daemon-run scheduled capture creation, interval gating, queued test-shot completion while automation is stopped, queued single-capture completion, queued sequence completion, graceful stop reporting, best-effort hard-cancel intent, adapter hard-cancel handling, pause/resume/stop semantics, schedule preview, heartbeat/activity reporting, interrupted job recovery, and a mock overnight flow that checks latest/gallery updates.
 
 ### Frontend
@@ -145,7 +147,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 | Phase 2: Auth/API keys/settings/docs | Mostly done | JWT login, API-key scopes, settings, API Keys UI, Developer API UI, installer-seeded first setup values, in-app first-setup enforcement, bootstrap-password detection, password-strength guidance, and in-process rate limiting for failed login/setup completion attempts exist. Broader audit trails remain open. |
 | Phase 3: Camera adapters and test shot | Partial | Mock and rpicam/libcamera implemented and validated with an IMX290 on Raspberry Pi. ZWO, gPhoto2, V4L2, INDI, custom command are placeholders. |
 | Phase 4: Capture daemon and realtime | Partial | Scheduled daemon loop, shared capture service, persistent job claiming for test/single/scheduled/sequence captures, graceful stop reporting, best-effort rpicam hard-cancel wiring, pause/resume/stop queue semantics, active-window checks and UI preview, interval gating, lock-file duplicate-loop guard with stale lock recovery, heartbeat/activity reporting, interrupted job recovery, SSE endpoint, Pi reboot service startup acceptance, and IMX290 capture after restart/reboot acceptance exist. Real-Pi hard-cancel acceptance is still open. |
-| Phase 5: Image storage/gallery/latest/metadata | Partial | Mock capture artifacts, metadata, thumbnails, image rows, gallery, latest image exist. Latest symlink/copy and broader metadata extraction are open. |
+| Phase 5: Image storage/gallery/latest/metadata | Partial | Mock capture artifacts, metadata, thumbnails, stable latest copies, image rows, gallery, latest image, and public latest endpoints exist. Broader metadata extraction is open. |
 | Phase 6: Processing worker/products/retention | Partial | Worker claims jobs, thumbnail reprocess exists, keogram JPEG generation, ffmpeg timelapse/mini-timelapse generation, and startrail generation exist, and product job progress is visible in the UI. Cleanup and upload execution are open. |
 | Phase 7: Overlay/modules | Early scaffold | Module tables/endpoints exist. Overlay editor, processor, built-in modules, safe module execution are open. |
 | Phase 8: Installer/systemd/support/docs | Partial | Scripts and units exist. Shellcheck CI, installer dry-run/idempotency tests, service-control sudoers generation, interactive first-setup prompts, real Pi install, repeat install, service restart, and reboot verification exist. Nginx option and broader Pi camera verification are open. |
@@ -195,7 +197,6 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 
 ### Image Pipeline
 
-- Add latest image symlink or copy publisher.
 - Add EXIF/basic metadata extraction.
 - Add image resize/crop/stretch processing.
 - Add configurable bad image thresholds.
@@ -351,7 +352,7 @@ Most recent local follow-up checks on 2026-06-24:
 - `npm run lint`: passed
 - `npm test`: passed with 7 tests
 - `npm run build`: passed
-- `backend\\.venv\\Scripts\\python -m pytest backend\\tests`: passed with 39 tests
+- `backend\\.venv\\Scripts\\python -m pytest backend\\tests`: passed with 40 tests
 - Local OpenAPI generation plus `python -m json.tool artifacts\\openapi.json`: passed
 - `shellcheck install.sh scripts/test_install.sh upgrade.sh uninstall.sh support.sh`: not run locally because ShellCheck is not installed on this Windows host; CI installs ShellCheck on Ubuntu.
 

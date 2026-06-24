@@ -44,8 +44,12 @@ class Settings(BaseSettings):
     def product_dir(self) -> Path:
         return self.data_dir / "products"
 
+    @property
+    def latest_dir(self) -> Path:
+        return self.data_dir / "latest"
+
     def ensure_dirs(self) -> None:
-        for path in [self.data_dir, self.config_dir, self.log_dir, self.image_dir, self.thumbnail_dir, self.product_dir]:
+        for path in [self.data_dir, self.config_dir, self.log_dir, self.image_dir, self.thumbnail_dir, self.product_dir, self.latest_dir]:
             path.mkdir(parents=True, exist_ok=True)
 
 

@@ -1,4 +1,5 @@
 import asyncio
+import json
 import os
 from pathlib import Path
 
@@ -52,6 +53,9 @@ def test_health_and_status(tmp_path):
 
 def test_mock_capture_creates_image(tmp_path):
     client = make_client(tmp_path)
+    latest_dir = tmp_path / "data" / "latest"
+    stale_thumbnail = latest_dir / "latest-thumbnail.png"
+    stale_thumbnail.write_bytes(b"stale")
     token = login(client)
     headers = {"Authorization": f"Bearer {token}"}
     _queued, _job, image = run_queued_test_capture(client, headers, {"exposure_ms": 500, "gain": 1, "format": "jpg", "mode": "manual"})
@@ -61,6 +65,43 @@ def test_mock_capture_creates_image(tmp_path):
     latest = client.get("/api/v1/images/latest", headers=headers)
     assert latest.status_code == 200
     assert latest.json()["data"]["id"] == image["id"]
+
+    latest_file = latest_dir / "latest.jpg"
+    latest_thumb = latest_dir / "latest-thumbnail.jpg"
+    latest_json = latest_dir / "latest.json"
+    assert latest_file.exists()
+    assert latest_file.read_bytes() == Path(image["file_path"]).read_bytes()
+    assert latest_thumb.exists()
+    assert not stale_thumbnail.exists()
+    assert latest_json.exists()
+    latest_payload = json.loads(latest_json.read_text(encoding="utf-8"))
+    assert latest_payload["id"] == image["id"]
+    assert latest_payload["download_url"] == "/api/v1/public/latest/download"
+
+
+def test_public_latest_endpoints_are_unauthenticated(tmp_path):
+    client = make_client(tmp_path)
+    assert client.get("/api/v1/public/latest").status_code == 404
+
+    token = login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+    _queued, _job, image = run_queued_test_capture(client, headers, {"exposure_ms": 500, "gain": 1, "format": "jpg", "mode": "manual"})
+
+    public_latest = client.get("/api/v1/public/latest")
+    assert public_latest.status_code == 200
+    public_data = public_latest.json()["data"]
+    assert public_data["id"] == image["id"]
+    assert public_data["download_url"] == "/api/v1/public/latest/download"
+    assert public_data["thumbnail_url"] == "/api/v1/public/latest/thumbnail"
+    assert "file_path" not in public_data
+
+    public_download = client.get("/api/v1/public/latest/download")
+    assert public_download.status_code == 200
+    assert public_download.content == Path(image["file_path"]).read_bytes()
+
+    public_thumbnail = client.get("/api/v1/public/latest/thumbnail")
+    assert public_thumbnail.status_code == 200
+    assert public_thumbnail.content == Path(image["thumbnail_path"]).read_bytes()
 
 
 def test_api_key_scopes(tmp_path):

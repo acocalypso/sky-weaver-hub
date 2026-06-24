@@ -138,6 +138,56 @@ def enqueue_capture(command: CaptureCommand, job_type: str = "single") -> dict[s
     return {"id": job_id, "status": "pending", "type": job_type}
 
 
+def public_latest_payload(image: dict[str, Any], latest_image: Path | None = None, latest_thumbnail: Path | None = None) -> dict[str, Any]:
+    payload = {
+        "id": image["id"],
+        "captured_at": image["captured_at"],
+        "day_key": image["day_key"],
+        "mode": image["mode"],
+        "format": image["format"],
+        "width": image["width"],
+        "height": image["height"],
+        "size_bytes": image["size_bytes"],
+        "camera_id": image.get("camera_id"),
+        "download_url": "/api/v1/public/latest/download",
+        "metadata_url": "/api/v1/public/latest",
+        "thumbnail_url": "/api/v1/public/latest/thumbnail" if latest_thumbnail else None,
+    }
+    if latest_image:
+        payload["latest_file"] = latest_image.name
+    if latest_thumbnail:
+        payload["latest_thumbnail_file"] = latest_thumbnail.name
+    return payload
+
+
+def copy_atomic(source: Path, target: Path) -> Path:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    tmp = target.with_name(f".{target.name}.tmp")
+    shutil.copy2(source, tmp)
+    os.replace(tmp, target)
+    return target
+
+
+def remove_stale_latest_files(directory: Path, keep: set[Path]) -> None:
+    for pattern in ("latest.*", "latest-thumbnail.*"):
+        for path in directory.glob(pattern):
+            if path not in keep and not path.name.startswith("."):
+                path.unlink(missing_ok=True)
+
+
+def publish_latest_image(image: dict[str, Any], metadata: dict[str, Any], thumbnail_path: Path | None) -> dict[str, Any]:
+    settings = get_settings()
+    latest_image = settings.latest_dir / f"latest.{image['format'].lower()}"
+    latest_thumbnail = settings.latest_dir / f"latest-thumbnail{thumbnail_path.suffix.lower()}" if thumbnail_path else None
+    remove_stale_latest_files(settings.latest_dir, {latest_image, *(set([latest_thumbnail]) if latest_thumbnail else set())})
+    copy_atomic(Path(image["file_path"]), latest_image)
+    if latest_thumbnail and thumbnail_path:
+        copy_atomic(thumbnail_path, latest_thumbnail)
+    payload = public_latest_payload(image, latest_image, latest_thumbnail)
+    (settings.latest_dir / "latest.json").write_text(json.dumps({**payload, "metadata": metadata}, indent=2), encoding="utf-8")
+    return payload
+
+
 def claim_next_capture_job(job_types: tuple[str, ...] = ("single", "scheduled", "sequence")) -> dict[str, Any] | None:
     placeholders = ",".join("?" for _ in job_types)
     with session() as conn:
@@ -254,33 +304,57 @@ async def execute_capture(command: CaptureCommand, job_type: str = "manual", job
                 and job["started_at"]
                 and state["updated_at"] > job["started_at"]
             )
+            image_row = {
+                "id": image_id,
+                "camera_id": cam["id"],
+                "captured_at": captured_at.isoformat(),
+                "day_key": day_key,
+                "mode": command.mode,
+                "file_path": str(result.file_path),
+                "public_url": f"/api/v1/images/{image_id}/download",
+                "thumbnail_path": str(thumb) if thumb else None,
+                "format": result.format,
+                "width": result.width,
+                "height": result.height,
+                "size_bytes": result.size_bytes,
+                "exposure_ms": result.exposure_ms,
+                "gain": result.gain,
+                "temperature_c": result.temperature_c,
+                "mean_brightness": metadata["analysis"]["mean_brightness"],
+                "star_count": metadata["analysis"]["star_count"],
+                "cloud_score": metadata["analysis"]["cloud_score"],
+                "bad_image": int(metadata["analysis"]["bad_image"]),
+                "metadata": metadata,
+                "created_at": now_iso(),
+            }
+            publish_payload = publish_latest_image(image_row, metadata, thumb)
             conn.execute(
                 """INSERT INTO images
                    (id, camera_id, captured_at, day_key, mode, file_path, public_url, thumbnail_path, format, width, height,
                     size_bytes, exposure_ms, gain, temperature_c, mean_brightness, star_count, cloud_score, bad_image, metadata, created_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
-                    image_id,
-                    cam["id"],
-                    captured_at.isoformat(),
-                    day_key,
-                    command.mode,
-                    str(result.file_path),
-                    f"/api/v1/images/{image_id}/download",
-                    str(thumb) if thumb else None,
-                    result.format,
-                    result.width,
-                    result.height,
-                    result.size_bytes,
-                    result.exposure_ms,
-                    result.gain,
-                    result.temperature_c,
-                    metadata["analysis"]["mean_brightness"],
-                    metadata["analysis"]["star_count"],
-                    metadata["analysis"]["cloud_score"],
-                    int(metadata["analysis"]["bad_image"]),
+                    image_row["id"],
+                    image_row["camera_id"],
+                    image_row["captured_at"],
+                    image_row["day_key"],
+                    image_row["mode"],
+                    image_row["file_path"],
+                    image_row["public_url"],
+                    image_row["thumbnail_path"],
+                    image_row["format"],
+                    image_row["width"],
+                    image_row["height"],
+                    image_row["size_bytes"],
+                    image_row["exposure_ms"],
+                    image_row["gain"],
+                    image_row["temperature_c"],
+                    image_row["mean_brightness"],
+                    image_row["star_count"],
+                    image_row["cloud_score"],
+                    image_row["bad_image"],
                     json_dumps(metadata),
-                    now_iso(),
+                    image_row["created_at"],
                 ),
             )
             conn.execute(
@@ -294,9 +368,9 @@ async def execute_capture(command: CaptureCommand, job_type: str = "manual", job
                 "UPDATE capture_jobs SET status=?, progress=1, result=?, completed_at=? WHERE id=?",
                 ("stopped" if stopped_after_start else "completed", json_dumps(job_result), now_iso(), job_id),
             )
-            event(conn, "new_image", {"image_id": image_id, "path": str(result.file_path)})
+            event(conn, "new_image", {"image_id": image_id, "path": str(result.file_path), "public_latest": publish_payload})
 
-        return {"job_id": job_id, "image": {**metadata, "file_path": str(result.file_path), "thumbnail_path": str(thumb) if thumb else None}}
+        return {"job_id": job_id, "image": {**metadata, "file_path": str(result.file_path), "thumbnail_path": str(thumb) if thumb else None, "public_latest": publish_payload}}
     except CaptureCanceled as exc:
         cancel_result = getattr(exc, "cancel_result", None)
         payload = {

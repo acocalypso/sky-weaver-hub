@@ -18,7 +18,7 @@ from ..config import get_settings
 from ..db import event, json_dumps, json_loads, log, new_id, now_iso, row_to_dict, session
 from ..rate_limit import InMemoryRateLimiter
 from ..security import create_api_key, hash_password, make_token, verify_password
-from ..services.capture import CaptureCommand, all_rows, count_files, create_capture_job, current_schedule, decode_row, enqueue_capture, get_primary_camera, system_metrics
+from ..services.capture import CaptureCommand, all_rows, count_files, create_capture_job, current_schedule, decode_row, enqueue_capture, get_primary_camera, public_latest_payload, system_metrics
 from ..services.schedule import active_window
 from .deps import current_principal, require_scope
 from .responses import ok
@@ -898,6 +898,38 @@ def latest_image(_principal: Annotated[dict, Depends(require_scope("read:images"
     with session() as conn:
         row = decode_row(row_to_dict(conn.execute("SELECT * FROM images ORDER BY captured_at DESC LIMIT 1").fetchone()))
     return ok(row)
+
+
+@router.get("/public/latest")
+def public_latest_image():
+    with session() as conn:
+        row = decode_row(row_to_dict(conn.execute("SELECT * FROM images ORDER BY captured_at DESC LIMIT 1").fetchone()))
+    if not row:
+        raise HTTPException(404, "No latest image is available")
+    settings = get_settings()
+    latest_image = settings.latest_dir / f"latest.{row['format'].lower()}"
+    latest_thumbnail = next(settings.latest_dir.glob("latest-thumbnail.*"), None)
+    return ok(public_latest_payload(row, latest_image if latest_image.exists() else None, latest_thumbnail if latest_thumbnail and latest_thumbnail.exists() else None))
+
+
+@router.get("/public/latest/download")
+def public_latest_download():
+    with session() as conn:
+        row = conn.execute("SELECT format FROM images ORDER BY captured_at DESC LIMIT 1").fetchone()
+    if not row:
+        raise HTTPException(404, "No latest image is available")
+    latest_image = get_settings().latest_dir / f"latest.{row['format'].lower()}"
+    if not latest_image.exists():
+        raise HTTPException(404, "Latest image file not found")
+    return FileResponse(latest_image)
+
+
+@router.get("/public/latest/thumbnail")
+def public_latest_thumbnail():
+    latest_thumbnail = next(get_settings().latest_dir.glob("latest-thumbnail.*"), None)
+    if not latest_thumbnail or not latest_thumbnail.exists():
+        raise HTTPException(404, "Latest thumbnail file not found")
+    return FileResponse(latest_thumbnail)
 
 
 @router.get("/images/days")
