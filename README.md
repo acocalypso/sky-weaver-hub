@@ -161,4 +161,4 @@ Sky Weaver detects common Allsky directories such as `~/allsky`, `~/allsky-OLD`,
 
 ## Documentation
 
-See `docs/` for install, upgrade, uninstall, camera, API, mobile API, plugin, security, migration, Raspberry Pi, and troubleshooting notes.
+See `docs/` for install, upgrade, uninstall, camera, API, mobile API, plugin, security, migration, Raspberry Pi, agent guidelines, task templates, and troubleshooting notes.

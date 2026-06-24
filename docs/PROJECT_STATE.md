@@ -134,6 +134,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 
 - README updated with architecture, quickstart, API examples, status, and limitations.
 - Dedicated docs exist for install, upgrade, uninstall, Raspberry Pi, cameras, API, mobile API, Allsky migration, plugin development, security, and troubleshooting.
+- Agent guidelines and a reusable task template define the Planner -> Engineer -> Developer -> Reviewer workflow and Sky Weaver-specific implementation rules.
 
 ## Phase Status
 
