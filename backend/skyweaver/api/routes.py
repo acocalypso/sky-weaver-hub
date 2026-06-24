@@ -47,8 +47,14 @@ SERVICE_DETAIL_PROPERTIES = [
     "MainPID",
     "ExecMainStatus",
     "ExecMainCode",
+    "ExecMainStartTimestamp",
+    "ExecMainExitTimestamp",
+    "Result",
     "Restart",
     "NRestarts",
+    "ActiveEnterTimestamp",
+    "InactiveEnterTimestamp",
+    "StateChangeTimestamp",
     "FragmentPath",
     "DropInPaths",
 ]
@@ -267,6 +273,76 @@ def parse_systemctl_show(output: str) -> dict[str, str]:
     return properties
 
 
+def service_unit_history(properties: dict[str, str]) -> dict[str, Any]:
+    labels = {
+        "ActiveEnterTimestamp": "Entered active",
+        "InactiveEnterTimestamp": "Entered inactive",
+        "StateChangeTimestamp": "Last state change",
+        "ExecMainStartTimestamp": "Main process start",
+        "ExecMainExitTimestamp": "Main process exit",
+    }
+    history = []
+    for key, label in labels.items():
+        value = properties.get(key, "").strip()
+        if value and value.lower() not in {"n/a", "never"}:
+            history.append({"label": label, "value": value})
+    restarts = properties.get("NRestarts", "")
+    return {
+        "restarts": int(restarts) if restarts.isdigit() else None,
+        "result": properties.get("Result") or None,
+        "exec_main_status": properties.get("ExecMainStatus") or None,
+        "recent_events": history,
+    }
+
+
+def service_failure_analysis(service: dict[str, Any], properties: dict[str, str], journal: list[str]) -> dict[str, Any]:
+    findings: list[dict[str, str]] = []
+    suggestions: list[str] = []
+    active_state = properties.get("ActiveState") or service.get("status", "unknown")
+    result = properties.get("Result", "")
+    exec_status = properties.get("ExecMainStatus", "")
+    restart_count = properties.get("NRestarts", "")
+
+    if active_state == "failed":
+        findings.append({"level": "error", "message": f"systemd reports ActiveState={active_state}."})
+        suggestions.append("Open the recent journal, fix the first reported error, then restart the service.")
+    elif active_state in {"inactive", "deactivating"}:
+        findings.append({"level": "warning", "message": f"systemd reports ActiveState={active_state}."})
+    if result and result not in {"success", "exit-code"}:
+        findings.append({"level": "error", "message": f"Last unit result was {result}."})
+    if result == "exit-code" or (exec_status and exec_status != "0"):
+        findings.append({"level": "error", "message": f"Main process exited with status {exec_status or result}."})
+    if restart_count and restart_count not in {"0", "n/a"}:
+        findings.append({"level": "warning", "message": f"systemd recorded {restart_count} restart attempt(s)."})
+        suggestions.append("Check whether the service is repeatedly failing during startup or after camera access.")
+    if service.get("status") == "stale":
+        findings.append({"level": "warning", "message": "Capture daemon heartbeat is stale."})
+        suggestions.append("Restart skyweaver-capture and verify camera/device permissions if the heartbeat does not recover.")
+
+    important_terms = ("failed", "error", "denied", "permission", "traceback", "exception", "timeout", "fatal")
+    matching_journal = [line for line in journal if any(term in line.lower() for term in important_terms)]
+    for line in matching_journal[-3:]:
+        findings.append({"level": "warning", "message": f"Recent journal signal: {line}"})
+    if any("permission" in line.lower() or "denied" in line.lower() for line in matching_journal):
+        suggestions.append("Check service user groups, /dev/media* access, DMA heap access, and sudoers permissions.")
+
+    if not findings:
+        findings.append({"level": "ok", "message": "No obvious failure signals found in systemd properties or recent journal output."})
+
+    severity = "ok"
+    if any(item["level"] == "error" for item in findings):
+        severity = "error"
+    elif any(item["level"] == "warning" for item in findings):
+        severity = "warning"
+
+    summary = {
+        "ok": "Service looks healthy from available systemd and journal data.",
+        "warning": "Service has warning signals that may need attention.",
+        "error": "Service has failure signals that need attention.",
+    }[severity]
+    return {"severity": severity, "summary": summary, "findings": findings, "suggested_actions": list(dict.fromkeys(suggestions))}
+
+
 def service_detail_row(name: str, journal_lines: int = 80) -> dict[str, Any]:
     unit = SERVICE_UNITS.get(name)
     if not unit:
@@ -281,6 +357,8 @@ def service_detail_row(name: str, journal_lines: int = 80) -> dict[str, Any]:
         "journal": [],
         "journal_status": "unavailable",
         "journal_error": None,
+        "unit_history": {},
+        "failure_analysis": {},
     }
 
     command = systemctl_command()
@@ -314,6 +392,8 @@ def service_detail_row(name: str, journal_lines: int = 80) -> dict[str, Any]:
         else:
             detail["journal_status"] = "failed"
             detail["journal_error"] = redact_operational_text((result.stderr or result.stdout or "journalctl failed").strip())
+    detail["unit_history"] = service_unit_history(detail["properties"])
+    detail["failure_analysis"] = service_failure_analysis(service, detail["properties"], detail["journal"])
     return detail
 
 

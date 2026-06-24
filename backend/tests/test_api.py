@@ -394,7 +394,14 @@ def test_system_service_detail_includes_status_and_journal(tmp_path, monkeypatch
     def fake_run(command, **_kwargs):
         calls.append(command)
         if "show" in command:
-            return Result("Id=skyweaver-capture.service\nActiveState=active\nMainPID=123\n")
+            return Result(
+                "Id=skyweaver-capture.service\n"
+                "ActiveState=active\n"
+                "MainPID=123\n"
+                "Result=success\n"
+                "NRestarts=0\n"
+                "ActiveEnterTimestamp=Wed 2026-06-24 05:00:00 UTC\n"
+            )
         return Result("2026-06-24T05:00:00 skyweaver-capture started\n")
 
     monkeypatch.setattr(routes, "systemctl_command", lambda: ["systemctl"])
@@ -409,9 +416,50 @@ def test_system_service_detail_includes_status_and_journal(tmp_path, monkeypatch
     assert data["properties"]["ActiveState"] == "active"
     assert data["journal_status"] == "ok"
     assert data["journal"] == ["2026-06-24T05:00:00 skyweaver-capture started"]
-    assert calls[0] == ["systemctl", "show", "skyweaver-capture.service", "--no-pager", "--property=Id,Description,LoadState,ActiveState,SubState,UnitFileState,MainPID,ExecMainStatus,ExecMainCode,Restart,NRestarts,FragmentPath,DropInPaths"]
+    assert data["failure_analysis"]["severity"] == "ok"
+    assert data["unit_history"]["restarts"] == 0
+    assert data["unit_history"]["recent_events"] == [{"label": "Entered active", "value": "Wed 2026-06-24 05:00:00 UTC"}]
+    assert calls[0] == ["systemctl", "show", "skyweaver-capture.service", "--no-pager", "--property=Id,Description,LoadState,ActiveState,SubState,UnitFileState,MainPID,ExecMainStatus,ExecMainCode,ExecMainStartTimestamp,ExecMainExitTimestamp,Result,Restart,NRestarts,ActiveEnterTimestamp,InactiveEnterTimestamp,StateChangeTimestamp,FragmentPath,DropInPaths"]
     assert calls[1] == ["journalctl", "-u", "skyweaver-capture.service", "-n", "80", "--no-pager", "--output=short-iso"]
     assert client.get("/api/v1/system/services/not-skyweaver", headers={"Authorization": f"Bearer {token}"}).status_code == 404
+
+
+def test_system_service_detail_reports_failure_analysis(tmp_path, monkeypatch):
+    from skyweaver.api import routes
+
+    client = make_client(tmp_path)
+    token = login(client)
+
+    class Result:
+        def __init__(self, stdout: str):
+            self.returncode = 0
+            self.stdout = stdout
+            self.stderr = ""
+
+    def fake_run(command, **_kwargs):
+        if "show" in command:
+            return Result(
+                "Id=skyweaver-capture.service\n"
+                "ActiveState=failed\n"
+                "Result=exit-code\n"
+                "ExecMainStatus=1\n"
+                "NRestarts=3\n"
+                "ExecMainExitTimestamp=Wed 2026-06-24 05:01:00 UTC\n"
+            )
+        return Result("2026-06-24T05:01:00 skyweaver-capture Permission denied opening /dev/media0\n")
+
+    monkeypatch.setattr(routes, "systemctl_command", lambda: ["systemctl"])
+    monkeypatch.setattr(routes.shutil, "which", lambda name: "journalctl" if name == "journalctl" else None)
+    monkeypatch.setattr(routes.subprocess, "run", fake_run)
+
+    res = client.get("/api/v1/system/services/skyweaver-capture", headers={"Authorization": f"Bearer {token}"})
+    assert res.status_code == 200, res.text
+    data = res.json()["data"]
+    assert data["failure_analysis"]["severity"] == "error"
+    assert any("ActiveState=failed" in item["message"] for item in data["failure_analysis"]["findings"])
+    assert any("service user groups" in action for action in data["failure_analysis"]["suggested_actions"])
+    assert data["unit_history"]["restarts"] == 3
+    assert data["unit_history"]["exec_main_status"] == "1"
 
 
 def test_system_service_control_queues_api_restart(tmp_path, monkeypatch):

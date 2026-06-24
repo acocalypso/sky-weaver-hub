@@ -6,7 +6,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { StatusBadge } from "@/components/StatusBadge";
 import { SkyApi, type ServiceAction, type ServiceDetail, type SystemDiagnostics, type SystemMetrics, type SystemService } from "@/lib/api";
-import { Activity, Cpu, Download, FileText, HardDrive, Loader2, MemoryStick, Play, RefreshCw, RotateCw, ServerCog, Square, Thermometer } from "lucide-react";
+import { Activity, AlertTriangle, Cpu, Download, FileText, HardDrive, History, Loader2, MemoryStick, Play, RefreshCw, RotateCw, ServerCog, Square, Thermometer } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { toast } from "sonner";
 
@@ -164,6 +164,54 @@ export default function Health() {
                   ))}
                 </div>
                 {serviceDetail.systemctl_error && <p className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive">{serviceDetail.systemctl_error}</p>}
+                {serviceDetail.failure_analysis && (
+                  <div className="space-y-3 rounded-md border border-border bg-muted/20 p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                        <AlertTriangle className="h-4 w-4" />
+                        Failure analysis
+                      </h3>
+                      <StatusBadge variant={analysisVariant(serviceDetail.failure_analysis.severity)}>{serviceDetail.failure_analysis.severity}</StatusBadge>
+                    </div>
+                    <p className="text-sm">{serviceDetail.failure_analysis.summary}</p>
+                    <div className="space-y-2 text-xs">
+                      {serviceDetail.failure_analysis.findings.map((finding, index) => (
+                        <p key={`${finding.level}-${index}`} className="rounded-md bg-background/70 p-2">
+                          <span className="font-semibold uppercase text-muted-foreground">{finding.level}</span> {finding.message}
+                        </p>
+                      ))}
+                    </div>
+                    {serviceDetail.failure_analysis.suggested_actions.length > 0 && (
+                      <div className="space-y-1 text-xs text-muted-foreground">
+                        {serviceDetail.failure_analysis.suggested_actions.map((action, index) => (
+                          <p key={`${action}-${index}`}>{action}</p>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+                {serviceDetail.unit_history && (
+                  <div className="space-y-3 rounded-md border border-border bg-muted/20 p-3">
+                    <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      <History className="h-4 w-4" />
+                      Unit history
+                    </h3>
+                    <dl className="grid grid-cols-3 gap-2 text-xs font-mono-data">
+                      <Stat k="Restarts" v={serviceDetail.unit_history.restarts ?? "-"} />
+                      <Stat k="Result" v={serviceDetail.unit_history.result ?? "-"} />
+                      <Stat k="Exit" v={serviceDetail.unit_history.exec_main_status ?? "-"} />
+                    </dl>
+                    <div className="space-y-2 text-xs font-mono-data">
+                      {serviceDetail.unit_history.recent_events.map((event, index) => (
+                        <div key={`${event.label}-${index}`} className="flex flex-col gap-0.5 rounded-md bg-background/70 p-2">
+                          <span className="text-[10px] uppercase tracking-widest text-muted-foreground">{event.label}</span>
+                          <span>{event.value}</span>
+                        </div>
+                      ))}
+                      {serviceDetail.unit_history.recent_events.length === 0 && <p className="text-muted-foreground">No unit timestamp history available.</p>}
+                    </div>
+                  </div>
+                )}
                 <div className="space-y-2">
                   <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Recent journal</h3>
                   {serviceDetail.journal_error && <p className="rounded-md border border-border bg-muted/30 p-3 text-xs text-muted-foreground">{serviceDetail.journal_error}</p>}
@@ -212,4 +260,10 @@ function serviceVariant(status: string): "ok" | "warn" | "error" | "idle" | "act
   if (status === "stale" || status === "unknown") return "warn";
   if (status === "failed") return "error";
   return "idle";
+}
+
+function analysisVariant(severity: "ok" | "warning" | "error"): "ok" | "warn" | "error" {
+  if (severity === "ok") return "ok";
+  if (severity === "warning") return "warn";
+  return "error";
 }

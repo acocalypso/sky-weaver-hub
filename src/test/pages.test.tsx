@@ -117,6 +117,18 @@ beforeEach(() => {
     systemctl_status: "ok",
     journal: ["2026-06-24T05:00:00 skyweaver-capture started"],
     journal_status: "ok",
+    failure_analysis: {
+      severity: "warning",
+      summary: "Service has warning signals that may need attention.",
+      findings: [{ level: "warning", message: "systemd recorded 2 restart attempt(s)." }],
+      suggested_actions: ["Check whether the service is repeatedly failing during startup or after camera access."],
+    },
+    unit_history: {
+      restarts: 2,
+      result: "success",
+      exec_main_status: "0",
+      recent_events: [{ label: "Entered active", value: "Wed 2026-06-24 05:00:00 UTC" }],
+    },
   });
   vi.mocked(SkyApi.diagnostics).mockResolvedValue({
     generated_at: "2026-06-23T22:16:00+00:00",
@@ -215,6 +227,10 @@ describe("main pages", () => {
     fireEvent.click(within(serviceRow).getByRole("button", { name: /details/i }));
 
     expect(await screen.findByText("skyweaver-capture details")).toBeInTheDocument();
+    expect(screen.getByText("Failure analysis")).toBeInTheDocument();
+    expect(screen.getByText("Service has warning signals that may need attention.")).toBeInTheDocument();
+    expect(screen.getByText("Unit history")).toBeInTheDocument();
+    expect(screen.getByText("Wed 2026-06-24 05:00:00 UTC")).toBeInTheDocument();
     expect(await screen.findByText("2026-06-24T05:00:00 skyweaver-capture started")).toBeInTheDocument();
     await waitFor(() => expect(SkyApi.serviceDetail).toHaveBeenCalledWith("skyweaver-capture"));
   });
