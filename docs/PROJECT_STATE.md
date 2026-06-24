@@ -378,6 +378,8 @@ Raspberry Pi IMX290 camera acceptance on 2026-06-24:
 - Controlled Pi reboot: SSH and API returned, all Sky Weaver services were active, no failed units were listed, `skyweaver` still detected the IMX290, and API test shot passed: `/var/lib/skyweaver/images/20260624/051015_34ade951.jpg`, 21983 bytes, with latest image updated.
 - `/home/pi/sky-weaver-hub` fast-forwarded to `1d31045` and `sudo ./upgrade.sh` passed with backup `/var/lib/skyweaver/backups/20260624-193839`.
 - Real rpicam hard-cancel acceptance passed with IMX290: a queued 60s single capture reached `running`, `/api/v1/capture/stop` marked one in-progress job for best-effort cancel, final job `76f714a2-c0db-459c-a6df-9a3dd7d81a84` ended `canceled` with `stop_mode: hard_cancel`, adapter method `terminate`, and no leftover `rpicam-still`/`libcamera-still` process.
+- `/home/pi/sky-weaver-hub` fast-forwarded to `f3de529` and `sudo ./upgrade.sh` passed with backup `/var/lib/skyweaver/backups/20260624-195331`.
+- Real Pi auth-audit acceptance passed: five failed local login attempts returned `401`, the sixth returned `429`, `/api/v1/logs?source=auth` showed `Login failed` plus `Login blocked by rate limit` entries with failure count/client context, and the submitted test password was absent from log JSON.
 
 ## Recommended Next Phase
 
