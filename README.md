@@ -10,7 +10,7 @@ This repository now contains a working local-first platform slice:
 - FastAPI backend under `backend/` with SQLite storage.
 - Bootstrap admin login, guided first-setup completion, and API-key ready auth model.
 - Mock camera adapter that writes real images, thumbnails, metadata sidecars, image rows, capture jobs, logs, and realtime events.
-- Raspberry Pi `rpicam-still` / `libcamera-still` adapter path.
+- Raspberry Pi `rpicam-still` / `libcamera-still` adapter path, validated with an IMX290 camera.
 - Versioned REST endpoints, OpenAPI docs at `/api/docs`, and SSE events at `/api/v1/events/stream`.
 - Daemon-owned scheduled capture loop with queued single/sequence captures, pause/resume/stop queue semantics, heartbeat reporting, interrupted job recovery, and stale daemon lock recovery.
 - Processing worker for thumbnail reprocess, keogram JPEGs, ffmpeg timelapses, mini timelapses, and startrail JPEGs.
@@ -32,7 +32,7 @@ Primary:
 Development and partial support:
 
 - Raspberry Pi Zero 2 W with reduced processing
-- Debian/Ubuntu Linux. A Raspberry Pi 3 Model B on Debian 13/trixie has passed install, repeat-install, service restart, reboot, API, and mock capture acceptance.
+- Debian/Ubuntu Linux. A Raspberry Pi 3 Model B on Debian 13/trixie has passed install, repeat-install, service restart, reboot, API, mock capture, and IMX290 rpicam capture acceptance.
 - Mock camera
 - ZWO, gPhoto2, V4L2/webcam, INDI, and custom command adapters as extension points
 

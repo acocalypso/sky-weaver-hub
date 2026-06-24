@@ -1,6 +1,6 @@
 # Sky Weaver Hub Project State
 
-Last updated: 2026-06-23
+Last updated: 2026-06-24
 
 This document tracks the current implementation state against the all-sky platform prompt. It is intended to be updated after each implementation phase.
 
@@ -8,7 +8,7 @@ This document tracks the current implementation state against the all-sky platfo
 
 Sky Weaver Hub has moved from a mock dashboard toward a local-first Raspberry Pi/Linux all-sky platform. The repository now has a FastAPI backend, SQLite persistence, a camera adapter interface, mock capture with real image artifacts, an initial Raspberry Pi camera adapter, a daemon-owned scheduled capture loop, API-key authentication, systemd and installer scaffolding, and a React UI wired to the local API.
 
-The product is not yet Allsky feature-complete. The main missing areas are full image-product generation, public sky page, overlay/module workflows, remote upload execution, complete Allsky import, and broader Raspberry Pi camera/hardware acceptance testing.
+The product is not yet Allsky feature-complete. The main missing areas are full image-product generation, public sky page, overlay/module workflows, remote upload execution, complete Allsky import, and broader camera adapter coverage beyond Raspberry Pi libcamera hardware.
 
 ## Repo Map
 
@@ -111,7 +111,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 - Installer and upgrade grant the `skyweaver` service user constrained sudoers permissions for Sky Weaver `systemctl` start/stop/restart controls only.
 - Installer dry-run no longer requires root or writes config, and CI has a temp-dir test harness for dry-run and repeat-install idempotency.
 - Fresh interactive installer setup asks for admin credentials, observatory location/timezone, primary camera adapter, and public page mode; noninteractive installs use defaults or explicit environment values.
-- Full installer, repeat-install, service restart, and reboot acceptance passed on a Raspberry Pi 3 Model B running Debian 13/trixie.
+- Full installer, repeat-install, service restart, reboot, and IMX290 rpicam capture acceptance passed on a Raspberry Pi 3 Model B running Debian 13/trixie.
 - Upgrade script backs up config/database and rebuilds.
 - Uninstall script removes services and optionally data.
 - Support script collects OS, camera, service, journal, disk, config-redacted, and API health details.
@@ -141,8 +141,8 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 | Phase 0: Repo inspection | Done | React/Vite Lovable-style frontend identified; Supabase flow replaced by local API direction. |
 | Phase 1: API skeleton and SQLite | Mostly done | Backend, schema, health/status, API client, core routes, and mock capture exist. Dedicated migration framework still needed. |
 | Phase 2: Auth/API keys/settings/docs | Mostly done | JWT login, API-key scopes, settings, API Keys UI, Developer API UI, installer-seeded first setup values, and in-app first-setup enforcement exist. Rate limiting is still open. |
-| Phase 3: Camera adapters and test shot | Partial | Mock and rpicam/libcamera implemented. ZWO, gPhoto2, V4L2, INDI, custom command are placeholders. |
-| Phase 4: Capture daemon and realtime | Partial | Scheduled daemon loop, shared capture service, persistent job claiming for single/scheduled/sequence captures, pause/resume/stop queue semantics, active-window checks and UI preview, interval gating, lock-file duplicate-loop guard with stale lock recovery, heartbeat/activity reporting, interrupted job recovery, SSE endpoint, and Pi reboot service startup acceptance exist. Broader real-camera Pi acceptance is open. |
+| Phase 3: Camera adapters and test shot | Partial | Mock and rpicam/libcamera implemented and validated with an IMX290 on Raspberry Pi. ZWO, gPhoto2, V4L2, INDI, custom command are placeholders. |
+| Phase 4: Capture daemon and realtime | Partial | Scheduled daemon loop, shared capture service, persistent job claiming for single/scheduled/sequence captures, pause/resume/stop queue semantics, active-window checks and UI preview, interval gating, lock-file duplicate-loop guard with stale lock recovery, heartbeat/activity reporting, interrupted job recovery, SSE endpoint, Pi reboot service startup acceptance, and IMX290 capture after restart/reboot acceptance exist. Graceful in-progress exposure stop behavior is still open. |
 | Phase 5: Image storage/gallery/latest/metadata | Partial | Mock capture artifacts, metadata, thumbnails, image rows, gallery, latest image exist. Latest symlink/copy and broader metadata extraction are open. |
 | Phase 6: Processing worker/products/retention | Partial | Worker claims jobs, thumbnail reprocess exists, keogram JPEG generation, ffmpeg timelapse/mini-timelapse generation, and startrail generation exist, and product job progress is visible in the UI. Cleanup and upload execution are open. |
 | Phase 7: Overlay/modules | Early scaffold | Module tables/endpoints exist. Overlay editor, processor, built-in modules, safe module execution are open. |
@@ -156,7 +156,6 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 
 - Expand the capture daemon into complete queue ownership:
   - move all remaining long-running capture execution out of direct API request path
-  - validate capture behavior with a real camera attached across reboot/service restart
   - gracefully stop after current exposure
 - Keep schedule preview and daemon state visible across Dashboard and Schedule as the daemon model evolves.
 - Complete mock acceptance flow end to end:
@@ -176,7 +175,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 - Add `skyweaver` convenience command or documented aliases for start/stop/restart/status.
 - Keep shellcheck coverage passing as installer scripts evolve.
 - Expand installer tests when interactive setup and nginx options are added.
-- Continue confirming service permissions and ownership on real Pi as camera and upload paths are added.
+- Continue confirming service permissions and ownership on real Pi as more camera and upload paths are added.
 
 ### Camera Hardware
 
@@ -325,7 +324,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 
 ## Known Current Limitations
 
-- Capture daemon now performs scheduled captures and consumes queued single-capture and sequence jobs. Pause/resume/stop queue semantics, daemon activity visibility, Dashboard capture job progress, and interrupted job requeue on service start exist; real Pi reboot acceptance testing is still open.
+- Capture daemon now performs scheduled captures and consumes queued single-capture and sequence jobs. Pause/resume/stop queue semantics, daemon activity visibility, Dashboard capture job progress, and interrupted job requeue on service start exist; Raspberry Pi reboot and IMX290 capture-after-reboot acceptance have passed.
 - Worker now generates thumbnails, keograms, ffmpeg timelapses, mini timelapses, and startrails, but retention cleanup and upload execution are still open.
 - Product endpoints queue jobs; keogram, timelapse, mini timelapse, and startrail currently produce downloadable night products.
 - Public page is not implemented.
@@ -334,7 +333,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 - API server currently still performs test-shot capture inline through the shared service for UX; other long capture paths should continue moving toward daemon/queue ownership.
 - Tailwind is intentionally pinned to 3.4.19 to preserve the original design. Tailwind 4 requires a separate design-system migration.
 - Lint passes with warnings from existing generated UI/hook patterns.
-- Real Raspberry Pi install, service restart, and reboot acceptance passed on a Raspberry Pi 3 Model B running Debian 13/trixie. Real-camera capture acceptance is still open.
+- Real Raspberry Pi install, service restart, reboot, and IMX290 real-camera capture acceptance passed on a Raspberry Pi 3 Model B running Debian 13/trixie.
 
 ## Recent Verification
 
@@ -366,12 +365,22 @@ Raspberry Pi acceptance on 2026-06-23:
 - `systemctl restart skyweaver.target`: all Sky Weaver units returned active, API health passed, no failed units were listed, and restart counters were zero.
 - Controlled Pi reboot: SSH returned, `skyweaver.target`, `skyweaver-api.service`, `skyweaver-capture.service`, and `skyweaver-worker.service` were active, no failed units were listed, API health passed, latest image persisted, and restart counters were zero.
 
+Raspberry Pi IMX290 camera acceptance on 2026-06-24:
+
+- `/home/pi/sky-weaver-hub` fast-forwarded to `43d24d6` and `sudo ./upgrade.sh` passed; `/etc/sudoers.d/skyweaver.tmp` parsed OK.
+- Host still reports Raspberry Pi 3 Model B Rev 1.2, aarch64, Debian GNU/Linux 13/trixie.
+- `rpicam-hello --list-cameras` detected `imx290 [1920x1080 12-bit RGGB]` as both `pi` and the `skyweaver` service user.
+- API camera detection returned mock plus one `rpicam://0` IMX290 candidate; configured primary camera is `IMX290` using the `rpicam` adapter.
+- API test shot before restart passed: `/var/lib/skyweaver/images/20260624/050752_5ba9cd3e.jpg`, 22013 bytes, and `/api/v1/images/latest` matched the new image ID.
+- `/api/v1/system/services/skyweaver/restart` queued `skyweaver.target` restart; after services returned, API test shot passed: `/var/lib/skyweaver/images/20260624/050833_b71e0db4.jpg`, 22009 bytes, and latest image matched.
+- Controlled Pi reboot: SSH and API returned, all Sky Weaver services were active, no failed units were listed, `skyweaver` still detected the IMX290, and API test shot passed: `/var/lib/skyweaver/images/20260624/051015_34ade951.jpg`, 21983 bytes, with latest image updated.
+
 ## Recommended Next Phase
 
 The next development phase should focus on operational hardening, because interrupted job recovery and the initial night products now generate real downloadable artifacts.
 
 Suggested next tasks:
 
-1. Validate real camera capture behavior across service restart and reboot.
-2. Add camera-presence suggestions and stronger password guidance to first setup.
-3. Add system health journal/service detail views.
+1. Add camera-presence suggestions and stronger password guidance to first setup.
+2. Add system health journal/service detail views.
+3. Continue moving long-running capture execution out of direct API request paths.
