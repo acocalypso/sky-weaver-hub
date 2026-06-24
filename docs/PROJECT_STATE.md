@@ -148,7 +148,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 | Phase 1: API skeleton and SQLite | Mostly done | Backend, schema, health/status, API client, core routes, and mock capture exist. Dedicated migration framework still needed. |
 | Phase 2: Auth/API keys/settings/docs | Mostly done | JWT login, API-key scopes, settings, API Keys UI, Developer API UI, installer-seeded first setup values, in-app first-setup enforcement, bootstrap-password detection, password-strength guidance, and in-process rate limiting for failed login/setup completion attempts exist. Broader audit trails remain open. |
 | Phase 3: Camera adapters and test shot | Partial | Mock and rpicam/libcamera implemented and validated with an IMX290 on Raspberry Pi. ZWO, gPhoto2, V4L2, INDI, custom command are placeholders. |
-| Phase 4: Capture daemon and realtime | Partial | Scheduled daemon loop, shared capture service, persistent job claiming for test/single/scheduled/sequence captures, graceful stop reporting, best-effort rpicam hard-cancel wiring, pause/resume/stop queue semantics, active-window checks and UI preview, interval gating, lock-file duplicate-loop guard with stale lock recovery, heartbeat/activity reporting, interrupted job recovery, SSE endpoint, Pi reboot service startup acceptance, and IMX290 capture after restart/reboot acceptance exist. Real-Pi hard-cancel acceptance is still open. |
+| Phase 4: Capture daemon and realtime | Partial | Scheduled daemon loop, shared capture service, persistent job claiming for test/single/scheduled/sequence captures, graceful stop reporting, real-Pi validated rpicam hard-cancel, pause/resume/stop queue semantics, active-window checks and UI preview, interval gating, lock-file duplicate-loop guard with stale lock recovery, heartbeat/activity reporting, interrupted job recovery, SSE endpoint, Pi reboot service startup acceptance, and IMX290 capture after restart/reboot acceptance exist. More long-duration soak testing is still open. |
 | Phase 5: Image storage/gallery/latest/metadata | Partial | Mock capture artifacts, metadata, thumbnails, stable latest copies, image rows, gallery, latest image, public latest endpoints gated by public-page settings, and public sky page exist. Broader metadata extraction is open. |
 | Phase 6: Processing worker/products/retention | Partial | Worker claims jobs, thumbnail reprocess exists, keogram JPEG generation, ffmpeg timelapse/mini-timelapse generation, and startrail generation exist, and product job progress is visible in the UI. Cleanup and upload execution are open. |
 | Phase 7: Overlay/modules | Early scaffold | Module tables/endpoints exist. Overlay editor, processor, built-in modules, safe module execution are open. |
@@ -161,8 +161,8 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 ### Highest Priority
 
 - Expand the capture daemon into complete queue ownership:
-  - validate rpicam hard-cancel behavior on Raspberry Pi hardware
   - keep documenting and surfacing in-progress capture stop limits clearly
+  - add longer real-Pi soak runs for scheduled capture and stop/resume behavior
 - Keep schedule preview and daemon state visible across Dashboard and Schedule as the daemon model evolves.
 - Complete mock acceptance flow end to end:
   - run longer manual/dev overnight simulations outside pytest
@@ -327,7 +327,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 
 ## Known Current Limitations
 
-- Capture daemon now performs scheduled captures and consumes queued test-shot, single-capture, and sequence jobs. Graceful stop fallback, best-effort rpicam hard-cancel wiring, pause/resume/stop queue semantics, daemon activity visibility, Dashboard capture job progress, and interrupted job requeue on service start exist; Raspberry Pi reboot and IMX290 capture-after-reboot acceptance have passed, but rpicam hard-cancel still needs real-hardware validation.
+- Capture daemon now performs scheduled captures and consumes queued test-shot, single-capture, and sequence jobs. Graceful stop fallback, real-Pi validated rpicam hard-cancel, pause/resume/stop queue semantics, daemon activity visibility, Dashboard capture job progress, and interrupted job requeue on service start exist; longer scheduled-capture soak testing is still open.
 - Worker now generates thumbnails, keograms, ffmpeg timelapses, mini timelapses, and startrails, but retention cleanup and upload execution are still open.
 - Product endpoints queue jobs; keogram, timelapse, mini timelapse, and startrail currently produce downloadable night products.
 - Public page exists for latest-image display and honors the public-page enabled setting; richer public archives and branding controls are still open.
@@ -376,6 +376,8 @@ Raspberry Pi IMX290 camera acceptance on 2026-06-24:
 - API test shot before restart passed: `/var/lib/skyweaver/images/20260624/050752_5ba9cd3e.jpg`, 22013 bytes, and `/api/v1/images/latest` matched the new image ID.
 - `/api/v1/system/services/skyweaver/restart` queued `skyweaver.target` restart; after services returned, API test shot passed: `/var/lib/skyweaver/images/20260624/050833_b71e0db4.jpg`, 22009 bytes, and latest image matched.
 - Controlled Pi reboot: SSH and API returned, all Sky Weaver services were active, no failed units were listed, `skyweaver` still detected the IMX290, and API test shot passed: `/var/lib/skyweaver/images/20260624/051015_34ade951.jpg`, 21983 bytes, with latest image updated.
+- `/home/pi/sky-weaver-hub` fast-forwarded to `1d31045` and `sudo ./upgrade.sh` passed with backup `/var/lib/skyweaver/backups/20260624-193839`.
+- Real rpicam hard-cancel acceptance passed with IMX290: a queued 60s single capture reached `running`, `/api/v1/capture/stop` marked one in-progress job for best-effort cancel, final job `76f714a2-c0db-459c-a6df-9a3dd7d81a84` ended `canceled` with `stop_mode: hard_cancel`, adapter method `terminate`, and no leftover `rpicam-still`/`libcamera-still` process.
 
 ## Recommended Next Phase
 
@@ -383,6 +385,6 @@ The next development phase should focus on operational hardening, because interr
 
 Suggested next tasks:
 
-1. Validate rpicam hard-cancel behavior on Raspberry Pi hardware and tune terminate/kill timing if needed.
-2. Add richer audit logging around repeated setup/login failures.
-3. Expand system health recovery guidance after collecting more real Pi failure examples.
+1. Add richer audit logging around repeated setup/login failures.
+2. Expand system health recovery guidance after collecting more real Pi failure examples.
+3. Run longer real-Pi scheduled capture and stop/resume soak tests.

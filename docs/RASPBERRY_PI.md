@@ -16,3 +16,4 @@ OV5647 Camera Module v1 is possible but has exposure limitations; use clear warn
 - IMX290 libcamera-compatible camera detected as `imx290 [1920x1080 12-bit RGGB]`.
 - The `skyweaver` service user can list the camera after install/upgrade camera group provisioning.
 - API rpicam test shots passed before service restart, after `skyweaver.target` restart, and after controlled reboot on 2026-06-24.
+- API stop hard-cancel passed on an IMX290 60s rpicam capture on 2026-06-24: the final capture job was `canceled` with `stop_mode: hard_cancel`, adapter method `terminate`, and no leftover rpicam/libcamera process.
