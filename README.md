@@ -12,7 +12,7 @@ This repository now contains a working local-first platform slice:
 - Mock camera adapter that writes real images, thumbnails, metadata sidecars, image rows, capture jobs, logs, and realtime events.
 - Raspberry Pi `rpicam-still` / `libcamera-still` adapter path, validated with an IMX290 camera.
 - Versioned REST endpoints, OpenAPI docs at `/api/docs`, and SSE events at `/api/v1/events/stream`.
-- Daemon-owned scheduled capture loop with queued test/single/sequence captures, pause/resume/stop queue semantics, heartbeat reporting, interrupted job recovery, and stale daemon lock recovery.
+- Daemon-owned scheduled capture loop with queued test/single/sequence captures, pause/resume/stop queue semantics, best-effort rpicam hard-cancel wiring, graceful fallback for unsupported adapters, heartbeat reporting, interrupted job recovery, and stale daemon lock recovery.
 - Processing worker for thumbnail reprocess, keogram JPEGs, ffmpeg timelapses, mini timelapses, and startrail JPEGs.
 - System Health UI with service controls, per-service detail, recent journal output, diagnostics export, and queue/metric summaries.
 - Systemd units and installer scripts for Pi deployment, with first-setup prompts, constrained service-control permissions, and dry-run/idempotency tests.

@@ -35,6 +35,7 @@ class CameraCapabilities:
 @dataclass
 class CaptureRequest:
     output_path: Path
+    job_id: str | None = None
     exposure_ms: float = 1000
     gain: float = 1.0
     width: int | None = None
@@ -58,6 +59,18 @@ class CaptureResult:
 
 
 @dataclass
+class CaptureCancelResult:
+    supported: bool
+    canceled: bool = False
+    method: str | None = None
+    message: str | None = None
+
+
+class CaptureCanceled(RuntimeError):
+    pass
+
+
+@dataclass
 class ValidationResult:
     ok: bool
     errors: list[str] = field(default_factory=list)
@@ -74,6 +87,7 @@ class CameraAdapter(ABC):
     id: str
     name: str
     backend: str
+    supports_hard_cancel: bool = False
 
     @abstractmethod
     async def detect(self) -> list[DetectedCamera]:
@@ -113,6 +127,9 @@ class CameraAdapter(ABC):
     @abstractmethod
     async def capture(self, request: CaptureRequest) -> CaptureResult:
         raise NotImplementedError
+
+    async def cancel_capture(self, job_id: str, reason: str = "operator stop") -> CaptureCancelResult:
+        return CaptureCancelResult(supported=False, message="Hard capture cancellation is not supported by this adapter")
 
     async def start_preview(self) -> PreviewResult:
         return PreviewResult(message="Preview is not implemented for this adapter")

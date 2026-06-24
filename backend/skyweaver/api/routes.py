@@ -717,13 +717,20 @@ def capture_stop(_principal: Annotated[dict, Depends(require_scope("write:captur
             "UPDATE capture_jobs SET status='canceled', completed_at=?, error='Canceled by operator stop' WHERE status IN ('pending', 'claimed') AND type IN ('test', 'single', 'scheduled', 'sequence')",
             (ts,),
         )
+        cancel_requested = conn.execute(
+            "UPDATE capture_jobs SET cancel_requested_at=?, cancel_reason='Operator stop', cancel_mode='best_effort' WHERE status='running' AND type IN ('test', 'single', 'scheduled', 'sequence', 'sequence_item')",
+            (ts,),
+        )
         payload = {
             "status": "stopped",
             "stop_mode": "graceful",
             "canceled_jobs": cur.rowcount,
             "in_progress_jobs": len(running),
             "in_progress_job_ids": [job["id"] for job in running],
-            "message": "Queued capture jobs were canceled. Any exposure already in progress will finish before being marked stopped.",
+            "adapter_cancel_mode": "best_effort",
+            "cancel_requested_jobs": cancel_requested.rowcount,
+            "cancel_requested_job_ids": [job["id"] for job in running],
+            "message": "Queued capture jobs were canceled. Running exposures were asked to stop; adapters with safe hard-cancel support will interrupt them, otherwise they finish gracefully.",
         }
         event(conn, "capture_stopped", payload)
     return ok(payload)

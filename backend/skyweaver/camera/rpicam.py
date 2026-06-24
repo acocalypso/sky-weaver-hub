@@ -3,13 +3,18 @@ import re
 import shutil
 from pathlib import Path
 
-from .base import CameraAdapter, CameraCapabilities, CameraInfo, CaptureRequest, CaptureResult, DetectedCamera
+from .base import CameraAdapter, CameraCapabilities, CameraInfo, CaptureCancelResult, CaptureCanceled, CaptureRequest, CaptureResult, DetectedCamera
 
 
 class RpiCamAdapter(CameraAdapter):
     id = "rpicam"
     name = "Raspberry Pi libcamera/rpicam"
     backend = "rpicam"
+    supports_hard_cancel = True
+
+    def __init__(self) -> None:
+        self._active_processes: dict[str, tuple[asyncio.subprocess.Process, Path]] = {}
+        self._canceled_jobs: set[str] = set()
 
     def _tools(self) -> tuple[str | None, str | None]:
         still = shutil.which("rpicam-still") or shutil.which("libcamera-still")
@@ -67,9 +72,18 @@ class RpiCamAdapter(CameraAdapter):
         if request.settings.get("tuning_file"):
             args += ["--tuning-file", str(request.settings["tuning_file"])]
         proc = await asyncio.create_subprocess_exec(*args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
-        stdout, stderr = await proc.communicate()
-        if proc.returncode != 0:
-            raise RuntimeError((stderr or stdout).decode(errors="replace")[:2000])
+        job_key = request.job_id or str(path)
+        self._active_processes[job_key] = (proc, path)
+        try:
+            stdout, stderr = await proc.communicate()
+            if job_key in self._canceled_jobs:
+                path.unlink(missing_ok=True)
+                raise CaptureCanceled("Capture canceled by operator stop")
+            if proc.returncode != 0:
+                raise RuntimeError((stderr or stdout).decode(errors="replace")[:2000])
+        finally:
+            self._active_processes.pop(job_key, None)
+            self._canceled_jobs.discard(job_key)
         return CaptureResult(
             file_path=path,
             format=request.image_format.lower(),
@@ -78,3 +92,24 @@ class RpiCamAdapter(CameraAdapter):
             gain=request.gain,
             metadata={"adapter": self.backend, "command": Path(still).name},
         )
+
+    async def cancel_capture(self, job_id: str, reason: str = "operator stop") -> CaptureCancelResult:
+        active = self._active_processes.get(job_id)
+        if not active:
+            return CaptureCancelResult(supported=True, canceled=False, method="process", message="No active rpicam subprocess for this job")
+        proc, path = active
+        self._canceled_jobs.add(job_id)
+        if proc.returncode is None:
+            proc.terminate()
+            try:
+                await asyncio.wait_for(proc.wait(), timeout=2.0)
+            except asyncio.TimeoutError:
+                proc.kill()
+                await proc.wait()
+                method = "kill"
+            else:
+                method = "terminate"
+        else:
+            method = "already-exited"
+        path.unlink(missing_ok=True)
+        return CaptureCancelResult(supported=True, canceled=True, method=method, message=reason)

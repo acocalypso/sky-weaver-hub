@@ -10,7 +10,7 @@ from typing import Any
 import psutil
 from PIL import Image, ImageStat
 
-from ..camera.base import CaptureRequest
+from ..camera.base import CameraAdapter, CaptureCancelResult, CaptureCanceled, CaptureRequest, CaptureResult
 from ..camera.registry import get_adapter
 from ..config import get_settings
 from ..db import event, json_dumps, json_loads, log, new_id, now_iso, row_to_dict, session
@@ -69,6 +69,50 @@ def decode_row(row: dict[str, Any] | None) -> dict[str, Any] | None:
 
 def all_rows(conn, sql: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
     return [decode_row(row_to_dict(row)) for row in conn.execute(sql, params).fetchall()]
+
+
+def capture_cancel_request(job_id: str) -> dict[str, Any] | None:
+    with session() as conn:
+        row = conn.execute(
+            "SELECT cancel_requested_at, cancel_reason, cancel_mode FROM capture_jobs WHERE id=?",
+            (job_id,),
+        ).fetchone()
+    data = row_to_dict(row)
+    if not data or not data.get("cancel_requested_at"):
+        return None
+    return data
+
+
+async def capture_with_cancel(adapter: CameraAdapter, request: CaptureRequest, job_id: str) -> tuple[CaptureResult, CaptureCancelResult | None]:
+    task = asyncio.create_task(adapter.capture(request))
+    cancel_attempted = False
+    cancel_result: CaptureCancelResult | None = None
+    try:
+        while not task.done():
+            await asyncio.wait({task}, timeout=0.2)
+            if task.done() or cancel_attempted:
+                continue
+            cancel_request = capture_cancel_request(job_id)
+            if cancel_request and adapter.supports_hard_cancel:
+                cancel_attempted = True
+                cancel_result = await adapter.cancel_capture(job_id, cancel_request.get("cancel_reason") or "operator stop")
+                if cancel_result.canceled:
+                    event_payload = {
+                        "job_id": job_id,
+                        "method": cancel_result.method,
+                        "message": cancel_result.message,
+                    }
+                    with session() as conn:
+                        event(conn, "capture_hard_cancel_requested", event_payload)
+        result = await task
+        if cancel_result and cancel_result.canceled:
+            exc = CaptureCanceled("Capture canceled by operator stop")
+            setattr(exc, "cancel_result", cancel_result)
+            raise exc
+        return result, cancel_result
+    except CaptureCanceled as exc:
+        setattr(exc, "cancel_result", getattr(exc, "cancel_result", cancel_result))
+        raise
 
 
 def get_primary_camera(conn, camera_id: str | None = None) -> dict[str, Any]:
@@ -135,6 +179,8 @@ async def execute_sequence_job(job: dict[str, Any]) -> dict[str, Any]:
             if not capture_is_running():
                 break
             result = await execute_capture(command, "sequence_item")
+            if result.get("canceled"):
+                break
             image_ids.append(result["image"]["id"])
             with session() as conn:
                 conn.execute("UPDATE capture_jobs SET progress=? WHERE id=?", (len(image_ids) / count, job["id"]))
@@ -169,9 +215,11 @@ async def execute_capture(command: CaptureCommand, job_type: str = "manual", job
     adapter = get_adapter(cam["adapter"])
 
     try:
-        result = await adapter.capture(
+        result, _cancel_result = await capture_with_cancel(
+            adapter,
             CaptureRequest(
                 output_path=output,
+                job_id=job_id,
                 exposure_ms=command.exposure_ms,
                 gain=command.gain,
                 width=command.width,
@@ -179,7 +227,8 @@ async def execute_capture(command: CaptureCommand, job_type: str = "manual", job
                 image_format=command.format,
                 mode=command.mode,
                 settings=command.settings,
-            )
+            ),
+            job_id,
         )
         metadata = {
             "id": image_id,
@@ -248,6 +297,27 @@ async def execute_capture(command: CaptureCommand, job_type: str = "manual", job
             event(conn, "new_image", {"image_id": image_id, "path": str(result.file_path)})
 
         return {"job_id": job_id, "image": {**metadata, "file_path": str(result.file_path), "thumbnail_path": str(thumb) if thumb else None}}
+    except CaptureCanceled as exc:
+        cancel_result = getattr(exc, "cancel_result", None)
+        payload = {
+            "stop_mode": "hard_cancel",
+            "adapter_cancel_attempted": True,
+            "adapter_cancel_result": {
+                "supported": bool(cancel_result.supported) if cancel_result else True,
+                "canceled": bool(cancel_result.canceled) if cancel_result else True,
+                "method": cancel_result.method if cancel_result else None,
+                "message": cancel_result.message if cancel_result else str(exc),
+            },
+        }
+        with session() as conn:
+            conn.execute("UPDATE capture_state SET status='stopped', last_error=NULL, updated_at=? WHERE id=1", (now_iso(),))
+            conn.execute(
+                "UPDATE capture_jobs SET status='canceled', progress=1, result=?, error=?, completed_at=? WHERE id=?",
+                (json_dumps(payload), "Canceled by operator stop", now_iso(), job_id),
+            )
+            log(conn, "info", "capture", "Capture canceled by adapter", {"job_id": job_id, **payload})
+            event(conn, "capture_canceled", {"job_id": job_id, **payload})
+        return {"job_id": job_id, "canceled": True, "result": payload}
     except Exception as exc:
         with session() as conn:
             conn.execute("UPDATE capture_state SET status='error', last_error=?, updated_at=? WHERE id=1", (str(exc), now_iso()))

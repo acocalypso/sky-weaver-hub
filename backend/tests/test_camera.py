@@ -57,3 +57,39 @@ OUT
     model = found[0].model
     assert model is not None
     assert "imx290" in model
+
+
+@pytest.mark.asyncio
+async def test_rpicam_cancel_capture_terminates_active_process(tmp_path: Path):
+    adapter = RpiCamAdapter()
+    output = tmp_path / "partial.jpg"
+    output.write_bytes(b"partial")
+
+    class FakeProcess:
+        returncode = None
+
+        def __init__(self) -> None:
+            self.terminated = False
+            self.killed = False
+
+        def terminate(self) -> None:
+            self.terminated = True
+
+        def kill(self) -> None:
+            self.killed = True
+
+        async def wait(self) -> int:
+            self.returncode = -15
+            return self.returncode
+
+    proc = FakeProcess()
+    adapter._active_processes["job-1"] = (proc, output)
+
+    result = await adapter.cancel_capture("job-1", "Operator stop")
+
+    assert result.supported is True
+    assert result.canceled is True
+    assert result.method == "terminate"
+    assert proc.terminated is True
+    assert proc.killed is False
+    assert not output.exists()

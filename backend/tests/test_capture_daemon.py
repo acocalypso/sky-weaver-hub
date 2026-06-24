@@ -173,7 +173,10 @@ def test_stop_cancels_pending_capture_jobs(tmp_path: Path):
     assert stopped["canceled_jobs"] == 2
     assert stopped["in_progress_jobs"] == 0
     assert stopped["in_progress_job_ids"] == []
-    assert "exposure already in progress" in stopped["message"]
+    assert stopped["adapter_cancel_mode"] == "best_effort"
+    assert stopped["cancel_requested_jobs"] == 0
+    assert stopped["cancel_requested_job_ids"] == []
+    assert "safe hard-cancel support" in stopped["message"]
 
     after = client.get(f"/api/v1/capture/jobs/{queued['id']}", headers=headers).json()["data"]
     assert after["status"] == "canceled"
@@ -204,6 +207,70 @@ def test_stop_reports_running_capture_jobs(tmp_path: Path):
     assert stopped["canceled_jobs"] == 0
     assert stopped["in_progress_jobs"] == 1
     assert stopped["in_progress_job_ids"] == [queued["id"]]
+    assert stopped["adapter_cancel_mode"] == "best_effort"
+    assert stopped["cancel_requested_jobs"] == 1
+    assert stopped["cancel_requested_job_ids"] == [queued["id"]]
+
+    with session() as conn:
+        job = conn.execute("SELECT cancel_requested_at, cancel_reason, cancel_mode FROM capture_jobs WHERE id=?", (queued["id"],)).fetchone()
+    assert job["cancel_requested_at"]
+    assert job["cancel_reason"] == "Operator stop"
+    assert job["cancel_mode"] == "best_effort"
+
+
+def test_hard_cancel_supported_adapter_stops_running_capture(tmp_path: Path, monkeypatch):
+    client = make_client(tmp_path)
+    assert client.get("/api/v1/health").status_code == 200
+
+    from skyweaver.camera.base import CaptureCancelResult, CaptureCanceled, CaptureRequest
+    from skyweaver.db import now_iso, session
+    from skyweaver.services import capture as capture_service
+    from skyweaver.services.capture import CaptureCommand, execute_capture
+
+    class CancellableAdapter:
+        supports_hard_cancel = True
+
+        def __init__(self) -> None:
+            self.started = asyncio.Event()
+            self.cancelled = asyncio.Event()
+            self.job_id = None
+            self.cancel_calls = []
+
+        async def capture(self, request: CaptureRequest):
+            self.job_id = request.job_id
+            self.started.set()
+            await self.cancelled.wait()
+            raise CaptureCanceled("Capture canceled by operator stop")
+
+        async def cancel_capture(self, job_id: str, reason: str = "operator stop") -> CaptureCancelResult:
+            self.cancel_calls.append((job_id, reason))
+            self.cancelled.set()
+            return CaptureCancelResult(supported=True, canceled=True, method="test", message=reason)
+
+    adapter = CancellableAdapter()
+    monkeypatch.setattr(capture_service, "get_adapter", lambda _adapter: adapter)
+
+    async def run_and_stop():
+        task = asyncio.create_task(execute_capture(CaptureCommand(exposure_ms=5000, gain=1, format="jpg", mode="manual"), job_type="single"))
+        await asyncio.wait_for(adapter.started.wait(), timeout=2)
+        with session() as conn:
+            conn.execute("UPDATE capture_state SET status='stopped', current_mode='manual', updated_at=? WHERE id=1", (now_iso(),))
+            conn.execute(
+                "UPDATE capture_jobs SET cancel_requested_at=?, cancel_reason='Operator stop', cancel_mode='best_effort' WHERE id=?",
+                (now_iso(), adapter.job_id),
+            )
+        return await asyncio.wait_for(task, timeout=2)
+
+    result = asyncio.run(run_and_stop())
+
+    assert result["canceled"] is True
+    assert adapter.cancel_calls == [(adapter.job_id, "Operator stop")]
+    with session() as conn:
+        job = conn.execute("SELECT * FROM capture_jobs WHERE id=?", (adapter.job_id,)).fetchone()
+        image_count = conn.execute("SELECT COUNT(*) FROM images").fetchone()[0]
+    assert job["status"] == "canceled"
+    assert "hard_cancel" in job["result"]
+    assert image_count == 0
 
 
 def test_running_capture_finishes_as_stopped_after_stop_request(tmp_path: Path, monkeypatch):
