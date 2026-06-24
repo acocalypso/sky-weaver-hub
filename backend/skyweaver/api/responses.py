@@ -17,16 +17,24 @@ def ok(data: Any, request_id: str | None = None, extra_meta: dict[str, Any] | No
     return payload
 
 
-def error_response(code: str, message: str, status_code: int = 400, details: dict[str, Any] | None = None, request_id: str | None = None) -> JSONResponse:
+def error_response(
+    code: str,
+    message: str,
+    status_code: int = 400,
+    details: dict[str, Any] | None = None,
+    request_id: str | None = None,
+    headers: dict[str, str] | None = None,
+) -> JSONResponse:
     rid = request_id or str(uuid4())
     return JSONResponse(
         status_code=status_code,
         content={"error": {"code": code, "message": message, "details": details or {}, "request_id": rid}},
+        headers=headers,
     )
 
 
 async def http_exception_handler(request: Request, exc):
-    return error_response("HTTP_ERROR", str(exc.detail), exc.status_code, request_id=getattr(request.state, "request_id", None))
+    return error_response("HTTP_ERROR", str(exc.detail), exc.status_code, request_id=getattr(request.state, "request_id", None), headers=getattr(exc, "headers", None))
 
 
 async def unhandled_exception_handler(request: Request, exc):

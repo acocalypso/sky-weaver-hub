@@ -14,7 +14,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 
 | Area | Current State |
 | --- | --- |
-| Frontend | Vite, React 19, TypeScript, shadcn/Radix UI, Tailwind 3.4.19 pinned to preserve the original design system. |
+| Frontend | Vite, React 19, TypeScript, shadcn/Radix UI, Tailwind 4 via the official Vite plugin, with the existing Tailwind config loaded explicitly for theme compatibility. |
 | Backend | FastAPI under `backend/skyweaver`, OpenAPI docs at `/api/docs`, REST API under `/api/v1`. |
 | Database | SQLite via stdlib `sqlite3`, schema seeded in `backend/skyweaver/db.py`. No external database dependency. |
 | Storage | Local filesystem storage for images, thumbnails, products, logs, and config. Dev defaults are local paths; system install targets `/var/lib/skyweaver`, `/etc/skyweaver`, `/var/log/skyweaver`. |
@@ -142,7 +142,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 | --- | --- | --- |
 | Phase 0: Repo inspection | Done | React/Vite Lovable-style frontend identified; Supabase flow replaced by local API direction. |
 | Phase 1: API skeleton and SQLite | Mostly done | Backend, schema, health/status, API client, core routes, and mock capture exist. Dedicated migration framework still needed. |
-| Phase 2: Auth/API keys/settings/docs | Mostly done | JWT login, API-key scopes, settings, API Keys UI, Developer API UI, installer-seeded first setup values, in-app first-setup enforcement, bootstrap-password detection, and password-strength guidance exist. Rate limiting is still open. |
+| Phase 2: Auth/API keys/settings/docs | Mostly done | JWT login, API-key scopes, settings, API Keys UI, Developer API UI, installer-seeded first setup values, in-app first-setup enforcement, bootstrap-password detection, password-strength guidance, and in-process rate limiting for failed login/setup completion attempts exist. Broader audit trails remain open. |
 | Phase 3: Camera adapters and test shot | Partial | Mock and rpicam/libcamera implemented and validated with an IMX290 on Raspberry Pi. ZWO, gPhoto2, V4L2, INDI, custom command are placeholders. |
 | Phase 4: Capture daemon and realtime | Partial | Scheduled daemon loop, shared capture service, persistent job claiming for test/single/scheduled/sequence captures, graceful stop reporting, best-effort rpicam hard-cancel wiring, pause/resume/stop queue semantics, active-window checks and UI preview, interval gating, lock-file duplicate-loop guard with stale lock recovery, heartbeat/activity reporting, interrupted job recovery, SSE endpoint, Pi reboot service startup acceptance, and IMX290 capture after restart/reboot acceptance exist. Real-Pi hard-cancel acceptance is still open. |
 | Phase 5: Image storage/gallery/latest/metadata | Partial | Mock capture artifacts, metadata, thumbnails, image rows, gallery, latest image exist. Latest symlink/copy and broader metadata extraction are open. |
@@ -164,7 +164,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
   - run longer manual/dev overnight simulations outside pytest
   - validate behavior with real service restarts
 - Harden first-run setup:
-  - add password-rate limiting and audit detail around repeated setup/login failures
+  - expand audit detail around repeated setup/login failures
 
 ### Raspberry Pi Deployment
 
@@ -246,8 +246,8 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 ### Security
 
 - Remove any permanent reliance on bootstrap `admin / skyweaver-change-me`.
-- Expand first-setup enforcement with password/login rate limiting.
-- Add auth endpoint rate limiting.
+- Expand first-setup enforcement audit logging around password/login rate limits.
+- Add broader auth audit logging for lockouts and repeated failures.
 - Add CSRF protection if cookie auth is introduced.
 - Add better secret handling for remote targets.
 - Redact all secrets in diagnostics and logs.
@@ -332,7 +332,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 - Remote upload is not implemented.
 - Allsky migration does not yet import data.
 - API server no longer performs camera capture inline for test shots; test-shot requests enqueue daemon-owned `test` jobs so manual verification still works while automation is stopped.
-- Tailwind is intentionally pinned to 3.4.19 to preserve the original design. Tailwind 4 requires a separate design-system migration.
+- Tailwind 4 is enabled through the official Vite plugin while preserving the existing theme config and shadcn animation utilities.
 - Lint passes with warnings from existing generated UI/hook patterns.
 - Real Raspberry Pi install, service restart, reboot, and IMX290 real-camera capture acceptance passed on a Raspberry Pi 3 Model B running Debian 13/trixie.
 
@@ -351,7 +351,7 @@ Most recent local follow-up checks on 2026-06-24:
 - `npm run lint`: passed
 - `npm test`: passed with 7 tests
 - `npm run build`: passed
-- `backend\\.venv\\Scripts\\python -m pytest backend\\tests`: passed with 31 tests
+- `backend\\.venv\\Scripts\\python -m pytest backend\\tests`: passed with 39 tests
 - Local OpenAPI generation plus `python -m json.tool artifacts\\openapi.json`: passed
 - `shellcheck install.sh scripts/test_install.sh upgrade.sh uninstall.sh support.sh`: not run locally because ShellCheck is not installed on this Windows host; CI installs ShellCheck on Ubuntu.
 
@@ -382,5 +382,5 @@ The next development phase should focus on operational hardening, because interr
 Suggested next tasks:
 
 1. Validate rpicam hard-cancel behavior on Raspberry Pi hardware and tune terminate/kill timing if needed.
-2. Add auth/setup rate limiting.
-3. Expand system health journal/service detail views with richer failure analysis and unit history.
+2. Expand system health journal/service detail views with richer failure analysis and unit history.
+3. Add richer audit logging around repeated setup/login failures.

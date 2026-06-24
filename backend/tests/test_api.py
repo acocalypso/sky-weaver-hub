@@ -210,6 +210,54 @@ def test_first_setup_rejects_password_over_bcrypt_limit(tmp_path):
     assert "72 bytes or fewer" in res.text
 
 
+def test_login_failures_are_rate_limited_and_success_resets(tmp_path):
+    client = make_client(tmp_path)
+    payload = {"username": "admin", "password": "not-the-password"}
+
+    for _ in range(5):
+        res = client.post("/api/v1/auth/login", json=payload)
+        assert res.status_code == 401
+
+    limited = client.post("/api/v1/auth/login", json=payload)
+    assert limited.status_code == 429
+    assert int(limited.headers["retry-after"]) > 0
+    assert "Too many failed attempts" in limited.json()["error"]["message"]
+
+    other_user = client.post("/api/v1/auth/login", json={"username": "operator", "password": "not-the-password"})
+    assert other_user.status_code == 401
+
+    fresh_client = make_client(tmp_path / "fresh")
+    assert fresh_client.post("/api/v1/auth/login", json={"username": "admin", "password": "skyweaver-change-me"}).status_code == 200
+    assert fresh_client.post("/api/v1/auth/login", json=payload).status_code == 401
+    assert fresh_client.post("/api/v1/auth/login", json={"username": "admin", "password": "skyweaver-change-me"}).status_code == 200
+    for _ in range(5):
+        assert fresh_client.post("/api/v1/auth/login", json=payload).status_code == 401
+    assert fresh_client.post("/api/v1/auth/login", json=payload).status_code == 429
+
+
+def test_setup_completion_failures_are_rate_limited(tmp_path):
+    client = make_client(tmp_path)
+    token = login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+    payload = {
+        "admin_password": "skyweaver-change-me",
+        "observatory_name": "Garden Pier",
+        "latitude": 47.25,
+        "longitude": 15.5,
+        "timezone": "Europe/Berlin",
+        "public_page_enabled": False,
+    }
+
+    for _ in range(5):
+        res = client.post("/api/v1/setup/complete", headers=headers, json=payload)
+        assert res.status_code == 400
+
+    limited = client.post("/api/v1/setup/complete", headers=headers, json=payload)
+    assert limited.status_code == 429
+    assert int(limited.headers["retry-after"]) > 0
+    assert "Too many failed attempts" in limited.json()["error"]["message"]
+
+
 def test_system_diagnostics_export_is_redacted(tmp_path):
     client = make_client(tmp_path)
     token = login(client)

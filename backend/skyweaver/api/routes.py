@@ -9,13 +9,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from ..camera.registry import adapters, get_adapter
 from ..config import get_settings
 from ..db import event, json_dumps, json_loads, log, new_id, now_iso, row_to_dict, session
+from ..rate_limit import InMemoryRateLimiter
 from ..security import create_api_key, hash_password, make_token, verify_password
 from ..services.capture import CaptureCommand, all_rows, count_files, create_capture_job, current_schedule, decode_row, enqueue_capture, get_primary_camera, system_metrics
 from ..services.schedule import active_window
@@ -52,6 +53,9 @@ SERVICE_DETAIL_PROPERTIES = [
     "DropInPaths",
 ]
 SENSITIVE_WORDS = ("password", "passwd", "secret", "token", "api_key", "apikey", "key_hash", "authorization")
+AUTH_RATE_LIMIT_MAX_FAILURES = 5
+AUTH_RATE_LIMIT_WINDOW_SECONDS = 300
+auth_rate_limiter = InMemoryRateLimiter(AUTH_RATE_LIMIT_MAX_FAILURES, AUTH_RATE_LIMIT_WINDOW_SECONDS)
 
 
 class LoginRequest(BaseModel):
@@ -138,6 +142,35 @@ def is_bootstrap_password_hash(password_hash: str | None) -> bool:
         return verify_password(BOOTSTRAP_PASSWORD, password_hash)
     except Exception:
         return False
+
+
+def client_host(request: Request) -> str:
+    return request.client.host if request.client else "unknown"
+
+
+def rate_limit_key(action: str, request: Request, identifier: str) -> str:
+    settings = get_settings()
+    return f"{settings.db_path}:{action}:{client_host(request)}:{identifier.lower()}"
+
+
+def raise_rate_limited(retry_after_seconds: int) -> None:
+    raise HTTPException(
+        status_code=429,
+        detail="Too many failed attempts. Try again later.",
+        headers={"Retry-After": str(retry_after_seconds)},
+    )
+
+
+def enforce_rate_limit(key: str) -> None:
+    status = auth_rate_limiter.check(key)
+    if not status.allowed:
+        raise_rate_limited(status.retry_after_seconds)
+
+
+def record_failed_attempt(key: str) -> None:
+    status = auth_rate_limiter.record_failure(key)
+    if not status.allowed:
+        raise_rate_limited(status.retry_after_seconds)
 
 
 class SchedulePut(BaseModel):
@@ -388,14 +421,18 @@ def logs(level: str | None = None, source: str | None = None, limit: int = 200, 
 
 
 @router.post("/auth/login")
-def login(body: LoginRequest):
+def login(body: LoginRequest, request: Request):
     settings = get_settings()
+    limit_key = rate_limit_key("login", request, body.username)
+    enforce_rate_limit(limit_key)
     with session() as conn:
         row = conn.execute("SELECT * FROM users WHERE username=?", (body.username,)).fetchone()
         if not row or not verify_password(body.password, row["password_hash"]):
+            record_failed_attempt(limit_key)
             raise HTTPException(401, "Invalid username or password")
         conn.execute("UPDATE users SET last_login_at=?, updated_at=? WHERE id=?", (now_iso(), now_iso(), row["id"]))
         token = make_token({"sub": row["id"], "username": row["username"], "role": row["role"], "scopes": ["admin"]}, settings.secret_key)
+    auth_rate_limiter.reset(limit_key)
     return ok({"token": token, "user": {"id": row["id"], "username": row["username"], "role": row["role"]}})
 
 
@@ -431,14 +468,18 @@ def setup_status(principal: Annotated[dict, Depends(require_scope("admin"))]):
 
 
 @router.post("/setup/complete")
-def setup_complete(body: SetupComplete, principal: Annotated[dict, Depends(require_scope("admin"))]):
+def setup_complete(body: SetupComplete, request: Request, principal: Annotated[dict, Depends(require_scope("admin"))]):
+    limit_key = rate_limit_key("setup", request, principal["id"])
+    enforce_rate_limit(limit_key)
     if body.admin_password:
         issues = password_issues(body.admin_password)
         if issues:
+            record_failed_attempt(limit_key)
             raise HTTPException(400, " ".join(issues))
     with session() as conn:
         current_user = conn.execute("SELECT password_hash FROM users WHERE id=?", (principal["id"],)).fetchone()
         if not body.admin_password and current_user and is_bootstrap_password_hash(current_user["password_hash"]):
+            record_failed_attempt(limit_key)
             raise HTTPException(400, "Change the bootstrap admin password before completing setup.")
         settings_rows = {row["key"]: row["value"] for row in all_rows(conn, "SELECT * FROM system_settings")}
         security = {**settings_rows.get("security", {}), "first_setup_required": False}
@@ -458,6 +499,7 @@ def setup_complete(body: SetupComplete, principal: Annotated[dict, Depends(requi
         if body.primary_camera_id:
             exists = conn.execute("SELECT id FROM cameras WHERE id=?", (body.primary_camera_id,)).fetchone()
             if not exists:
+                record_failed_attempt(limit_key)
                 raise HTTPException(404, "Primary camera not found")
             conn.execute("UPDATE cameras SET is_primary=0")
             conn.execute("UPDATE cameras SET is_primary=1, updated_at=? WHERE id=?", (now_iso(), body.primary_camera_id))
@@ -465,6 +507,7 @@ def setup_complete(body: SetupComplete, principal: Annotated[dict, Depends(requi
         if body.admin_password:
             conn.execute("UPDATE users SET password_hash=?, updated_at=? WHERE id=?", (hash_password(body.admin_password), now_iso(), principal["id"]))
         log(conn, "info", "setup", "First setup completed", {"user_id": principal["id"]})
+    auth_rate_limiter.reset(limit_key)
     return ok({"required": False})
 
 
