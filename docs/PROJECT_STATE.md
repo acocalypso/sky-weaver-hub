@@ -18,11 +18,11 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 | Backend | FastAPI under `backend/skyweaver`, OpenAPI docs at `/api/docs`, REST API under `/api/v1`. |
 | Database | SQLite via stdlib `sqlite3`, schema seeded in `backend/skyweaver/db.py`. No external database dependency. |
 | Storage | Local filesystem storage for images, thumbnails, products, logs, and config. Dev defaults are local paths; system install targets `/var/lib/skyweaver`, `/etc/skyweaver`, `/var/log/skyweaver`. |
-| Auth | Local admin JWT login plus hashed API keys with scopes. Installer can seed a configured admin password hash during first setup, and the app now enforces guided setup completion before normal admin use, including bootstrap-password detection and stronger password guidance. |
+| Auth | Local admin JWT login plus hashed API keys with scopes. Installer can seed a configured admin password hash during first setup, and the app now enforces guided setup completion before normal admin use, including bootstrap-password detection, stronger password guidance, rate limiting, and local auth audit logs. |
 | Camera abstraction | `CameraAdapter` base class plus working `mock` adapter and initial `rpicam`/`libcamera` adapter. Other adapters are placeholders with actionable errors. |
 | UI/API integration | Public Sky, Dashboard, Cameras, Schedule, Gallery, Night Products, Logs, Settings, API Keys, and Developer API call the local backend. |
 | Deployment | `install.sh`, `upgrade.sh`, `uninstall.sh`, `support.sh`, and systemd units exist. Fresh interactive installs prompt for first-setup values. |
-| Tests | Backend pytest coverage for health/status, login, API keys, mock capture, first-setup hardening, system service controls, scheduled daemon capture, queued test/single/sequence capture execution, pause/resume/stop queue semantics, schedule preview, daemon heartbeat/activity, interrupted job recovery, mock overnight acceptance flow, night product generation, migration preview, and mock adapter. Frontend component tests cover Public Sky, Dashboard, Gallery, Health, Settings, API Keys, and first setup. Shell tests cover installer dry-run, service-control sudoers generation, and repeat-install idempotency with mocked system commands. |
+| Tests | Backend pytest coverage for health/status, login, auth audit logs, API keys, mock capture, first-setup hardening, system service controls, scheduled daemon capture, queued test/single/sequence capture execution, pause/resume/stop queue semantics, schedule preview, daemon heartbeat/activity, interrupted job recovery, mock overnight acceptance flow, night product generation, migration preview, and mock adapter. Frontend component tests cover Public Sky, Dashboard, Gallery, Health, Settings, API Keys, and first setup. Shell tests cover installer dry-run, service-control sudoers generation, and repeat-install idempotency with mocked system commands. |
 
 ## Implemented Capabilities
 
@@ -39,6 +39,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 - `/api/v1/auth/login`
 - `/api/v1/auth/logout`
 - `/api/v1/auth/me`
+- Local auth audit logging for failed login/setup attempts, rate-limit blocks, and login recovery after previous failures
 - User CRUD endpoints
 - API key list/create/patch/delete
 - Camera list/detect/create/get/patch/delete/capabilities/settings-schema/test
@@ -146,7 +147,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 | --- | --- | --- |
 | Phase 0: Repo inspection | Done | React/Vite Lovable-style frontend identified; Supabase flow replaced by local API direction. |
 | Phase 1: API skeleton and SQLite | Mostly done | Backend, schema, health/status, API client, core routes, and mock capture exist. Dedicated migration framework still needed. |
-| Phase 2: Auth/API keys/settings/docs | Mostly done | JWT login, API-key scopes, settings, API Keys UI, Developer API UI, installer-seeded first setup values, in-app first-setup enforcement, bootstrap-password detection, password-strength guidance, and in-process rate limiting for failed login/setup completion attempts exist. Broader audit trails remain open. |
+| Phase 2: Auth/API keys/settings/docs | Mostly done | JWT login, API-key scopes, settings, API Keys UI, Developer API UI, installer-seeded first setup values, in-app first-setup enforcement, bootstrap-password detection, password-strength guidance, in-process rate limiting, and local auth audit logging for failed login/setup completion attempts exist. Broader audit trails remain open. |
 | Phase 3: Camera adapters and test shot | Partial | Mock and rpicam/libcamera implemented and validated with an IMX290 on Raspberry Pi. ZWO, gPhoto2, V4L2, INDI, custom command are placeholders. |
 | Phase 4: Capture daemon and realtime | Partial | Scheduled daemon loop, shared capture service, persistent job claiming for test/single/scheduled/sequence captures, graceful stop reporting, real-Pi validated rpicam hard-cancel, pause/resume/stop queue semantics, active-window checks and UI preview, interval gating, lock-file duplicate-loop guard with stale lock recovery, heartbeat/activity reporting, interrupted job recovery, SSE endpoint, Pi reboot service startup acceptance, and IMX290 capture after restart/reboot acceptance exist. More long-duration soak testing is still open. |
 | Phase 5: Image storage/gallery/latest/metadata | Partial | Mock capture artifacts, metadata, thumbnails, stable latest copies, image rows, gallery, latest image, public latest endpoints gated by public-page settings, and public sky page exist. Broader metadata extraction is open. |
@@ -168,7 +169,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
   - run longer manual/dev overnight simulations outside pytest
   - validate behavior with real service restarts
 - Harden first-run setup:
-  - expand audit detail around repeated setup/login failures
+  - expand audit detail around setup completion and privileged account changes beyond the initial login/setup failure paths
 
 ### Raspberry Pi Deployment
 
@@ -248,8 +249,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 ### Security
 
 - Remove any permanent reliance on bootstrap `admin / skyweaver-change-me`.
-- Expand first-setup enforcement audit logging around password/login rate limits.
-- Add broader auth audit logging for lockouts and repeated failures.
+- Expand audit logging beyond login/setup failure paths to password changes, API-key lifecycle, and privileged settings changes.
 - Add CSRF protection if cookie auth is introduced.
 - Add better secret handling for remote targets.
 - Redact all secrets in diagnostics and logs.
@@ -385,6 +385,6 @@ The next development phase should focus on operational hardening, because interr
 
 Suggested next tasks:
 
-1. Add richer audit logging around repeated setup/login failures.
-2. Expand system health recovery guidance after collecting more real Pi failure examples.
-3. Run longer real-Pi scheduled capture and stop/resume soak tests.
+1. Expand system health recovery guidance after collecting more real Pi failure examples.
+2. Run longer real-Pi scheduled capture and stop/resume soak tests.
+3. Add audit logs for password changes, API-key lifecycle, and privileged settings changes.

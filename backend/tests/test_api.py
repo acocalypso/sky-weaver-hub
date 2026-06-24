@@ -303,10 +303,28 @@ def test_login_failures_are_rate_limited_and_success_resets(tmp_path):
     other_user = client.post("/api/v1/auth/login", json={"username": "operator", "password": "not-the-password"})
     assert other_user.status_code == 401
 
+    from skyweaver.db import session
+    from skyweaver.services.capture import all_rows
+
+    with session() as conn:
+        logs = all_rows(conn, "SELECT * FROM logs WHERE source='auth' ORDER BY created_at")
+    assert [row["message"] for row in logs].count("Login failed") == 6
+    assert logs[-2]["context"]["failure_count"] == 5
+    assert logs[-1]["message"] == "Login failed"
+    assert logs[-1]["context"]["identifier"] == "operator"
+    blocked = [row for row in logs if row["message"] == "Login blocked by rate limit"]
+    assert len(blocked) == 1
+    assert blocked[0]["context"]["failure_count"] == 5
+    assert blocked[0]["context"]["rate_limited"] is True
+    assert "not-the-password" not in json.dumps(logs)
+
     fresh_client = make_client(tmp_path / "fresh")
     assert fresh_client.post("/api/v1/auth/login", json={"username": "admin", "password": "skyweaver-change-me"}).status_code == 200
     assert fresh_client.post("/api/v1/auth/login", json=payload).status_code == 401
     assert fresh_client.post("/api/v1/auth/login", json={"username": "admin", "password": "skyweaver-change-me"}).status_code == 200
+    with session() as conn:
+        fresh_logs = all_rows(conn, "SELECT * FROM logs WHERE source='auth' ORDER BY created_at")
+    assert any(row["message"] == "Login succeeded after previous failures" and row["context"]["failure_count"] == 1 for row in fresh_logs)
     for _ in range(5):
         assert fresh_client.post("/api/v1/auth/login", json=payload).status_code == 401
     assert fresh_client.post("/api/v1/auth/login", json=payload).status_code == 429
@@ -333,6 +351,19 @@ def test_setup_completion_failures_are_rate_limited(tmp_path):
     assert limited.status_code == 429
     assert int(limited.headers["retry-after"]) > 0
     assert "Too many failed attempts" in limited.json()["error"]["message"]
+
+    logs = client.get("/api/v1/logs?source=auth", headers=headers)
+    assert logs.status_code == 200
+    auth_logs = logs.json()["data"]
+    setup_logs = [row for row in auth_logs if row["message"] == "Setup completion failed"]
+    assert len(setup_logs) == 5
+    assert setup_logs[0]["context"]["reason"] == "password_policy"
+    assert max(row["context"]["failure_count"] for row in setup_logs) == 5
+    blocked = [row for row in auth_logs if row["message"] == "Setup completion blocked by rate limit"]
+    assert len(blocked) == 1
+    assert blocked[0]["context"]["failure_count"] == 5
+    assert blocked[0]["context"]["rate_limited"] is True
+    assert "skyweaver-change-me" not in logs.text
 
 
 def test_system_diagnostics_export_is_redacted(tmp_path):

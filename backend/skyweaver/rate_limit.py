@@ -9,6 +9,7 @@ from time import monotonic
 class RateLimitStatus:
     allowed: bool
     retry_after_seconds: int = 0
+    failure_count: int = 0
 
 
 class InMemoryRateLimiter:
@@ -23,9 +24,9 @@ class InMemoryRateLimiter:
         with self._lock:
             attempts = self._current_attempts(key, now)
             if len(attempts) < self.max_failures:
-                return RateLimitStatus(allowed=True)
+                return RateLimitStatus(allowed=True, failure_count=len(attempts))
             retry_after = max(1, int((attempts[0] + self.window_seconds) - now))
-            return RateLimitStatus(allowed=False, retry_after_seconds=retry_after)
+            return RateLimitStatus(allowed=False, retry_after_seconds=retry_after, failure_count=len(attempts))
 
     def record_failure(self, key: str) -> RateLimitStatus:
         now = monotonic()
@@ -34,9 +35,9 @@ class InMemoryRateLimiter:
             attempts.append(now)
             self._failures[key] = attempts
             if len(attempts) <= self.max_failures:
-                return RateLimitStatus(allowed=True)
+                return RateLimitStatus(allowed=True, failure_count=len(attempts))
             retry_after = max(1, int((attempts[0] + self.window_seconds) - now))
-            return RateLimitStatus(allowed=False, retry_after_seconds=retry_after)
+            return RateLimitStatus(allowed=False, retry_after_seconds=retry_after, failure_count=len(attempts))
 
     def reset(self, key: str) -> None:
         with self._lock:
