@@ -10,7 +10,7 @@ def make_client(tmp_path: Path):
     os.environ["SKYWEAVER_CONFIG_DIR"] = str(tmp_path / "config")
     os.environ["SKYWEAVER_LOG_DIR"] = str(tmp_path / "logs")
     os.environ["SKYWEAVER_DB"] = str(tmp_path / "data" / "skyweaver.db")
-    os.environ["SKYWEAVER_SECRET_KEY"] = "test-secret"
+    os.environ["SKYWEAVER_SECRET_KEY"] = "test-secret-key-with-at-least-32-bytes"
     from skyweaver.config import get_settings
     from skyweaver.main import create_app
 
@@ -186,6 +186,28 @@ def test_first_setup_remains_required_for_bootstrap_password(tmp_path, monkeypat
         },
     )
     assert missing_password.status_code == 400
+
+
+def test_first_setup_rejects_password_over_bcrypt_limit(tmp_path):
+    client = make_client(tmp_path)
+    token = login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    res = client.post(
+        "/api/v1/setup/complete",
+        headers=headers,
+        json={
+            "admin_password": "A" * 73,
+            "observatory_name": "Garden Pier",
+            "latitude": 47.25,
+            "longitude": 15.5,
+            "timezone": "Europe/Berlin",
+            "public_page_enabled": False,
+        },
+    )
+
+    assert res.status_code == 400
+    assert "72 bytes or fewer" in res.text
 
 
 def test_system_diagnostics_export_is_redacted(tmp_path):

@@ -1,7 +1,7 @@
 # Security
 
 - Change the bootstrap password immediately.
-- Passwords are hashed with bcrypt.
+- Passwords are hashed with bcrypt and must be 72 bytes or fewer.
 - API keys are hashed and only shown once.
 - Public pages must not expose admin controls.
 - Camera adapters use subprocess argv lists.

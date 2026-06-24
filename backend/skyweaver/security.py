@@ -3,19 +3,32 @@ import secrets
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import bcrypt
 import jwt
-from passlib.context import CryptContext
 
 
-password_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+MAX_BCRYPT_PASSWORD_BYTES = 72
+
+
+def _password_bytes(password: str) -> bytes:
+    data = password.encode("utf-8")
+    if len(data) > MAX_BCRYPT_PASSWORD_BYTES:
+        raise ValueError("Password must be 72 bytes or fewer for bcrypt")
+    return data
 
 
 def hash_password(password: str) -> str:
-    return password_context.hash(password)
+    return bcrypt.hashpw(_password_bytes(password), bcrypt.gensalt()).decode("utf-8")
 
 
 def verify_password(password: str, password_hash: str) -> bool:
-    return password_context.verify(password, password_hash)
+    data = password.encode("utf-8")
+    if len(data) > MAX_BCRYPT_PASSWORD_BYTES:
+        data = data[:MAX_BCRYPT_PASSWORD_BYTES]
+    try:
+        return bcrypt.checkpw(data, password_hash.encode("utf-8"))
+    except ValueError:
+        return False
 
 
 def make_token(payload: dict[str, Any], secret_key: str, minutes: int = 1440) -> str:

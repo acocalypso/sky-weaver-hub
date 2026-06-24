@@ -114,6 +114,8 @@ def password_issues(password: str) -> list[str]:
     issues: list[str] = []
     if password == BOOTSTRAP_PASSWORD:
         issues.append("Choose a password different from the bootstrap default.")
+    if len(password.encode("utf-8")) > 72:
+        issues.append("Use a password that is 72 bytes or fewer.")
     if len(password) < 12:
         issues.append("Use at least 12 characters.")
     if password.lower() in {"password", "admin", "skyweaver", "skyweaver123", "skyweaver-change-me"}:
@@ -468,6 +470,9 @@ def setup_complete(body: SetupComplete, principal: Annotated[dict, Depends(requi
 
 @router.patch("/users/me/password")
 def change_password(body: LoginRequest, principal: Annotated[dict, Depends(current_principal)]):
+    issues = password_issues(body.password)
+    if issues:
+        raise HTTPException(400, " ".join(issues))
     with session() as conn:
         conn.execute("UPDATE users SET password_hash=?, updated_at=? WHERE id=?", (hash_password(body.password), now_iso(), principal["id"]))
         log(conn, "info", "auth", "Password changed", {"user_id": principal["id"]})
@@ -483,6 +488,9 @@ def users(_principal: Annotated[dict, Depends(require_scope("admin"))]):
 
 @router.post("/users")
 def create_user(body: LoginRequest, _principal: Annotated[dict, Depends(require_scope("admin"))]):
+    issues = password_issues(body.password)
+    if issues:
+        raise HTTPException(400, " ".join(issues))
     with session() as conn:
         user_id = new_id()
         conn.execute(
