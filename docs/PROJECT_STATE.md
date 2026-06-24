@@ -145,7 +145,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 
 | Phase | Status | Notes |
 | --- | --- | --- |
-| Phase 0: Repo inspection | Done | React/Vite Lovable-style frontend identified; Supabase flow replaced by local API direction. |
+| Phase 0: Repo inspection | Done | React/Vite frontend identified; local API direction established. |
 | Phase 1: API skeleton and SQLite | Mostly done | Backend, schema, health/status, API client, core routes, and mock capture exist. Dedicated migration framework still needed. |
 | Phase 2: Auth/API keys/settings/docs | Mostly done | JWT login, API-key scopes, settings, API Keys UI, Developer API UI, installer-seeded first setup values, in-app first-setup enforcement, bootstrap-password detection, password-strength guidance, in-process rate limiting, and local auth audit logging for failed login/setup completion attempts exist. Broader audit trails remain open. |
 | Phase 3: Camera adapters and test shot | Partial | Mock and rpicam/libcamera implemented and validated with an IMX290 on Raspberry Pi. ZWO, gPhoto2, V4L2, INDI, custom command are placeholders. |
