@@ -110,7 +110,7 @@ def test_first_setup_status_and_completion(tmp_path):
         "/api/v1/setup/complete",
         headers=headers,
         json={
-            "admin_password": "new-setup-secret",
+            "admin_password": "New-setup-secret-2026",
             "observatory_name": "Garden Pier",
             "latitude": 47.25,
             "longitude": 15.5,
@@ -123,7 +123,7 @@ def test_first_setup_status_and_completion(tmp_path):
     assert res.json()["data"]["required"] is False
 
     assert client.post("/api/v1/auth/login", json={"username": "admin", "password": "skyweaver-change-me"}).status_code == 401
-    assert client.post("/api/v1/auth/login", json={"username": "admin", "password": "new-setup-secret"}).status_code == 200
+    assert client.post("/api/v1/auth/login", json={"username": "admin", "password": "New-setup-secret-2026"}).status_code == 200
 
     after = client.get("/api/v1/setup/status", headers=headers).json()["data"]
     assert after["required"] is False
@@ -134,6 +134,45 @@ def test_first_setup_status_and_completion(tmp_path):
     schedule = client.get("/api/v1/schedule", headers=headers).json()["data"]
     assert schedule["timezone"] == "Europe/Berlin"
     assert schedule["latitude"] == 47.25
+
+
+def test_first_setup_remains_required_for_bootstrap_password(tmp_path, monkeypatch):
+    monkeypatch.setenv("SKYWEAVER_FIRST_SETUP_REQUIRED", "0")
+    client = make_client(tmp_path)
+    token = login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    status = client.get("/api/v1/setup/status", headers=headers)
+    assert status.status_code == 200
+    assert status.json()["data"]["required"] is True
+    assert status.json()["data"]["bootstrap_password_active"] is True
+
+    weak = client.post(
+        "/api/v1/setup/complete",
+        headers=headers,
+        json={
+            "admin_password": "skyweaver-change-me",
+            "observatory_name": "Garden Pier",
+            "latitude": 47.25,
+            "longitude": 15.5,
+            "timezone": "Europe/Berlin",
+            "public_page_enabled": False,
+        },
+    )
+    assert weak.status_code == 400
+
+    missing_password = client.post(
+        "/api/v1/setup/complete",
+        headers=headers,
+        json={
+            "observatory_name": "Garden Pier",
+            "latitude": 47.25,
+            "longitude": 15.5,
+            "timezone": "Europe/Berlin",
+            "public_page_enabled": False,
+        },
+    )
+    assert missing_password.status_code == 400
 
 
 def test_system_diagnostics_export_is_redacted(tmp_path):

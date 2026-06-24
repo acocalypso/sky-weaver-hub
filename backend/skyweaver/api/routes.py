@@ -35,6 +35,7 @@ SERVICE_UNITS = {
     "skyweaver-worker.service": "skyweaver-worker.service",
 }
 SERVICE_ACTIONS = {"start", "stop", "restart"}
+BOOTSTRAP_PASSWORD = "skyweaver-change-me"
 
 
 class LoginRequest(BaseModel):
@@ -91,6 +92,34 @@ class SetupComplete(BaseModel):
     timezone: str = "UTC"
     public_page_enabled: bool = True
     primary_camera_id: str | None = None
+
+
+def password_issues(password: str) -> list[str]:
+    issues: list[str] = []
+    if password == BOOTSTRAP_PASSWORD:
+        issues.append("Choose a password different from the bootstrap default.")
+    if len(password) < 12:
+        issues.append("Use at least 12 characters.")
+    if password.lower() in {"password", "admin", "skyweaver", "skyweaver123", "skyweaver-change-me"}:
+        issues.append("Avoid common or product-default passwords.")
+    categories = sum([
+        any(ch.islower() for ch in password),
+        any(ch.isupper() for ch in password),
+        any(ch.isdigit() for ch in password),
+        any(not ch.isalnum() for ch in password),
+    ])
+    if categories < 3 and len(password) < 20:
+        issues.append("Use a mix of character types or a longer passphrase.")
+    return issues
+
+
+def is_bootstrap_password_hash(password_hash: str | None) -> bool:
+    if not password_hash:
+        return False
+    try:
+        return verify_password(BOOTSTRAP_PASSWORD, password_hash)
+    except Exception:
+        return False
 
 
 class SchedulePut(BaseModel):
@@ -292,16 +321,19 @@ def me(principal: Annotated[dict, Depends(current_principal)]):
 
 
 @router.get("/setup/status")
-def setup_status(_principal: Annotated[dict, Depends(require_scope("admin"))]):
+def setup_status(principal: Annotated[dict, Depends(require_scope("admin"))]):
     with session() as conn:
         settings_rows = {row["key"]: row["value"] for row in all_rows(conn, "SELECT * FROM system_settings")}
         schedule = decode_row(row_to_dict(conn.execute("SELECT * FROM capture_schedule LIMIT 1").fetchone())) or {}
         cameras = all_rows(conn, "SELECT id, name, adapter, model, is_primary FROM cameras ORDER BY is_primary DESC, created_at")
+        user = conn.execute("SELECT password_hash FROM users WHERE id=?", (principal["id"],)).fetchone()
     security = settings_rows.get("security", {})
     observatory = settings_rows.get("observatory", {})
     public_page = settings_rows.get("public_page", {})
+    bootstrap_password_active = bool(user and is_bootstrap_password_hash(user["password_hash"]))
     return ok({
-        "required": bool(security.get("first_setup_required", False)),
+        "required": bool(security.get("first_setup_required", False)) or bootstrap_password_active,
+        "bootstrap_password_active": bootstrap_password_active,
         "observatory": observatory,
         "public_page": public_page,
         "schedule": schedule,
@@ -311,7 +343,14 @@ def setup_status(_principal: Annotated[dict, Depends(require_scope("admin"))]):
 
 @router.post("/setup/complete")
 def setup_complete(body: SetupComplete, principal: Annotated[dict, Depends(require_scope("admin"))]):
+    if body.admin_password:
+        issues = password_issues(body.admin_password)
+        if issues:
+            raise HTTPException(400, " ".join(issues))
     with session() as conn:
+        current_user = conn.execute("SELECT password_hash FROM users WHERE id=?", (principal["id"],)).fetchone()
+        if not body.admin_password and current_user and is_bootstrap_password_hash(current_user["password_hash"]):
+            raise HTTPException(400, "Change the bootstrap admin password before completing setup.")
         settings_rows = {row["key"]: row["value"] for row in all_rows(conn, "SELECT * FROM system_settings")}
         security = {**settings_rows.get("security", {}), "first_setup_required": False}
         observatory = {

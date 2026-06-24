@@ -40,6 +40,8 @@ vi.mock("@/lib/api", async () => {
       deleteApiKey: vi.fn(),
       setupStatus: vi.fn(),
       completeSetup: vi.fn(),
+      detectCameras: vi.fn(),
+      createCamera: vi.fn(),
     },
   };
 });
@@ -121,12 +123,15 @@ beforeEach(() => {
   ]);
   vi.mocked(SkyApi.setupStatus).mockResolvedValue({
     required: true,
+    bootstrap_password_active: true,
     observatory: mockSettings.observatory,
     public_page: mockSettings.public_page,
     schedule: { timezone: "Europe/Berlin", latitude: 47.1, longitude: 15.4 },
     cameras: [{ id: "cam-1", name: "Mock all-sky camera", adapter: "mock", enabled: true, is_primary: true }],
   } as any);
   vi.mocked(SkyApi.completeSetup).mockResolvedValue({ required: false });
+  vi.mocked(SkyApi.detectCameras).mockResolvedValue([]);
+  vi.mocked(SkyApi.createCamera).mockResolvedValue({ id: "cam-2" });
 });
 
 describe("main pages", () => {
@@ -179,12 +184,14 @@ describe("main pages", () => {
     render(<MemoryRouter><SetupPage /></MemoryRouter>);
 
     expect(await screen.findByRole("heading", { name: /first setup/i })).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("New admin password"), { target: { value: "new-setup-secret" } });
-    fireEvent.change(screen.getByLabelText("Confirm password"), { target: { value: "new-setup-secret" } });
+    expect(await screen.findByText("Bootstrap password is still active")).toBeInTheDocument();
+    expect(screen.getByText("No hardware camera detected")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("New admin password"), { target: { value: "New-setup-secret-2026" } });
+    fireEvent.change(screen.getByLabelText("Confirm password"), { target: { value: "New-setup-secret-2026" } });
     fireEvent.click(screen.getByRole("button", { name: /complete setup/i }));
 
     await waitFor(() => expect(SkyApi.completeSetup).toHaveBeenCalledWith(expect.objectContaining({
-      admin_password: "new-setup-secret",
+      admin_password: "New-setup-secret-2026",
       observatory_name: "Test Observatory",
       latitude: 47.1,
       longitude: 15.4,

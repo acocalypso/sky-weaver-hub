@@ -51,7 +51,7 @@ After install:
 - API docs: `http://skyweaver.local:8765/api/docs`
 - Bootstrap login: `admin / skyweaver-change-me`
 
-On first login, the admin UI requires setup completion so you can change the bootstrap password, confirm observatory location/timezone, choose the primary camera, and set public page mode before normal admin use.
+On first login, the admin UI requires setup completion so you can replace the bootstrap password, confirm observatory location/timezone, detect or choose the primary camera, and set public page mode before normal admin use.
 
 The installer creates `/opt/skyweaver`, `/etc/skyweaver`, `/var/lib/skyweaver`, and `/var/log/skyweaver`, installs Node/npm and Python dependencies, grants the service user camera hardware groups, builds the frontend, installs systemd units, grants narrow sudoers permissions for Sky Weaver service controls, and starts `skyweaver.target`. On a fresh interactive install it asks for admin credentials, observatory location, timezone, primary camera adapter, and public page mode. Re-running the installer preserves the existing `/etc/skyweaver/skyweaver.env`.
 

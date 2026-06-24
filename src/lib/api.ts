@@ -67,7 +67,7 @@ export const SkyApi = {
 
 export interface SkyUser { id: string; username: string; role: string; }
 export interface SkyUserPrincipal extends SkyUser { type: string; scopes: string[]; }
-export interface SetupStatus { required: boolean; observatory: Record<string, any>; public_page: Record<string, any>; schedule: Partial<ScheduleRow>; cameras: CameraRow[]; }
+export interface SetupStatus { required: boolean; bootstrap_password_active?: boolean; observatory: Record<string, any>; public_page: Record<string, any>; schedule: Partial<ScheduleRow>; cameras: CameraRow[]; }
 export interface SetupComplete { admin_password?: string; observatory_name: string; latitude: number; longitude: number; timezone: string; public_page_enabled: boolean; primary_camera_id?: string | null; }
 export interface SkyStatus { capture: any; camera: CameraRow | null; latest_image: ImageRow | null; }
 export interface SystemMetrics { cpu_percent: number; memory_percent: number; disk_percent: number; disk_free_gb: number; temperature_c: number | null; uptime_seconds: number; }
