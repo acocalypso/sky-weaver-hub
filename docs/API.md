@@ -24,7 +24,7 @@ Successful captures also publish stable latest artifacts under the local data di
 - `latest/latest-thumbnail.<format>` when thumbnail generation succeeds
 - `latest/latest.json`
 
-Public latest endpoints are intentionally unauthenticated for kiosk/public-page/mobile display use:
+Public latest endpoints are intentionally unauthenticated for kiosk/public-page/mobile display use when `public_page.enabled` is true. When the public page is disabled, these endpoints return `403` with `Public page is disabled`:
 
 - `GET /api/v1/public/latest`
 - `GET /api/v1/public/latest/download`

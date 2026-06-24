@@ -14,7 +14,7 @@ This repository now contains a working local-first platform slice:
 - Versioned REST endpoints, OpenAPI docs at `/api/docs`, and SSE events at `/api/v1/events/stream`.
 - Daemon-owned scheduled capture loop with queued test/single/sequence captures, pause/resume/stop queue semantics, best-effort rpicam hard-cancel wiring, graceful fallback for unsupported adapters, heartbeat reporting, interrupted job recovery, and stale daemon lock recovery.
 - Processing worker for thumbnail reprocess, keogram JPEGs, ffmpeg timelapses, mini timelapses, and startrail JPEGs.
-- Public unauthenticated sky page at `/public`, backed by stable latest-image artifacts and public latest API endpoints.
+- Public unauthenticated sky page at `/public`, backed by stable latest-image artifacts and public latest API endpoints that honor the public-page enabled setting.
 - System Health UI with service controls, per-service detail, recent journal output, diagnostics export, and queue/metric summaries.
 - Systemd units and installer scripts for Pi deployment, with first-setup prompts, constrained service-control permissions, and dry-run/idempotency tests.
 - Allsky migration detection and dry-run preview endpoints. Real import is still scaffolded.
@@ -54,6 +54,8 @@ After install:
 - Bootstrap login: `admin / skyweaver-change-me`
 
 On first login, the admin UI requires setup completion so you can replace the bootstrap password, confirm observatory location/timezone, detect or choose the primary camera, and set public page mode before normal admin use.
+
+When public page mode is disabled, `/public` shows a disabled state and `/api/v1/public/latest` plus its download/thumbnail endpoints return `403 Public page is disabled`.
 
 The installer creates `/opt/skyweaver`, `/etc/skyweaver`, `/var/lib/skyweaver`, and `/var/log/skyweaver`, installs Node/npm and Python dependencies, grants the service user camera hardware groups, builds the frontend, installs systemd units, grants narrow sudoers permissions for Sky Weaver service controls, and starts `skyweaver.target`. On a fresh interactive install it asks for admin credentials, observatory location, timezone, primary camera adapter, and public page mode. Re-running the installer preserves the existing `/etc/skyweaver/skyweaver.env`.
 
@@ -112,6 +114,8 @@ JavaScript:
 const latest = await fetch("http://skyweaver.local:8765/api/v1/public/latest").then((res) => res.json());
 const imageUrl = `http://skyweaver.local:8765${latest.data.download_url}`;
 ```
+
+Public clients should handle `403 Public page is disabled` as an operator-controlled disabled state.
 
 Python:
 

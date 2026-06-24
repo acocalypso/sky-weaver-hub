@@ -120,6 +120,26 @@ def test_public_latest_endpoints_are_unauthenticated(tmp_path):
     assert public_thumbnail.content == Path(image["thumbnail_path"]).read_bytes()
 
 
+def test_public_latest_endpoints_honor_public_page_setting(tmp_path):
+    client = make_client(tmp_path)
+    token = login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+    _queued, _job, image = run_queued_test_capture(client, headers, {"exposure_ms": 500, "gain": 1, "format": "jpg", "mode": "manual"})
+
+    settings_res = client.patch("/api/v1/settings", headers=headers, json={"values": {"public_page": {"enabled": False, "iframe_enabled": True}}})
+    assert settings_res.status_code == 200, settings_res.text
+
+    public_latest = client.get("/api/v1/public/latest")
+    assert public_latest.status_code == 403
+    assert "Public page is disabled" in public_latest.text
+    assert client.get("/api/v1/public/latest/download").status_code == 403
+    assert client.get("/api/v1/public/latest/thumbnail").status_code == 403
+
+    authed_latest = client.get("/api/v1/images/latest", headers=headers)
+    assert authed_latest.status_code == 200
+    assert authed_latest.json()["data"]["id"] == image["id"]
+
+
 def test_api_key_scopes(tmp_path):
     client = make_client(tmp_path)
     token = login(client)

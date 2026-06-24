@@ -47,7 +47,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 - Capture state/start/stop/pause/resume/test-shot/single/sequence/jobs
 - Schedule get/put/preview/recalculate
 - Image list/latest/detail/download/delete/reprocess/days/day
-- Public latest metadata/download/thumbnail endpoints
+- Public latest metadata/download/thumbnail endpoints gated by `public_page.enabled`
 - Products list/detail/queue/download
 - Dark frame placeholder endpoints
 - Module and module-flow placeholder endpoints
@@ -84,13 +84,13 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 - Pause holds queued automation capture jobs, resume releases them, test-shot jobs still run for manual verification, and stop cancels pending/claimed queued capture jobs while recording best-effort cancel intent for in-progress exposures. The rpicam/libcamera adapter can terminate its active capture subprocess from inside the daemon process; adapters without hard-cancel support still finish gracefully.
 - Capture daemon startup requeues interrupted claimed/running capture jobs after service restart.
 - `/api/v1/schedule/preview-tonight` returns a real active window and next transition for fixed or sun-angle schedules.
-- Successful captures publish stable local latest artifacts and unauthenticated public latest metadata/download endpoints.
+- Successful captures publish stable local latest artifacts and unauthenticated public latest metadata/download endpoints when the public page is enabled.
 - Backend tests verify daemon-run scheduled capture creation, interval gating, queued test-shot completion while automation is stopped, queued single-capture completion, queued sequence completion, graceful stop reporting, best-effort hard-cancel intent, adapter hard-cancel handling, pause/resume/stop semantics, schedule preview, heartbeat/activity reporting, interrupted job recovery, and a mock overnight flow that checks latest/gallery updates.
 
 ### Frontend
 
 - Local login page.
-- Public Sky page at `/public` that displays the latest public image and safe metadata without admin login or controls.
+- Public Sky page at `/public` that displays the latest public image and safe metadata without admin login or controls, and shows a disabled state when `public_page.enabled` is false.
 - First-setup page that blocks normal admin routes until observatory details, timezone, primary camera, public page mode, and bootstrap password status are confirmed. It detects hardware camera candidates, warns when only mock capture is available, and shows live password readiness guidance.
 - Dashboard with latest image, start/pause/resume/stop/test-shot controls, queued single/sequence capture controls, capture job progress, daemon activity, status, metrics, and recent captures.
 - Cameras page with detection, adapter selection, night-profile editing, and test shot.
@@ -149,7 +149,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 | Phase 2: Auth/API keys/settings/docs | Mostly done | JWT login, API-key scopes, settings, API Keys UI, Developer API UI, installer-seeded first setup values, in-app first-setup enforcement, bootstrap-password detection, password-strength guidance, and in-process rate limiting for failed login/setup completion attempts exist. Broader audit trails remain open. |
 | Phase 3: Camera adapters and test shot | Partial | Mock and rpicam/libcamera implemented and validated with an IMX290 on Raspberry Pi. ZWO, gPhoto2, V4L2, INDI, custom command are placeholders. |
 | Phase 4: Capture daemon and realtime | Partial | Scheduled daemon loop, shared capture service, persistent job claiming for test/single/scheduled/sequence captures, graceful stop reporting, best-effort rpicam hard-cancel wiring, pause/resume/stop queue semantics, active-window checks and UI preview, interval gating, lock-file duplicate-loop guard with stale lock recovery, heartbeat/activity reporting, interrupted job recovery, SSE endpoint, Pi reboot service startup acceptance, and IMX290 capture after restart/reboot acceptance exist. Real-Pi hard-cancel acceptance is still open. |
-| Phase 5: Image storage/gallery/latest/metadata | Partial | Mock capture artifacts, metadata, thumbnails, stable latest copies, image rows, gallery, latest image, public latest endpoints, and public sky page exist. Broader metadata extraction is open. |
+| Phase 5: Image storage/gallery/latest/metadata | Partial | Mock capture artifacts, metadata, thumbnails, stable latest copies, image rows, gallery, latest image, public latest endpoints gated by public-page settings, and public sky page exist. Broader metadata extraction is open. |
 | Phase 6: Processing worker/products/retention | Partial | Worker claims jobs, thumbnail reprocess exists, keogram JPEG generation, ffmpeg timelapse/mini-timelapse generation, and startrail generation exist, and product job progress is visible in the UI. Cleanup and upload execution are open. |
 | Phase 7: Overlay/modules | Early scaffold | Module tables/endpoints exist. Overlay editor, processor, built-in modules, safe module execution are open. |
 | Phase 8: Installer/systemd/support/docs | Partial | Scripts and units exist. Shellcheck CI, installer dry-run/idempotency tests, service-control sudoers generation, interactive first-setup prompts, real Pi install, repeat install, service restart, and reboot verification exist. Nginx option and broader Pi camera verification are open. |
@@ -277,7 +277,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 ### Remote Upload
 
 - Add remote target config UI.
-- Implement local public website mode.
+- Expand local public website mode beyond latest-image display.
 - Implement SFTP/SCP/rsync/FTP where feasible.
 - Add upload retry queue.
 - Add upload logs.
@@ -312,7 +312,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 
 - Add frontend route smoke tests.
 - Expand component tests beyond Dashboard, Settings, Gallery, and API Keys.
-- Add public page no-auth test once implemented.
+- Add browser smoke coverage for public page enabled/disabled states.
 - Add admin route auth tests.
 - Add backend tests for:
   - schedule calculation
@@ -330,7 +330,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 - Capture daemon now performs scheduled captures and consumes queued test-shot, single-capture, and sequence jobs. Graceful stop fallback, best-effort rpicam hard-cancel wiring, pause/resume/stop queue semantics, daemon activity visibility, Dashboard capture job progress, and interrupted job requeue on service start exist; Raspberry Pi reboot and IMX290 capture-after-reboot acceptance have passed, but rpicam hard-cancel still needs real-hardware validation.
 - Worker now generates thumbnails, keograms, ffmpeg timelapses, mini timelapses, and startrails, but retention cleanup and upload execution are still open.
 - Product endpoints queue jobs; keogram, timelapse, mini timelapse, and startrail currently produce downloadable night products.
-- Public page exists for latest-image display; richer public archives and branding controls are still open.
+- Public page exists for latest-image display and honors the public-page enabled setting; richer public archives and branding controls are still open.
 - Remote upload is not implemented.
 - Allsky migration does not yet import data.
 - API server no longer performs camera capture inline for test shots; test-shot requests enqueue daemon-owned `test` jobs so manual verification still works while automation is stopped.
@@ -351,9 +351,9 @@ Most recent checks run during implementation:
 Most recent local follow-up checks on 2026-06-24:
 
 - `npm run lint`: passed
-- `npm test`: passed with 8 tests
+- `npm test`: passed with 9 tests
 - `npm run build`: passed
-- `backend\\.venv\\Scripts\\python -m pytest backend\\tests`: passed with 40 tests
+- `backend\\.venv\\Scripts\\python -m pytest backend\\tests`: passed with 42 tests
 - Local OpenAPI generation plus `python -m json.tool artifacts\\openapi.json`: passed
 - `shellcheck install.sh scripts/test_install.sh upgrade.sh uninstall.sh support.sh`: not run locally because ShellCheck is not installed on this Windows host; CI installs ShellCheck on Ubuntu.
 

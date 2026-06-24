@@ -900,8 +900,25 @@ def latest_image(_principal: Annotated[dict, Depends(require_scope("read:images"
     return ok(row)
 
 
+def public_page_enabled() -> bool:
+    with session() as conn:
+        row = conn.execute("SELECT value FROM system_settings WHERE key='public_page'").fetchone()
+    if not row:
+        return True
+    value = json_loads(row["value"], {})
+    if not isinstance(value, dict):
+        return True
+    return bool(value.get("enabled", True))
+
+
+def require_public_page_enabled() -> None:
+    if not public_page_enabled():
+        raise HTTPException(403, "Public page is disabled")
+
+
 @router.get("/public/latest")
 def public_latest_image():
+    require_public_page_enabled()
     with session() as conn:
         row = decode_row(row_to_dict(conn.execute("SELECT * FROM images ORDER BY captured_at DESC LIMIT 1").fetchone()))
     if not row:
@@ -914,6 +931,7 @@ def public_latest_image():
 
 @router.get("/public/latest/download")
 def public_latest_download():
+    require_public_page_enabled()
     with session() as conn:
         row = conn.execute("SELECT format FROM images ORDER BY captured_at DESC LIMIT 1").fetchone()
     if not row:
@@ -926,6 +944,7 @@ def public_latest_download():
 
 @router.get("/public/latest/thumbnail")
 def public_latest_thumbnail():
+    require_public_page_enabled()
     latest_thumbnail = next(get_settings().latest_dir.glob("latest-thumbnail.*"), None)
     if not latest_thumbnail or not latest_thumbnail.exists():
         raise HTTPException(404, "Latest thumbnail file not found")

@@ -13,4 +13,4 @@ Mobile clients should use:
 
 Use API keys with least-privilege scopes. CORS is local-only by default and configurable in settings/environment.
 
-`/api/v1/public/latest` and its download endpoints are unauthenticated by design and return only public display metadata plus stable latest image bytes.
+`/api/v1/public/latest` and its download endpoints are unauthenticated by design when `public_page.enabled` is true, and return only public display metadata plus stable latest image bytes. When the public page is disabled, mobile clients should treat `403 Public page is disabled` as a user-configured disabled state rather than an authentication failure.

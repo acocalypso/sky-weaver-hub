@@ -8,7 +8,7 @@ import sampleSky from "@/assets/sample-sky-1.jpg";
 
 export default function PublicSky() {
   const [latest, setLatest] = useState<PublicLatestImage | null>(null);
-  const [status, setStatus] = useState<"loading" | "ready" | "empty" | "error">("loading");
+  const [status, setStatus] = useState<"loading" | "ready" | "empty" | "disabled" | "error">("loading");
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
 
   useEffect(() => {
@@ -24,9 +24,14 @@ export default function PublicSky() {
       setLatest(data);
       setStatus("ready");
       setUpdatedAt(new Date());
-    } catch {
+    } catch (error) {
       setLatest(null);
-      setStatus((current) => (current === "ready" ? "error" : "empty"));
+      const message = error instanceof Error ? error.message : "";
+      if (message.toLowerCase().includes("public page is disabled")) {
+        setStatus("disabled");
+      } else {
+        setStatus((current) => (current === "ready" ? "error" : "empty"));
+      }
       setUpdatedAt(new Date());
     }
   }
@@ -44,11 +49,11 @@ export default function PublicSky() {
             </div>
             <div className="min-w-0">
               <h1 className="text-xl font-semibold leading-tight truncate">Sky Weaver Public Sky</h1>
-              <p className="text-xs text-muted-foreground font-mono-data truncate">{latest ? formatCaptureTime(latest.captured_at) : "Waiting for first capture"}</p>
+              <p className="text-xs text-muted-foreground font-mono-data truncate">{latest ? formatCaptureTime(latest.captured_at) : emptySubtitle(status)}</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <StatusBadge variant={status === "ready" ? "ok" : status === "error" ? "warn" : "idle"} pulse={status === "ready"}>{statusLabel(status)}</StatusBadge>
+            <StatusBadge variant={status === "ready" ? "ok" : status === "error" ? "warn" : status === "disabled" ? "error" : "idle"} pulse={status === "ready"}>{statusLabel(status)}</StatusBadge>
             <Button variant="outline" size="sm" onClick={load} aria-label="Refresh public sky">
               <RefreshCw className="h-4 w-4" />
             </Button>
@@ -61,7 +66,7 @@ export default function PublicSky() {
             <div className="absolute inset-0 grid place-items-center bg-background/70">
               <div className="flex flex-col items-center gap-3 text-center px-4">
                 <ImageOff className="h-10 w-10 text-muted-foreground" />
-                <p className="text-lg font-medium">No public capture yet</p>
+                <p className="text-lg font-medium">{emptyTitle(status)}</p>
               </div>
             </div>
           )}
@@ -94,11 +99,24 @@ function PublicStat({ label, value, icon }: { label: string; value: string; icon
   );
 }
 
-function statusLabel(status: "loading" | "ready" | "empty" | "error") {
+function statusLabel(status: "loading" | "ready" | "empty" | "disabled" | "error") {
   if (status === "ready") return "live";
   if (status === "error") return "stale";
+  if (status === "disabled") return "disabled";
   if (status === "loading") return "loading";
   return "waiting";
+}
+
+function emptyTitle(status: "loading" | "ready" | "empty" | "disabled" | "error") {
+  if (status === "disabled") return "Public page disabled";
+  if (status === "error") return "Public sky unavailable";
+  return "No public capture yet";
+}
+
+function emptySubtitle(status: "loading" | "ready" | "empty" | "disabled" | "error") {
+  if (status === "disabled") return "Disabled in Sky Weaver settings";
+  if (status === "error") return "Keeping the public page ready";
+  return "Waiting for first capture";
 }
 
 function formatCaptureTime(value: string) {

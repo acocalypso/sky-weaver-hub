@@ -249,4 +249,14 @@ describe("main pages", () => {
     expect(screen.getByAltText("Latest public all-sky capture")).toHaveAttribute("src", "/api/v1/public/latest/download?v=img-1");
     await waitFor(() => expect(SkyApi.publicLatest).toHaveBeenCalled());
   });
+
+  it("renders disabled public sky state", async () => {
+    vi.mocked(SkyApi.publicLatest).mockRejectedValueOnce(new Error("Public page is disabled"));
+
+    render(<PublicSky />);
+
+    expect(await screen.findByText("Public page disabled")).toBeInTheDocument();
+    expect(screen.getByText("disabled")).toBeInTheDocument();
+    expect(screen.getByText("Disabled in Sky Weaver settings")).toBeInTheDocument();
+  });
 });
