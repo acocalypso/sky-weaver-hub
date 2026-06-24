@@ -50,6 +50,7 @@ jobs:
               encoding="utf-8",
           )
           PY
+          python -m json.tool artifacts/openapi.json > /dev/null
 
       - name: Upload OpenAPI artifact
         uses: actions/upload-artifact@v4

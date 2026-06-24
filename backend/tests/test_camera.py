@@ -48,7 +48,7 @@ OUT
             encoding="utf-8",
         )
     tool.chmod(0o755)
-    monkeypatch.setenv("PATH", str(tmp_path))
+    monkeypatch.setenv("PATH", str(tmp_path) + os.pathsep + os.environ.get("PATH", ""))
 
     found = await RpiCamAdapter().detect()
 
