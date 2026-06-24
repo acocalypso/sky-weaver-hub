@@ -51,6 +51,22 @@ def test_health_and_status(tmp_path):
     assert res.json()["data"]["camera"]["adapter"] == "mock"
 
 
+def test_frontend_deep_links_fall_back_to_index(tmp_path):
+    web_dir = tmp_path / "data" / "web"
+    web_dir.mkdir(parents=True)
+    (web_dir / "index.html").write_text("<!doctype html><title>Sky Weaver</title><div id=\"root\"></div>", encoding="utf-8")
+    (web_dir / "app.js").write_text("console.log('skyweaver')", encoding="utf-8")
+
+    client = make_client(tmp_path)
+    public_res = client.get("/public", headers={"accept": "text/html"})
+    assert public_res.status_code == 200
+    assert "Sky Weaver" in public_res.text
+
+    assert client.get("/app.js").status_code == 200
+    assert client.get("/missing.js", headers={"accept": "application/javascript"}).status_code == 404
+    assert client.get("/api/v1/health").json()["data"]["status"] == "ok"
+
+
 def test_mock_capture_creates_image(tmp_path):
     client = make_client(tmp_path)
     latest_dir = tmp_path / "data" / "latest"
