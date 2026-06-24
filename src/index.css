@@ -1,6 +1,5 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+@config "../tailwind.config.ts";
 
 /* AllSky Control Hub — observatory dark theme.
    All colors are HSL. Tokens drive every surface, status, and chart. */
