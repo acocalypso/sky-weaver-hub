@@ -39,6 +39,11 @@ class CaptureDaemon:
 
     async def run_once(self, force: bool = False) -> bool:
         update_daemon_heartbeat()
+        test_job = claim_next_capture_job(("test",))
+        if test_job:
+            await execute_capture_job(test_job)
+            return True
+
         if not capture_is_running():
             return False
 

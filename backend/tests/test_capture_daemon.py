@@ -104,6 +104,34 @@ def test_daemon_consumes_queued_single_capture(tmp_path: Path):
     assert images[0]["mode"] == "manual"
 
 
+def test_daemon_consumes_test_shot_while_capture_is_stopped(tmp_path: Path):
+    client = make_client(tmp_path)
+    token = login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    queued = client.post(
+        "/api/v1/capture/test-shot",
+        headers=headers,
+        json={"exposure_ms": 250, "gain": 1, "mode": "manual"},
+    ).json()["data"]
+    assert queued["status"] == "pending"
+    assert queued["type"] == "test"
+
+    from skyweaver.capture_daemon import CaptureDaemon
+
+    daemon = CaptureDaemon()
+    assert asyncio.run(daemon.run_once()) is True
+
+    after = client.get(f"/api/v1/capture/jobs/{queued['id']}", headers=headers).json()["data"]
+    assert after["status"] == "completed"
+    assert after["result"]["image_id"]
+
+    status = client.get("/api/v1/status", headers=headers).json()["data"]["capture"]
+    assert status["status"] == "idle"
+    assert status["daemon_last_claimed_job_id"] == queued["id"]
+    assert status["daemon_last_claimed_job_type"] == "test"
+
+
 def test_pause_holds_queued_capture_until_resume(tmp_path: Path):
     client = make_client(tmp_path)
     token = login(client)
@@ -137,14 +165,18 @@ def test_stop_cancels_pending_capture_jobs(tmp_path: Path):
     headers = {"Authorization": f"Bearer {token}"}
     assert client.post("/api/v1/capture/start", headers=headers).status_code == 200
     queued = client.post("/api/v1/capture/single", headers=headers, json={"mode": "manual"}).json()["data"]
+    test_queued = client.post("/api/v1/capture/test-shot", headers=headers, json={"mode": "manual"}).json()["data"]
 
     stopped = client.post("/api/v1/capture/stop", headers=headers).json()["data"]
     assert stopped["status"] == "stopped"
-    assert stopped["canceled_jobs"] == 1
+    assert stopped["canceled_jobs"] == 2
 
     after = client.get(f"/api/v1/capture/jobs/{queued['id']}", headers=headers).json()["data"]
     assert after["status"] == "canceled"
     assert after["error"] == "Canceled by operator stop"
+    test_after = client.get(f"/api/v1/capture/jobs/{test_queued['id']}", headers=headers).json()["data"]
+    assert test_after["status"] == "canceled"
+    assert test_after["error"] == "Canceled by operator stop"
 
 
 def test_daemon_consumes_queued_sequence_capture(tmp_path: Path):

@@ -17,7 +17,7 @@ from ..camera.registry import adapters, get_adapter
 from ..config import get_settings
 from ..db import event, json_dumps, json_loads, log, new_id, now_iso, row_to_dict, session
 from ..security import create_api_key, hash_password, make_token, verify_password
-from ..services.capture import CaptureCommand, all_rows, count_files, create_capture_job, current_schedule, decode_row, enqueue_capture, execute_capture, get_primary_camera, system_metrics
+from ..services.capture import CaptureCommand, all_rows, count_files, create_capture_job, current_schedule, decode_row, enqueue_capture, get_primary_camera, system_metrics
 from ..services.schedule import active_window
 from .deps import current_principal, require_scope
 from .responses import ok
@@ -713,7 +713,7 @@ def capture_stop(_principal: Annotated[dict, Depends(require_scope("write:captur
         ts = now_iso()
         conn.execute("UPDATE capture_state SET status='stopped', current_mode='manual', updated_at=? WHERE id=1", (ts,))
         cur = conn.execute(
-            "UPDATE capture_jobs SET status='canceled', completed_at=?, error='Canceled by operator stop' WHERE status IN ('pending', 'claimed') AND type IN ('single', 'scheduled', 'sequence')",
+            "UPDATE capture_jobs SET status='canceled', completed_at=?, error='Canceled by operator stop' WHERE status IN ('pending', 'claimed') AND type IN ('test', 'single', 'scheduled', 'sequence')",
             (ts,),
         )
         event(conn, "capture_stopped", {"canceled_jobs": cur.rowcount})
@@ -740,8 +740,8 @@ def capture_resume(_principal: Annotated[dict, Depends(require_scope("write:capt
 
 
 @router.post("/capture/test-shot")
-async def test_shot(body: CaptureBody, principal: dict = Depends(require_scope("write:capture"))):
-    return await capture_image(body, principal, "test")
+def test_shot(body: CaptureBody, _principal: dict = Depends(require_scope("write:capture"))):
+    return ok(enqueue_capture(CaptureCommand.from_mapping(body.model_dump()), "test"))
 
 
 @router.post("/capture/single")
@@ -770,15 +770,6 @@ def capture_job(job_id: str, _principal: Annotated[dict, Depends(require_scope("
     if not row:
         raise HTTPException(404, "Job not found")
     return ok(row)
-
-
-async def capture_image(body: CaptureBody, _principal: dict, job_type: str):
-    try:
-        return ok(await execute_capture(CaptureCommand.from_mapping(body.model_dump()), job_type))
-    except LookupError as exc:
-        raise HTTPException(404, str(exc)) from exc
-    except Exception as exc:
-        raise HTTPException(500, str(exc)) from exc
 
 
 @router.get("/schedule")

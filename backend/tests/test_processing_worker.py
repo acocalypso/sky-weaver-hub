@@ -2,7 +2,7 @@ import asyncio
 import shutil
 from pathlib import Path
 
-from test_api import login, make_client
+from test_api import login, make_client, run_queued_test_capture
 
 
 def test_worker_generates_keogram_product(tmp_path: Path):
@@ -12,13 +12,8 @@ def test_worker_generates_keogram_product(tmp_path: Path):
 
     day_key = None
     for _ in range(3):
-        res = client.post(
-            "/api/v1/capture/test-shot",
-            headers=headers,
-            json={"exposure_ms": 250, "gain": 1, "format": "jpg", "mode": "night"},
-        )
-        assert res.status_code == 200, res.text
-        day_key = res.json()["data"]["image"]["captured_at"][:10].replace("-", "")
+        _queued, _job, image = run_queued_test_capture(client, headers, {"exposure_ms": 250, "gain": 1, "format": "jpg", "mode": "night"})
+        day_key = image["captured_at"][:10].replace("-", "")
 
     queued = client.post("/api/v1/products/keogram", headers=headers, json={"day_key": day_key}).json()["data"]
     assert queued["status"] == "pending"
@@ -58,13 +53,8 @@ def test_worker_generates_timelapse_product(tmp_path: Path):
 
     day_key = None
     for _ in range(3):
-        res = client.post(
-            "/api/v1/capture/test-shot",
-            headers=headers,
-            json={"exposure_ms": 250, "gain": 1, "format": "jpg", "mode": "night"},
-        )
-        assert res.status_code == 200, res.text
-        day_key = res.json()["data"]["image"]["captured_at"][:10].replace("-", "")
+        _queued, _job, image = run_queued_test_capture(client, headers, {"exposure_ms": 250, "gain": 1, "format": "jpg", "mode": "night"})
+        day_key = image["captured_at"][:10].replace("-", "")
 
     queued = client.post("/api/v1/products/timelapse", headers=headers, json={"day_key": day_key, "fps": 10, "codec": "h264"}).json()["data"]
     assert queued["status"] == "pending"
@@ -103,13 +93,8 @@ def test_worker_generates_mini_timelapse_product(tmp_path: Path):
 
     day_key = None
     for _ in range(5):
-        res = client.post(
-            "/api/v1/capture/test-shot",
-            headers=headers,
-            json={"exposure_ms": 250, "gain": 1, "format": "jpg", "mode": "night"},
-        )
-        assert res.status_code == 200, res.text
-        day_key = res.json()["data"]["image"]["captured_at"][:10].replace("-", "")
+        _queued, _job, image = run_queued_test_capture(client, headers, {"exposure_ms": 250, "gain": 1, "format": "jpg", "mode": "night"})
+        day_key = image["captured_at"][:10].replace("-", "")
 
     queued = client.post(
         "/api/v1/products/mini-timelapse",
@@ -148,13 +133,8 @@ def test_worker_generates_startrail_product(tmp_path: Path):
 
     day_key = None
     for _ in range(3):
-        res = client.post(
-            "/api/v1/capture/test-shot",
-            headers=headers,
-            json={"exposure_ms": 250, "gain": 1, "format": "jpg", "mode": "night"},
-        )
-        assert res.status_code == 200, res.text
-        day_key = res.json()["data"]["image"]["captured_at"][:10].replace("-", "")
+        _queued, _job, image = run_queued_test_capture(client, headers, {"exposure_ms": 250, "gain": 1, "format": "jpg", "mode": "night"})
+        day_key = image["captured_at"][:10].replace("-", "")
 
     queued = client.post("/api/v1/products/startrail", headers=headers, json={"day_key": day_key, "max_width": 1280}).json()["data"]
     assert queued["status"] == "pending"

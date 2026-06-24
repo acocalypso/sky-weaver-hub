@@ -87,7 +87,7 @@ export default function Cameras() {
     if (!selected) return;
     try {
       await SkyApi.testShot({ camera_id: selected.id, exposure_ms: Number(settings.manual_exposure_ms ?? 1000), gain: Number(settings.gain ?? 1), mode: "manual" });
-      toast.success("Test image captured");
+      toast.success("Test shot queued");
     } catch (e: any) {
       toast.error(e.message ?? "Capture failed");
     }

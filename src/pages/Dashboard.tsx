@@ -63,10 +63,13 @@ export default function Dashboard() {
       if (type === "pause") await SkyApi.capturePause();
       if (type === "resume") await SkyApi.captureResume();
       if (type === "stop") await SkyApi.captureStop();
-      if (type === "test") await SkyApi.testShot({ camera_id: camera?.id, exposure_ms: 1000, gain: 1, mode: "manual" });
+      if (type === "test") {
+        const job = await SkyApi.testShot({ camera_id: camera?.id, exposure_ms: 1000, gain: 1, mode: "manual" });
+        setCaptureJobs((jobs) => [{ ...job, request: { exposure_ms: 1000, gain: 1, mode: "manual" }, progress: job.progress ?? 0 }, ...jobs].slice(0, 6));
+      }
       if (type === "single") await SkyApi.queueSingleCapture({ camera_id: camera?.id, exposure_ms: sequenceForm.exposure_ms, gain: sequenceForm.gain, mode: "manual" });
       if (type === "timelapse") await SkyApi.createProduct("timelapse", { day_key: latest?.day_key });
-      toast.success(type === "test" ? "Test shot captured" : type === "single" ? "Single capture queued" : "Command accepted");
+      toast.success(type === "test" ? "Test shot queued" : type === "single" ? "Single capture queued" : "Command accepted");
       await load();
     } catch (e: any) {
       toast.error(e.message ?? "Command failed");

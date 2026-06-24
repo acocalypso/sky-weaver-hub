@@ -22,7 +22,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 | Camera abstraction | `CameraAdapter` base class plus working `mock` adapter and initial `rpicam`/`libcamera` adapter. Other adapters are placeholders with actionable errors. |
 | UI/API integration | Dashboard, Cameras, Schedule, Gallery, Night Products, Logs, Settings, API Keys, and Developer API call the local backend. |
 | Deployment | `install.sh`, `upgrade.sh`, `uninstall.sh`, `support.sh`, and systemd units exist. Fresh interactive installs prompt for first-setup values. |
-| Tests | Backend pytest coverage for health/status, login, API keys, mock capture, first-setup hardening, system service controls, scheduled daemon capture, queued single-capture execution, queued sequence capture, pause/resume/stop queue semantics, schedule preview, daemon heartbeat/activity, interrupted job recovery, mock overnight acceptance flow, night product generation, migration preview, and mock adapter. Frontend component tests cover Dashboard, Gallery, Health, Settings, API Keys, and first setup. Shell tests cover installer dry-run, service-control sudoers generation, and repeat-install idempotency with mocked system commands. |
+| Tests | Backend pytest coverage for health/status, login, API keys, mock capture, first-setup hardening, system service controls, scheduled daemon capture, queued test/single/sequence capture execution, pause/resume/stop queue semantics, schedule preview, daemon heartbeat/activity, interrupted job recovery, mock overnight acceptance flow, night product generation, migration preview, and mock adapter. Frontend component tests cover Dashboard, Gallery, Health, Settings, API Keys, and first setup. Shell tests cover installer dry-run, service-control sudoers generation, and repeat-install idempotency with mocked system commands. |
 
 ## Implemented Capabilities
 
@@ -76,13 +76,13 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 - Scheduled captures now consult the configured active window before creating unattended jobs.
 - A daemon lock file prevents duplicate daemon loops from running in the same data directory.
 - The daemon writes a heartbeat, PID, last claimed job, and last success timestamp into `capture_state`; `/api/v1/system/services` reports running/stale status and recent daemon activity.
-- Manual/test-shot API captures, queued single captures, and scheduled daemon captures now share the same capture execution path.
+- Test-shot, queued single, queued sequence, and scheduled captures now run through daemon-owned capture jobs and share the same capture execution path.
 - `/api/v1/capture/single` creates a persistent pending capture job for daemon execution.
 - `/api/v1/capture/sequence` creates a persistent parent job that the daemon expands into child capture artifacts.
-- Pause holds queued capture jobs, resume releases them, and stop cancels pending/claimed queued capture jobs.
+- Pause holds queued automation capture jobs, resume releases them, test-shot jobs still run for manual verification, and stop cancels pending/claimed queued capture jobs.
 - Capture daemon startup requeues interrupted claimed/running capture jobs after service restart.
 - `/api/v1/schedule/preview-tonight` returns a real active window and next transition for fixed or sun-angle schedules.
-- Backend tests verify daemon-run scheduled capture creation, interval gating, queued single-capture completion, queued sequence completion, pause/resume/stop semantics, schedule preview, heartbeat/activity reporting, interrupted job recovery, and a mock overnight flow that checks latest/gallery updates.
+- Backend tests verify daemon-run scheduled capture creation, interval gating, queued test-shot completion while automation is stopped, queued single-capture completion, queued sequence completion, pause/resume/stop semantics, schedule preview, heartbeat/activity reporting, interrupted job recovery, and a mock overnight flow that checks latest/gallery updates.
 
 ### Frontend
 
@@ -143,7 +143,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 | Phase 1: API skeleton and SQLite | Mostly done | Backend, schema, health/status, API client, core routes, and mock capture exist. Dedicated migration framework still needed. |
 | Phase 2: Auth/API keys/settings/docs | Mostly done | JWT login, API-key scopes, settings, API Keys UI, Developer API UI, installer-seeded first setup values, in-app first-setup enforcement, bootstrap-password detection, and password-strength guidance exist. Rate limiting is still open. |
 | Phase 3: Camera adapters and test shot | Partial | Mock and rpicam/libcamera implemented and validated with an IMX290 on Raspberry Pi. ZWO, gPhoto2, V4L2, INDI, custom command are placeholders. |
-| Phase 4: Capture daemon and realtime | Partial | Scheduled daemon loop, shared capture service, persistent job claiming for single/scheduled/sequence captures, pause/resume/stop queue semantics, active-window checks and UI preview, interval gating, lock-file duplicate-loop guard with stale lock recovery, heartbeat/activity reporting, interrupted job recovery, SSE endpoint, Pi reboot service startup acceptance, and IMX290 capture after restart/reboot acceptance exist. Graceful in-progress exposure stop behavior is still open. |
+| Phase 4: Capture daemon and realtime | Partial | Scheduled daemon loop, shared capture service, persistent job claiming for test/single/scheduled/sequence captures, pause/resume/stop queue semantics, active-window checks and UI preview, interval gating, lock-file duplicate-loop guard with stale lock recovery, heartbeat/activity reporting, interrupted job recovery, SSE endpoint, Pi reboot service startup acceptance, and IMX290 capture after restart/reboot acceptance exist. Graceful in-progress exposure stop behavior is still open. |
 | Phase 5: Image storage/gallery/latest/metadata | Partial | Mock capture artifacts, metadata, thumbnails, image rows, gallery, latest image exist. Latest symlink/copy and broader metadata extraction are open. |
 | Phase 6: Processing worker/products/retention | Partial | Worker claims jobs, thumbnail reprocess exists, keogram JPEG generation, ffmpeg timelapse/mini-timelapse generation, and startrail generation exist, and product job progress is visible in the UI. Cleanup and upload execution are open. |
 | Phase 7: Overlay/modules | Early scaffold | Module tables/endpoints exist. Overlay editor, processor, built-in modules, safe module execution are open. |
@@ -156,8 +156,8 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 ### Highest Priority
 
 - Expand the capture daemon into complete queue ownership:
-  - move all remaining long-running capture execution out of direct API request path
   - gracefully stop after current exposure
+  - document and surface in-progress capture stop limits clearly
 - Keep schedule preview and daemon state visible across Dashboard and Schedule as the daemon model evolves.
 - Complete mock acceptance flow end to end:
   - run longer manual/dev overnight simulations outside pytest
@@ -324,13 +324,13 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 
 ## Known Current Limitations
 
-- Capture daemon now performs scheduled captures and consumes queued single-capture and sequence jobs. Pause/resume/stop queue semantics, daemon activity visibility, Dashboard capture job progress, and interrupted job requeue on service start exist; Raspberry Pi reboot and IMX290 capture-after-reboot acceptance have passed.
+- Capture daemon now performs scheduled captures and consumes queued test-shot, single-capture, and sequence jobs. Pause/resume/stop queue semantics, daemon activity visibility, Dashboard capture job progress, and interrupted job requeue on service start exist; Raspberry Pi reboot and IMX290 capture-after-reboot acceptance have passed.
 - Worker now generates thumbnails, keograms, ffmpeg timelapses, mini timelapses, and startrails, but retention cleanup and upload execution are still open.
 - Product endpoints queue jobs; keogram, timelapse, mini timelapse, and startrail currently produce downloadable night products.
 - Public page is not implemented.
 - Remote upload is not implemented.
 - Allsky migration does not yet import data.
-- API server currently still performs test-shot capture inline through the shared service for UX; other long capture paths should continue moving toward daemon/queue ownership.
+- API server no longer performs camera capture inline for test shots; test-shot requests enqueue daemon-owned `test` jobs so manual verification still works while automation is stopped.
 - Tailwind is intentionally pinned to 3.4.19 to preserve the original design. Tailwind 4 requires a separate design-system migration.
 - Lint passes with warnings from existing generated UI/hook patterns.
 - Real Raspberry Pi install, service restart, reboot, and IMX290 real-camera capture acceptance passed on a Raspberry Pi 3 Model B running Debian 13/trixie.
@@ -380,6 +380,6 @@ The next development phase should focus on operational hardening, because interr
 
 Suggested next tasks:
 
-1. Continue moving long-running capture execution out of direct API request paths.
+1. Add graceful in-progress exposure stop behavior and clearer stop-limit reporting.
 2. Add auth/setup rate limiting.
 3. Expand system health journal/service detail views with richer failure analysis and unit history.

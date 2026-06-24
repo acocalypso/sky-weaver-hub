@@ -1,3 +1,4 @@
+import asyncio
 import os
 from pathlib import Path
 
@@ -23,6 +24,23 @@ def login(client: TestClient) -> str:
     return res.json()["data"]["token"]
 
 
+def run_queued_test_capture(client: TestClient, headers: dict[str, str], payload: dict):
+    queued_res = client.post("/api/v1/capture/test-shot", headers=headers, json=payload)
+    assert queued_res.status_code == 200, queued_res.text
+    queued = queued_res.json()["data"]
+    assert queued["type"] == "test"
+    assert queued["status"] == "pending"
+
+    from skyweaver.capture_daemon import CaptureDaemon
+
+    assert asyncio.run(CaptureDaemon().run_once()) is True
+    job = client.get(f"/api/v1/capture/jobs/{queued['id']}", headers=headers).json()["data"]
+    assert job["status"] == "completed"
+    latest = client.get("/api/v1/images/latest", headers=headers).json()["data"]
+    assert latest["id"] == job["result"]["image_id"]
+    return queued, job, latest
+
+
 def test_health_and_status(tmp_path):
     client = make_client(tmp_path)
     assert client.get("/api/v1/health").json()["data"]["status"] == "ok"
@@ -35,17 +53,12 @@ def test_health_and_status(tmp_path):
 def test_mock_capture_creates_image(tmp_path):
     client = make_client(tmp_path)
     token = login(client)
-    res = client.post(
-        "/api/v1/capture/test-shot",
-        headers={"Authorization": f"Bearer {token}"},
-        json={"exposure_ms": 500, "gain": 1, "format": "jpg", "mode": "manual"},
-    )
-    assert res.status_code == 200, res.text
-    image = res.json()["data"]["image"]
+    headers = {"Authorization": f"Bearer {token}"}
+    _queued, _job, image = run_queued_test_capture(client, headers, {"exposure_ms": 500, "gain": 1, "format": "jpg", "mode": "manual"})
     assert Path(image["file_path"]).exists()
     assert Path(image["file_path"] + ".json").exists()
 
-    latest = client.get("/api/v1/images/latest", headers={"Authorization": f"Bearer {token}"})
+    latest = client.get("/api/v1/images/latest", headers=headers)
     assert latest.status_code == 200
     assert latest.json()["data"]["id"] == image["id"]
 

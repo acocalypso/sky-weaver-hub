@@ -46,7 +46,7 @@ export const SkyApi = {
   captureStop: () => api("/api/v1/capture/stop", { method: "POST" }),
   capturePause: () => api("/api/v1/capture/pause", { method: "POST" }),
   captureResume: () => api("/api/v1/capture/resume", { method: "POST" }),
-  testShot: (body: any = {}) => api<any>("/api/v1/capture/test-shot", { method: "POST", body: JSON.stringify(body) }),
+  testShot: (body: any = {}) => api<CaptureJob>("/api/v1/capture/test-shot", { method: "POST", body: JSON.stringify(body) }),
   queueSingleCapture: (body: any = {}) => api<CaptureJob>("/api/v1/capture/single", { method: "POST", body: JSON.stringify(body) }),
   queueSequenceCapture: (body: any = {}) => api<CaptureJob>("/api/v1/capture/sequence", { method: "POST", body: JSON.stringify(body) }),
   captureJobs: () => api<CaptureJob[]>("/api/v1/capture/jobs"),
