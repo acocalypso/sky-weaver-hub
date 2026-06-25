@@ -564,7 +564,7 @@ def setup_status(principal: Annotated[dict, Depends(require_scope("admin"))]):
     with session() as conn:
         settings_rows = {row["key"]: row["value"] for row in all_rows(conn, "SELECT * FROM system_settings")}
         schedule = decode_row(row_to_dict(conn.execute("SELECT * FROM capture_schedule LIMIT 1").fetchone())) or {}
-        cameras = all_rows(conn, "SELECT id, name, adapter, model, is_primary FROM cameras ORDER BY is_primary DESC, created_at")
+        cameras = all_rows(conn, "SELECT id, name, adapter, device_id, model, is_primary FROM cameras ORDER BY is_primary DESC, created_at")
         user = conn.execute("SELECT password_hash FROM users WHERE id=?", (principal["id"],)).fetchone()
     security = settings_rows.get("security", {})
     observatory = settings_rows.get("observatory", {})
@@ -794,7 +794,11 @@ def delete_camera(camera_id: str, _principal: Annotated[dict, Depends(require_sc
 async def camera_capabilities(camera_id: str, _principal: Annotated[dict, Depends(require_scope("read:settings"))]):
     with session() as conn:
         cam = get_primary_camera(conn, camera_id)
-    caps = await get_adapter(cam["adapter"]).get_capabilities()
+    adapter = get_adapter(cam["adapter"])
+    if hasattr(adapter, "get_capabilities_for_device"):
+        caps = await adapter.get_capabilities_for_device(cam.get("device_id"))
+    else:
+        caps = await adapter.get_capabilities()
     return ok(caps.__dict__)
 
 

@@ -263,6 +263,9 @@ async def execute_capture(command: CaptureCommand, job_type: str = "manual", job
     image_id = new_id()
     output = settings.image_dir / day_key / f"{captured_at.strftime('%H%M%S')}_{image_id[:8]}.{command.format.lower()}"
     adapter = get_adapter(cam["adapter"])
+    adapter_settings = {**command.settings}
+    if cam.get("device_id") and "device_id" not in adapter_settings:
+        adapter_settings["device_id"] = cam["device_id"]
 
     try:
         result, _cancel_result = await capture_with_cancel(
@@ -276,7 +279,7 @@ async def execute_capture(command: CaptureCommand, job_type: str = "manual", job
                 height=command.height,
                 image_format=command.format,
                 mode=command.mode,
-                settings=command.settings,
+                settings=adapter_settings,
             ),
             job_id,
         )

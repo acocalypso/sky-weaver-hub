@@ -15,6 +15,9 @@ SYSTEMCTL_BIN="${SKYWEAVER_SYSTEMCTL_BIN:-/usr/bin/systemctl}"
 DRY_RUN="${SKYWEAVER_DRY_RUN:-0}"
 ALLOW_NON_ROOT="${SKYWEAVER_ALLOW_NON_ROOT:-0}"
 HARDWARE_GROUPS="${SKYWEAVER_HARDWARE_GROUPS:-video,render,input,gpio,i2c,spi}"
+ZWO_SDK_INSTALL="${SKYWEAVER_INSTALL_ZWO_SDK:-auto}"
+ZWO_SDK_URL="${SKYWEAVER_ZWO_SDK_URL:-}"
+ZWO_SDK_DIR="${SKYWEAVER_ZWO_SDK_DIR:-/opt/skyweaver/vendor/zwo}"
 DEFAULT_ADMIN_PASSWORD="skyweaver-change-me"
 
 SETUP_ADMIN_USERNAME=""
@@ -166,13 +169,150 @@ detect_os() {
 
 install_packages() {
   run apt-get update
-  run apt-get install -y git curl jq nodejs npm python3 python3-venv python3-pip ffmpeg imagemagick v4l-utils gphoto2 sqlite3 build-essential
+  run apt-get install -y git curl jq nodejs npm python3 python3-venv python3-pip ffmpeg imagemagick v4l-utils gphoto2 sqlite3 build-essential unzip ca-certificates libusb-1.0-0
   if [[ "$DRY_RUN" == "1" ]]; then
     run apt-get install -y rpicam-apps
     echo "+ apt-get install -y libcamera-apps # fallback if rpicam-apps is unavailable"
     return
   fi
   if apt-cache show rpicam-apps >/dev/null 2>&1; then run apt-get install -y rpicam-apps; else run apt-get install -y libcamera-apps || true; fi
+}
+
+strip_shell_quotes() {
+  local value="$1"
+  value="${value%$'\r'}"
+  value="${value%\'}"
+  value="${value#\'}"
+  value="${value%\"}"
+  value="${value#\"}"
+  printf "%s" "$value"
+}
+
+configured_primary_adapter() {
+  local config_file="$CONFIG_DIR/skyweaver.env"
+  local line adapter
+  if [[ -n "$SETUP_CAMERA_ADAPTER" ]]; then
+    printf "%s" "$SETUP_CAMERA_ADAPTER"
+    return
+  fi
+  if [[ -f "$config_file" ]]; then
+    line="$(grep -E "^SKYWEAVER_PRIMARY_CAMERA_ADAPTER=" "$config_file" | tail -n 1 || true)"
+    if [[ -n "$line" ]]; then
+      adapter="$(strip_shell_quotes "${line#*=}")"
+      printf "%s" "$adapter"
+      return
+    fi
+  fi
+  printf "%s" "${SKYWEAVER_PRIMARY_CAMERA_ADAPTER:-mock}"
+}
+
+zwo_sdk_requested() {
+  case "${ZWO_SDK_INSTALL,,}" in
+    1|true|yes) return 0 ;;
+    0|false|no) return 1 ;;
+  esac
+  [[ "$(configured_primary_adapter)" == "zwo" ]]
+}
+
+zwo_sdk_library_available() {
+  [[ -n "${SKYWEAVER_ZWO_SDK_LIBRARY:-}" && -f "${SKYWEAVER_ZWO_SDK_LIBRARY:-}" ]] && return 0
+  command -v ldconfig >/dev/null 2>&1 && ldconfig -p 2>/dev/null | grep -Fq "libASICamera2.so" && return 0
+  [[ -f "$ZWO_SDK_DIR/lib/libASICamera2.so" ]]
+}
+
+install_zwo_udev_rules() {
+  local rules_file="/etc/udev/rules.d/99-zwo-asi.rules"
+  if [[ "$DRY_RUN" == "1" ]]; then
+    echo "+ install ZWO ASI udev rules $rules_file"
+    return
+  fi
+  cat >"$rules_file" <<'EOF'
+ACTION=="add", ATTR{idVendor}=="03c3", RUN+="/bin/sh -c '/bin/echo 200 >/sys/module/usbcore/parameters/usbfs_memory_mb'"
+SUBSYSTEM=="usb", ATTR{idVendor}=="03c3", MODE="0666"
+EOF
+  if command -v udevadm >/dev/null 2>&1; then
+    udevadm control --reload-rules || true
+    udevadm trigger || true
+  fi
+}
+
+ensure_config_env_line() {
+  local key="$1"
+  local value="$2"
+  local config_file="$CONFIG_DIR/skyweaver.env"
+  if [[ "$DRY_RUN" == "1" ]]; then
+    echo "+ ensure $key in $config_file"
+    return
+  fi
+  [[ -f "$config_file" ]] || return
+  if ! grep -Eq "^${key}=" "$config_file"; then
+    env_line "$key" "$value" >>"$config_file"
+  fi
+}
+
+select_zwo_library() {
+  local root="$1"
+  local arch candidate
+  arch="$(uname -m)"
+  case "$arch" in
+    aarch64|arm64) candidate="armv8" ;;
+    armv7l|armhf) candidate="armv7" ;;
+    x86_64|amd64) candidate="x64" ;;
+    i386|i686) candidate="x86" ;;
+    *) candidate="" ;;
+  esac
+  if [[ -n "$candidate" ]]; then
+    find "$root" -path "*/lib*/$candidate/libASICamera2.so" -print -quit
+  fi
+  find "$root" -name libASICamera2.so -print -quit
+}
+
+install_zwo_sdk() {
+  local tmp archive lib rules
+  zwo_sdk_requested || return
+  install_zwo_udev_rules
+  if zwo_sdk_library_available; then
+    echo "ZWO ASI SDK library already available."
+    return
+  fi
+  if [[ -z "$ZWO_SDK_URL" ]]; then
+    if [[ "$DRY_RUN" == "1" ]]; then
+      echo "+ download ZWO ASI SDK archive from SKYWEAVER_ZWO_SDK_URL"
+      return
+    fi
+    echo "ZWO camera adapter selected, but libASICamera2.so was not found."
+    echo "Set SKYWEAVER_ZWO_SDK_URL to the official ZWO ASI Linux/Mac SDK archive URL, or install libASICamera2.so and set SKYWEAVER_ZWO_SDK_LIBRARY."
+    exit 1
+  fi
+  if [[ "$DRY_RUN" == "1" ]]; then
+    echo "+ curl -L $ZWO_SDK_URL -o zwo-sdk archive"
+    echo "+ install libASICamera2.so into $ZWO_SDK_DIR/lib"
+    return
+  fi
+  tmp="$(mktemp -d)"
+  archive="$tmp/zwo-sdk"
+  curl -L "$ZWO_SDK_URL" -o "$archive"
+  if unzip -t "$archive" >/dev/null 2>&1; then
+    unzip -q "$archive" -d "$tmp/sdk"
+  else
+    mkdir -p "$tmp/sdk"
+    tar -xf "$archive" -C "$tmp/sdk"
+  fi
+  lib="$(select_zwo_library "$tmp/sdk")"
+  if [[ -z "$lib" ]]; then
+    echo "Could not find libASICamera2.so in the downloaded ZWO SDK archive."
+    exit 1
+  fi
+  install -d "$ZWO_SDK_DIR/lib"
+  install -m 755 "$lib" "$ZWO_SDK_DIR/lib/libASICamera2.so"
+  rules="$(find "$tmp/sdk" -name asi.rules -print -quit)"
+  if [[ -n "$rules" ]]; then
+    install -m 644 "$rules" /etc/udev/rules.d/99-zwo-asi.rules
+  fi
+  echo "$ZWO_SDK_DIR/lib" >/etc/ld.so.conf.d/skyweaver-zwo.conf
+  ldconfig
+  ensure_config_env_line SKYWEAVER_ZWO_SDK_LIBRARY "$ZWO_SDK_DIR/lib/libASICamera2.so"
+  rm -rf "$tmp"
 }
 
 create_user_dirs() {
@@ -296,6 +436,7 @@ main() {
   build_backend
   build_frontend
   write_config
+  install_zwo_sdk
   install_systemd
   echo
   echo "Sky Weaver Hub installed."

@@ -304,6 +304,38 @@ def test_running_capture_finishes_as_stopped_after_stop_request(tmp_path: Path, 
     assert "stop_mode" in job["result"]
 
 
+def test_execute_capture_passes_configured_camera_device_id(tmp_path: Path, monkeypatch):
+    client = make_client(tmp_path)
+    assert client.get("/api/v1/health").status_code == 200
+
+    from PIL import Image
+
+    from skyweaver.camera.base import CaptureRequest, CaptureResult
+    from skyweaver.db import session
+    from skyweaver.services import capture as capture_service
+    from skyweaver.services.capture import CaptureCommand, execute_capture
+
+    class DeviceAwareAdapter:
+        def __init__(self) -> None:
+            self.request_settings = None
+
+        async def capture(self, request: CaptureRequest) -> CaptureResult:
+            self.request_settings = dict(request.settings)
+            request.output_path.parent.mkdir(parents=True, exist_ok=True)
+            Image.new("RGB", (16, 16), color=(20, 30, 40)).save(request.output_path)
+            return CaptureResult(file_path=request.output_path, format="jpg", width=16, height=16, size_bytes=request.output_path.stat().st_size)
+
+    adapter = DeviceAwareAdapter()
+    monkeypatch.setattr(capture_service, "get_adapter", lambda _adapter: adapter)
+    with session() as conn:
+        conn.execute("UPDATE cameras SET adapter='zwo', device_id='zwo://2' WHERE is_primary=1")
+
+    asyncio.run(execute_capture(CaptureCommand(exposure_ms=250, gain=1, format="jpg", mode="manual"), job_type="single"))
+
+    assert adapter.request_settings is not None
+    assert adapter.request_settings["device_id"] == "zwo://2"
+
+
 def test_daemon_consumes_queued_sequence_capture(tmp_path: Path):
     client = make_client(tmp_path)
     token = login(client)

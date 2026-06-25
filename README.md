@@ -9,7 +9,7 @@ This repository now contains a working local-first platform slice:
 - Vite/React admin UI using the local `/api/v1` service.
 - FastAPI backend under `backend/` with SQLite storage.
 - Bootstrap admin login, guided first-setup completion, and API-key ready auth model.
-- Mock camera adapter that writes real images, thumbnails, metadata sidecars, image rows, capture jobs, logs, and realtime events.
+- Mock camera adapter plus initial rpicam/libcamera and SDK-backed ZWO ASI camera support.
 - Raspberry Pi `rpicam-still` / `libcamera-still` adapter path, validated with an IMX290 camera.
 - Versioned REST endpoints, OpenAPI docs at `/api/docs`, and SSE events at `/api/v1/events/stream`.
 - Daemon-owned scheduled capture loop with queued test/single/sequence captures, pause/resume/stop queue semantics, best-effort rpicam hard-cancel wiring, graceful fallback for unsupported adapters, heartbeat reporting, interrupted job recovery, and stale daemon lock recovery.
@@ -36,7 +36,7 @@ Development and partial support:
 - Raspberry Pi Zero 2 W with reduced processing
 - Debian/Ubuntu Linux. A Raspberry Pi 3 Model B on Debian 13/trixie has passed install, repeat-install, service restart, reboot, API, mock capture, and IMX290 rpicam capture acceptance.
 - Mock camera
-- ZWO, gPhoto2, V4L2/webcam, INDI, and custom command adapters as extension points
+- gPhoto2, V4L2/webcam, INDI, and custom command adapters as extension points
 
 ## Raspberry Pi Quickstart
 

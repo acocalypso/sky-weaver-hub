@@ -1,6 +1,7 @@
 from .base import CameraAdapter
 from .mock import MockCameraAdapter
 from .rpicam import RpiCamAdapter
+from .zwo import ZwoAsiAdapter
 
 
 class NotInstalledAdapter(MockCameraAdapter):
@@ -22,7 +23,7 @@ def adapters() -> dict[str, CameraAdapter]:
         "mock": MockCameraAdapter(),
         "rpicam": RpiCamAdapter(),
         "libcamera": RpiCamAdapter(),
-        "zwo": NotInstalledAdapter("zwo", "ZWO ASI", "Install the ZWO SDK and enable the Sky Weaver ZWO adapter."),
+        "zwo": ZwoAsiAdapter(),
         "gphoto2": NotInstalledAdapter("gphoto2", "gPhoto2 DSLR", "Install gphoto2; capture support is planned after Phase 1."),
         "v4l2": NotInstalledAdapter("v4l2", "V4L2 webcam", "Install v4l-utils/ffmpeg; capture support is planned after Phase 1."),
         "webcam": NotInstalledAdapter("webcam", "USB webcam", "Install v4l-utils/ffmpeg; capture support is planned after Phase 1."),

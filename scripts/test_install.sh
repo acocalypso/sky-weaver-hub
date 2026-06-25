@@ -137,6 +137,7 @@ assert_contains() {
 
 run_installer() {
   local dry_run="$1"
+  local primary_adapter="${2:-mock}"
   PATH="$FAKE_BIN:$PATH" \
     SKYWEAVER_TEST_COMMAND_LOG="$COMMAND_LOG" \
     SKYWEAVER_DRY_RUN="$dry_run" \
@@ -150,6 +151,7 @@ run_installer() {
     SKYWEAVER_SERVICE_USER="$(id -un)" \
     SKYWEAVER_SERVICE_GROUP="$(id -gn)" \
     SKYWEAVER_CONFIG_OWNER="$(id -un)" \
+    SKYWEAVER_PRIMARY_CAMERA_ADAPTER="$primary_adapter" \
     bash "$ROOT_DIR/install.sh"
 }
 
@@ -161,6 +163,11 @@ if [[ -e "$TMP_DIR/config/skyweaver.env" ]]; then
   echo "Dry-run created a config file"
   exit 1
 fi
+
+zwo_dry_output="$TMP_DIR/zwo-dry-run.out"
+run_installer 1 zwo >"$zwo_dry_output"
+assert_contains "+ install ZWO ASI udev rules /etc/udev/rules.d/99-zwo-asi.rules" "$zwo_dry_output"
+assert_contains "+ download ZWO ASI SDK archive from SKYWEAVER_ZWO_SDK_URL" "$zwo_dry_output"
 
 run_installer 0 >"$TMP_DIR/install-1.out"
 cp "$TMP_DIR/config/skyweaver.env" "$TMP_DIR/skyweaver.env.first"
