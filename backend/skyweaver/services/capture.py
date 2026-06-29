@@ -269,10 +269,14 @@ def latest_artifacts_for_image(image_id: str) -> list[Path]:
 
 
 def delete_image_files(image: dict[str, Any]) -> dict[str, Any]:
+    return delete_storage_paths([*image_storage_artifacts(image), *latest_artifacts_for_image(str(image["id"]))])
+
+
+def delete_storage_paths(paths: list[Path]) -> dict[str, Any]:
     roots = _storage_delete_roots()
     seen: set[Path] = set()
     files: list[dict[str, Any]] = []
-    for path in [*image_storage_artifacts(image), *latest_artifacts_for_image(str(image["id"]))]:
+    for path in paths:
         marker = path.absolute()
         if marker in seen:
             continue

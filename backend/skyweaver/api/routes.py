@@ -19,6 +19,7 @@ from ..db import default_profile, event, json_dumps, json_loads, log, new_id, no
 from ..rate_limit import InMemoryRateLimiter, RateLimitStatus
 from ..security import create_api_key, hash_password, make_token, verify_password
 from ..services.capture import CaptureCommand, all_rows, cleanup_images_by_retention, configured_image_retention_days, count_files, create_capture_job, current_schedule, decode_row, delete_image_files, enqueue_capture, get_primary_camera, public_latest_payload, publish_latest_image, read_latest_payload, scheduled_capture_timing, system_metrics
+from ..services.processing import cleanup_products_by_retention, delete_product_files
 from ..services.schedule import active_window
 from .deps import current_principal, require_scope
 from .responses import ok
@@ -1332,6 +1333,18 @@ def products(_principal: Annotated[dict, Depends(require_scope("read:images"))])
     return ok(rows)
 
 
+@router.post("/products/retention/run")
+def run_product_retention(
+    _principal: Annotated[dict, Depends(require_scope("write:processing"))],
+    days: int | None = Query(default=None, ge=0, le=3650),
+):
+    with session() as conn:
+        retention_days = configured_image_retention_days(conn) if days is None else days
+        result = cleanup_products_by_retention(conn, retention_days)
+        event(conn, "product_retention_cleanup", {"retention_days": retention_days, "deleted_products": result["deleted_products"]})
+    return ok(result)
+
+
 @router.get("/products/{product_id}")
 def product(product_id: str, _principal: Annotated[dict, Depends(require_scope("read:images"))]):
     with session() as conn:
@@ -1350,6 +1363,18 @@ def create_product(product_type: str, payload: dict[str, Any], _principal: Annot
         job_id = new_id()
         conn.execute("INSERT INTO processing_jobs (id, type, status, input, created_at) VALUES (?, ?, 'pending', ?, ?)", (job_id, job_type, json_dumps(payload), now_iso()))
     return ok({"id": job_id, "type": job_type, "status": "pending", "input": payload, "progress": 0})
+
+
+@router.delete("/products/{product_id}")
+def delete_product(product_id: str, _principal: Annotated[dict, Depends(require_scope("write:processing"))]):
+    with session() as conn:
+        row = decode_row(row_to_dict(conn.execute("SELECT * FROM night_products WHERE id=?", (product_id,)).fetchone()))
+        if not row:
+            raise HTTPException(404, "Product not found")
+        file_result = delete_product_files(row)
+        conn.execute("DELETE FROM night_products WHERE id=?", (product_id,))
+        event(conn, "product_deleted", {"product_id": product_id, "deleted_files": len(file_result["deleted_files"]), "skipped_files": len(file_result["skipped_files"])})
+    return ok({"deleted": product_id, **file_result})
 
 
 @router.get("/products/{product_id}/download")

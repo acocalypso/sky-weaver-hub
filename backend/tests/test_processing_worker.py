@@ -41,6 +41,81 @@ def test_worker_generates_keogram_product(tmp_path: Path):
     assert download.status_code == 200
 
 
+def test_delete_product_removes_files_and_row(tmp_path: Path):
+    client = make_client(tmp_path)
+    token = login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    day_key = None
+    for _ in range(3):
+        _queued, _job, image = run_queued_test_capture(client, headers, {"exposure_ms": 250, "gain": 1, "format": "jpg", "mode": "night"})
+        day_key = image["captured_at"][:10].replace("-", "")
+
+    queued = client.post("/api/v1/products/keogram", headers=headers, json={"day_key": day_key}).json()["data"]
+
+    from skyweaver.services.processing import run_once
+
+    assert asyncio.run(run_once()) is True
+    product = client.get(f"/api/v1/products/{queued['id']}", headers=headers).json()["data"]
+    file_path = Path(product["file_path"])
+    thumbnail_path = Path(product["thumbnail_path"])
+    assert file_path.exists()
+    assert thumbnail_path.exists()
+
+    delete_res = client.delete(f"/api/v1/products/{product['id']}", headers=headers)
+    assert delete_res.status_code == 200, delete_res.text
+    payload = delete_res.json()["data"]
+    assert payload["deleted"] == product["id"]
+    assert str(file_path) in payload["deleted_files"]
+    assert str(thumbnail_path) in payload["deleted_files"]
+    assert not file_path.exists()
+    assert not thumbnail_path.exists()
+    assert client.get(f"/api/v1/products/{product['id']}", headers=headers).status_code == 404
+    assert client.get(f"/api/v1/products/{product['id']}/download").status_code == 404
+
+
+def test_product_retention_cleanup_removes_old_products_only(tmp_path: Path):
+    client = make_client(tmp_path)
+    token = login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    from skyweaver.db import json_dumps, new_id, now_iso, session
+    from skyweaver.config import get_settings
+
+    settings = get_settings()
+    old_id = new_id()
+    new_id_value = new_id()
+    old_file = settings.product_dir / "20200101" / "old-keogram.jpg"
+    old_thumb = settings.thumbnail_dir / "20200101" / "old-keogram.jpg"
+    new_file = settings.product_dir / "20260629" / "new-keogram.jpg"
+    for path in (old_file, old_thumb, new_file):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"product")
+
+    with session() as conn:
+        conn.execute(
+            "INSERT INTO night_products (id, type, day_key, file_path, thumbnail_path, status, metadata, created_at) VALUES (?, 'keogram', '20200101', ?, ?, 'completed', ?, ?)",
+            (old_id, str(old_file), str(old_thumb), json_dumps({"source_images": 3}), "2020-01-01T00:00:00+00:00"),
+        )
+        conn.execute(
+            "INSERT INTO night_products (id, type, day_key, file_path, thumbnail_path, status, metadata, created_at) VALUES (?, 'keogram', '20260629', ?, NULL, 'completed', ?, ?)",
+            (new_id_value, str(new_file), json_dumps({"source_images": 3}), now_iso()),
+        )
+
+    cleanup_res = client.post("/api/v1/products/retention/run?days=30", headers=headers)
+    assert cleanup_res.status_code == 200, cleanup_res.text
+    payload = cleanup_res.json()["data"]
+    assert payload["retention_days"] == 30
+    assert payload["deleted_products"] == 1
+    assert payload["deleted_product_ids"] == [old_id]
+    assert str(old_file) in payload["deleted_files"]
+    assert str(old_thumb) in payload["deleted_files"]
+    assert not old_file.exists()
+    assert not old_thumb.exists()
+    assert new_file.exists()
+    assert client.get(f"/api/v1/products/{new_id_value}", headers=headers).status_code == 200
+
+
 def test_worker_generates_timelapse_product(tmp_path: Path):
     if not shutil.which("ffmpeg"):
         import pytest

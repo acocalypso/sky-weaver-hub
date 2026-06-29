@@ -1,5 +1,6 @@
 import shutil
 import subprocess
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -7,7 +8,7 @@ from PIL import Image, ImageChops
 
 from ..config import get_settings
 from ..db import event, json_dumps, log, now_iso, row_to_dict, session
-from .capture import decode_row, make_thumbnail
+from .capture import decode_row, delete_storage_paths, make_thumbnail
 
 
 def claim_next_processing_job(job_types: tuple[str, ...] = ("thumbnail", "keogram", "timelapse", "mini_timelapse", "startrail")) -> dict[str, Any] | None:
@@ -281,6 +282,48 @@ def latest_day_key() -> str | None:
     with session() as conn:
         row = conn.execute("SELECT day_key FROM images ORDER BY captured_at DESC LIMIT 1").fetchone()
     return row["day_key"] if row else None
+
+
+def product_storage_artifacts(product: dict[str, Any]) -> list[Path]:
+    paths: list[Path] = []
+    for key in ("file_path", "thumbnail_path"):
+        value = product.get(key)
+        if value:
+            paths.append(Path(str(value)))
+    return paths
+
+
+def delete_product_files(product: dict[str, Any]) -> dict[str, Any]:
+    return delete_storage_paths(product_storage_artifacts(product))
+
+
+def cleanup_products_by_retention(conn, retention_days: int) -> dict[str, Any]:
+    days = max(0, int(retention_days))
+    cutoff = datetime.now(UTC) - timedelta(days=days)
+    rows = [
+        decode_row(row_to_dict(row))
+        for row in conn.execute("SELECT * FROM night_products WHERE created_at < ? ORDER BY created_at", (cutoff.isoformat(),)).fetchall()
+    ]
+    deleted_ids: list[str] = []
+    deleted_files: list[str] = []
+    missing_files: list[str] = []
+    skipped_files: list[dict[str, Any]] = []
+    for product in rows:
+        file_result = delete_product_files(product)
+        conn.execute("DELETE FROM night_products WHERE id=?", (product["id"],))
+        deleted_ids.append(product["id"])
+        deleted_files.extend(file_result["deleted_files"])
+        missing_files.extend(file_result["missing_files"])
+        skipped_files.extend(file_result["skipped_files"])
+    return {
+        "retention_days": days,
+        "cutoff": cutoff.isoformat(),
+        "deleted_products": len(deleted_ids),
+        "deleted_product_ids": deleted_ids,
+        "deleted_files": deleted_files,
+        "missing_files": missing_files,
+        "skipped_files": skipped_files,
+    }
 
 
 async def run_once() -> bool:

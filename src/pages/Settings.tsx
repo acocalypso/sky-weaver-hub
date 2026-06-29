@@ -39,8 +39,9 @@ export default function SettingsPage() {
     setCleaningRetention(true);
     try {
       const days = Math.max(0, Number(values.storage?.retention_days ?? 30));
-      const result = await SkyApi.runImageRetention(days);
-      toast.success(`Deleted ${result.deleted_images} image${result.deleted_images === 1 ? "" : "s"} and ${result.deleted_files.length} file${result.deleted_files.length === 1 ? "" : "s"}`);
+      const [imageResult, productResult] = await Promise.all([SkyApi.runImageRetention(days), SkyApi.runProductRetention(days)]);
+      const deletedFiles = imageResult.deleted_files.length + productResult.deleted_files.length;
+      toast.success(`Deleted ${imageResult.deleted_images} image${imageResult.deleted_images === 1 ? "" : "s"}, ${productResult.deleted_products} product${productResult.deleted_products === 1 ? "" : "s"}, and ${deletedFiles} file${deletedFiles === 1 ? "" : "s"}`);
     } catch (e: any) {
       toast.error(e.message ?? "Retention cleanup failed");
     } finally {

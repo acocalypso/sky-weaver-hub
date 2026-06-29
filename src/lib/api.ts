@@ -64,6 +64,8 @@ export const SkyApi = {
   products: () => api<ProductRow[]>("/api/v1/products"),
   processingJobs: () => api<ProcessingJob[]>("/api/v1/processing/jobs"),
   createProduct: (type: string, body: any) => api<ProcessingJob>(`/api/v1/products/${type}`, { method: "POST", body: JSON.stringify(body) }),
+  deleteProduct: (id: string) => api<ProductDeleteResult>(`/api/v1/products/${id}`, { method: "DELETE" }),
+  runProductRetention: (days?: number) => api<ProductRetentionResult>(`/api/v1/products/retention/run${days === undefined ? "" : `?days=${encodeURIComponent(days)}`}`, { method: "POST" }),
   apiKeys: () => api<ApiKeyRow[]>("/api/v1/api-keys"),
   createApiKey: (body: { name: string; scopes: string[] }) => api<any>("/api/v1/api-keys", { method: "POST", body: JSON.stringify(body) }),
   patchApiKey: (id: string, body: { enabled?: boolean }) => api<any>(`/api/v1/api-keys/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
@@ -114,6 +116,8 @@ export interface SchedulePreview {
   seconds_until_due?: number | null;
 }
 export interface ProductRow { id: string; type: string; day_key: string; file_path: string | null; thumbnail_path: string | null; status: string; metadata: any; created_at: string; }
+export interface ProductDeleteResult { deleted: string; deleted_files: string[]; missing_files: string[]; skipped_files: ImageSkippedFile[]; }
+export interface ProductRetentionResult { retention_days: number; cutoff: string; deleted_products: number; deleted_product_ids: string[]; deleted_files: string[]; missing_files: string[]; skipped_files: ImageSkippedFile[]; }
 export interface ProcessingJob { id: string; type: string; status: string; input: any; output?: any; error?: string | null; progress: number; created_at: string; started_at?: string | null; completed_at?: string | null; }
 export interface CaptureJob { id: string; type: string; status: string; request: any; result?: any; error?: string | null; progress: number; created_at: string; started_at?: string | null; completed_at?: string | null; }
 export interface LogRow { id: string; level: string; source: string; message: string; context: any; created_at: string; }

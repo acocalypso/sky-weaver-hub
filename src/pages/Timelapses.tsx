@@ -6,13 +6,14 @@ import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { StatusBadge } from "@/components/StatusBadge";
 import { SkyApi, type ProcessingJob, type ProductRow } from "@/lib/api";
-import { Download, Film, Plus, RefreshCw } from "lucide-react";
+import { Download, Film, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 export default function Timelapses() {
   const [jobs, setJobs] = useState<ProcessingJob[]>([]);
   const [products, setProducts] = useState<ProductRow[]>([]);
   const [form, setForm] = useState({ day_key: new Date().toISOString().slice(0, 10).replaceAll("-", ""), fps: 30, codec: "h264" });
+  const [deletingProductId, setDeletingProductId] = useState<string | null>(null);
 
   useEffect(() => {
     document.title = "Night products - Sky Weaver Hub";
@@ -39,6 +40,20 @@ export default function Timelapses() {
       setJobs([{ ...job, type: type.replace("-", "_"), input: { day_key: form.day_key, fps: form.fps, codec: form.codec }, progress: job.progress ?? 0 }, ...jobs]);
     } catch (e: any) {
       toast.error(e.message ?? "Queue failed");
+    }
+  }
+
+  async function deleteProduct(product: ProductRow) {
+    if (deletingProductId) return;
+    setDeletingProductId(product.id);
+    try {
+      const result = await SkyApi.deleteProduct(product.id);
+      toast.success(`Deleted ${prettyType(product.type)} and ${result.deleted_files.length} file${result.deleted_files.length === 1 ? "" : "s"}`);
+      setProducts(products.filter((item) => item.id !== product.id));
+    } catch (e: any) {
+      toast.error(e.message ?? "Delete failed");
+    } finally {
+      setDeletingProductId(null);
     }
   }
 
@@ -93,6 +108,9 @@ export default function Timelapses() {
             </div>
             <Button asChild variant="outline" size="sm">
               <a href={`/api/v1/products/${product.id}/download`} target="_blank" rel="noreferrer"><Download className="h-4 w-4 mr-2" /> Download</a>
+            </Button>
+            <Button variant="destructive" size="sm" onClick={() => deleteProduct(product)} disabled={deletingProductId === product.id}>
+              <Trash2 className="h-4 w-4 mr-2" />{deletingProductId === product.id ? "Deleting" : "Delete"}
             </Button>
           </Card>
         ))}
