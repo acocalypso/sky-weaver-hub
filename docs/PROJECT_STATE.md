@@ -16,7 +16,7 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 | --- | --- |
 | Frontend | Vite, React 19, TypeScript, shadcn/Radix UI, Tailwind 4 via the official Vite plugin, with the existing Tailwind config loaded explicitly for theme compatibility. |
 | Backend | FastAPI under `backend/skyweaver`, OpenAPI docs at `/api/docs`, REST API under `/api/v1`. |
-| Database | SQLite via stdlib `sqlite3`, schema seeded in `backend/skyweaver/db.py`. No external database dependency. |
+| Database | SQLite via stdlib `sqlite3`, baseline schema seeded in `backend/skyweaver/db.py`, and versioned migrations tracked in `schema_migrations`. No external database dependency. |
 | Storage | Local filesystem storage for images, thumbnails, products, logs, and config. Dev defaults are local paths; system install targets `/var/lib/skyweaver`, `/etc/skyweaver`, `/var/log/skyweaver`. |
 | Auth | Local admin JWT login plus hashed API keys with scopes. Installer can seed a configured admin password hash during first setup, and the app now enforces guided setup completion before normal admin use, including bootstrap-password detection, stronger password guidance, rate limiting, and local auth audit logs. |
 | Camera abstraction | `CameraAdapter` base class plus working `mock` adapter, initial `rpicam`/`libcamera` adapter, and initial ZWO ASI adapter using the native `libASICamera2` SDK library from Debian `libasi` or a vendor SDK install. Other adapters are placeholders with actionable errors. |
@@ -88,7 +88,7 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 - Capture daemon startup requeues interrupted claimed/running capture jobs after service restart.
 - `/api/v1/schedule/preview-tonight` returns a real active window and next transition for fixed or sun-angle schedules.
 - Successful captures publish stable local latest artifacts and unauthenticated public latest metadata/download endpoints when the public page is enabled.
-- Backend tests verify daemon-run scheduled capture creation, interval gating, latest-only unsaved day captures, end-of-night product queueing, queued test-shot completion while automation is stopped, queued single-capture completion, queued sequence completion, graceful stop reporting, best-effort hard-cancel intent, adapter hard-cancel handling, pause/resume/stop semantics, schedule preview, heartbeat/activity reporting, interrupted job recovery, and a mock overnight flow that checks latest/gallery updates.
+- Backend tests verify daemon-run scheduled capture creation, interval gating, latest-only unsaved day captures, end-of-night product queueing, queued test-shot completion while automation is stopped, queued single-capture completion, queued sequence completion, graceful stop reporting, best-effort hard-cancel intent, adapter hard-cancel handling, pause/resume/stop semantics, schedule preview, heartbeat/activity reporting, interrupted job recovery, schema migrations, and a mock overnight flow that checks latest/gallery updates.
 
 ### Frontend
 
@@ -149,7 +149,7 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 | Phase | Status | Notes |
 | --- | --- | --- |
 | Phase 0: Repo inspection | Done | React/Vite frontend identified; local API direction established. |
-| Phase 1: API skeleton and SQLite | Mostly done | Backend, schema, health/status, API client, core routes, and mock capture exist. Dedicated migration framework still needed. |
+| Phase 1: API skeleton and SQLite | Done | Backend, schema, health/status, API client, core routes, mock capture, SQLite schema version tracking, idempotent migrations, query indexes, and `python -m skyweaver.migrate` status/upgrade command exist. |
 | Phase 2: Auth/API keys/settings/docs | Mostly done | JWT login, API-key scopes, settings, API Keys UI, Developer API UI, installer-seeded first setup values, in-app first-setup enforcement, bootstrap-password detection, password-strength guidance, in-process rate limiting, and local auth audit logging for failed login/setup completion attempts exist. Broader audit trails remain open. |
 | Phase 3: Camera adapters and test shot | Partial | Mock and rpicam/libcamera implemented and validated with an IMX290 on Raspberry Pi. Initial ZWO adapter exists with fake-SDK tests; real ZWO hardware validation is pending. gPhoto2, V4L2, INDI, custom command are placeholders. |
 | Phase 4: Capture daemon and realtime | Partial | Scheduled daemon loop, shared capture service, persistent job claiming for test/single/scheduled/sequence captures, day/night profile selection, per-mode interval and save policy, end-of-night product queueing, graceful stop reporting, real-Pi validated rpicam hard-cancel, pause/resume/stop queue semantics, active-window checks and UI preview, lock-file duplicate-loop guard with stale lock recovery, heartbeat/activity reporting, interrupted job recovery, SSE endpoint, Pi reboot service startup acceptance, and IMX290 capture after restart/reboot acceptance exist. More long-duration soak testing is still open. |
@@ -305,11 +305,9 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 
 ### Database and Migrations
 
-- Replace ad hoc `CREATE TABLE IF NOT EXISTS` initialization with versioned migrations.
-- Add schema version tracking.
-- Add migration command for upgrades.
 - Add backup/restore validation.
-- Consider indexes for images, jobs, logs, events, day_key, and created_at.
+- Expand migration fixture tests as future schema changes are introduced.
+- Continue adding targeted indexes as new gallery, job, log, event, and product query patterns are added.
 
 ### Testing and CI
 

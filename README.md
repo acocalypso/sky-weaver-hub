@@ -7,7 +7,7 @@ Sky Weaver Hub is a local-first, REST API first all-sky camera platform for Rasp
 This repository now contains a working local-first platform slice:
 
 - Vite/React admin UI using the local `/api/v1` service.
-- FastAPI backend under `backend/` with SQLite storage.
+- FastAPI backend under `backend/` with SQLite storage and versioned schema migrations.
 - Bootstrap admin login, guided first-setup completion, and API-key ready auth model.
 - Mock camera adapter plus initial rpicam/libcamera and ZWO ASI camera support.
 - Raspberry Pi `rpicam-still` / `libcamera-still` adapter path, validated with an IMX290 camera.
@@ -159,6 +159,18 @@ bash scripts/test_install.sh
 ```
 
 On Windows, use `backend\.venv\Scripts\python -m pytest backend\tests` for backend tests.
+
+## Database Migrations
+
+Sky Weaver uses stdlib SQLite with an internal migration registry. App startup runs pending migrations automatically after creating the baseline schema.
+
+```bash
+cd backend
+python -m skyweaver.migrate status
+python -m skyweaver.migrate upgrade
+```
+
+The migration command is idempotent and records applied versions in `schema_migrations`.
 
 ## Allsky Migration
 

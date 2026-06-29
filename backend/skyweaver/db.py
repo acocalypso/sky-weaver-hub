@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Iterator
 
 from .config import Settings, get_settings
+from .migrations import apply_migrations
 from .security import hash_password
 
 
@@ -145,36 +146,8 @@ def init_db(path: Path | None = None) -> None:
     settings = get_settings()
     with session(path) as conn:
         conn.executescript(SCHEMA)
-        ensure_columns(
-            conn,
-            "capture_state",
-            {
-                "daemon_heartbeat_at": "TEXT",
-                "daemon_pid": "INTEGER",
-                "daemon_last_claimed_job_id": "TEXT",
-                "daemon_last_claimed_job_type": "TEXT",
-                "daemon_last_claimed_at": "TEXT",
-                "daemon_last_success_at": "TEXT",
-            },
-        )
-        ensure_columns(
-            conn,
-            "capture_jobs",
-            {
-                "progress": "REAL NOT NULL DEFAULT 0",
-                "cancel_requested_at": "TEXT",
-                "cancel_reason": "TEXT",
-                "cancel_mode": "TEXT",
-            },
-        )
+        apply_migrations(conn)
         seed_defaults(conn, settings)
-
-
-def ensure_columns(conn: sqlite3.Connection, table: str, columns: dict[str, str]) -> None:
-    existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
-    for name, definition in columns.items():
-        if name not in existing:
-            conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
 
 
 def seed_defaults(conn: sqlite3.Connection, settings: Settings) -> None:
