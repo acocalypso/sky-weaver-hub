@@ -152,7 +152,7 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 | Phase 1: API skeleton and SQLite | Done | Backend, schema, health/status, API client, core routes, mock capture, SQLite schema version tracking, idempotent migrations, query indexes, and `python -m skyweaver.migrate` status/upgrade command exist. |
 | Phase 2: Auth/API keys/settings/docs | Done | JWT login, API-key scopes, settings, API Keys UI, Developer API UI, installer-seeded first setup values, in-app first-setup enforcement, bootstrap-password detection, password-strength guidance, in-process rate limiting, local auth audit logging, and privileged-change security audit logging exist. |
 | Phase 3: Camera adapters and test shot | Partial | Mock and rpicam/libcamera implemented and validated with an IMX290 on Raspberry Pi. Initial ZWO adapter exists with fake-SDK tests; real ZWO hardware validation is pending. gPhoto2, V4L2, INDI, custom command are placeholders. |
-| Phase 4: Capture daemon and realtime | Partial | Scheduled daemon loop, shared capture service, persistent job claiming for test/single/scheduled/sequence captures, day/night profile selection, restart-safe per-mode interval and save policy, next-capture due visibility, end-of-night product queueing, graceful stop reporting, real-Pi validated rpicam hard-cancel, pause/resume/stop queue semantics, active-window checks and UI preview, lock-file duplicate-loop guard with stale lock recovery, heartbeat/activity reporting, interrupted job recovery, SSE endpoint, Pi reboot service startup acceptance, and IMX290 capture after restart/reboot acceptance exist. More long-duration soak testing is still open. |
+| Phase 4: Capture daemon and realtime | Done | Scheduled daemon loop, shared capture service, persistent job claiming for test/single/scheduled/sequence captures, day/night profile selection, restart-safe per-mode interval and save policy, next-capture due visibility, latest-only day captures, saved night captures, end-of-night product queueing, graceful stop reporting, real-Pi validated rpicam hard-cancel, pause/resume/stop queue semantics, active-window checks and UI preview, lock-file duplicate-loop guard with stale lock recovery, heartbeat/activity reporting, interrupted job recovery, SSE endpoint, Pi reboot service startup acceptance, IMX290 capture after restart/reboot acceptance, and accelerated indoor Pi day/night acceptance exist. Real outdoor overnight field validation remains a hardening task. |
 | Phase 5: Image storage/gallery/latest/metadata | Partial | Mock capture artifacts, metadata, thumbnails, stable latest copies, image rows, gallery, latest image, public latest endpoints gated by public-page settings, and public sky page exist. Broader metadata extraction is open. |
 | Phase 6: Processing worker/products/retention | Partial | Worker claims jobs, thumbnail reprocess exists, keogram JPEG generation, ffmpeg timelapse/mini-timelapse generation, and startrail generation exist, and product job progress is visible in the UI. Cleanup and upload execution are open. |
 | Phase 7: Overlay/modules | Early scaffold | Module tables/endpoints exist. Overlay editor, processor, built-in modules, safe module execution are open. |
@@ -164,9 +164,6 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 
 ### Highest Priority
 
-- Expand the capture daemon into complete overnight operation:
-  - run longer real-Pi soak runs for day/night intervals, latest-only day captures, saved night captures, and end-of-night product queueing
-  - keep documenting and surfacing in-progress capture stop limits clearly
 - Keep schedule preview and daemon state visible across Dashboard and Schedule as the daemon model evolves.
 - Complete mock acceptance flow end to end:
   - run longer manual/dev overnight simulations outside pytest
@@ -325,7 +322,7 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 
 ## Known Current Limitations
 
-- Capture daemon now performs day/night scheduled captures and consumes queued test-shot, single-capture, and sequence jobs. Restart-safe per-profile interval/save controls, next-capture due visibility, latest-only unsaved captures, end-of-night product queueing, graceful stop fallback, real-Pi validated rpicam hard-cancel, pause/resume/stop queue semantics, daemon activity visibility, Dashboard capture job progress, and interrupted job requeue on service start exist; longer scheduled-capture soak testing is still open.
+- Capture daemon now performs day/night scheduled captures and consumes queued test-shot, single-capture, and sequence jobs. Restart-safe per-profile interval/save controls, next-capture due visibility, latest-only unsaved captures, end-of-night product queueing, graceful stop fallback, real-Pi validated rpicam hard-cancel, pause/resume/stop queue semantics, daemon activity visibility, Dashboard capture job progress, and interrupted job requeue on service start exist. Real outdoor overnight image quality and environmental stability still need field validation.
 - Worker now generates thumbnails, keograms, ffmpeg timelapses, mini timelapses, and startrails, but retention cleanup and upload execution are still open.
 - Product endpoints queue jobs; keogram, timelapse, mini timelapse, and startrail currently produce downloadable night products.
 - Public page exists for latest-image display and honors the public-page enabled setting; richer public archives and branding controls are still open.
@@ -380,6 +377,17 @@ Raspberry Pi IMX290 camera acceptance on 2026-06-24:
 - `/home/pi/sky-weaver-hub` fast-forwarded to `f3de529` and `sudo ./upgrade.sh` passed with backup `/var/lib/skyweaver/backups/20260624-195331`.
 - Real Pi auth-audit acceptance passed: five failed local login attempts returned `401`, the sixth returned `429`, `/api/v1/logs?source=auth` showed `Login failed` plus `Login blocked by rate limit` entries with failure count/client context, and the submitted test password was absent from log JSON.
 
+Raspberry Pi accelerated Phase 4 acceptance on 2026-06-29:
+
+- `/home/pi/sky-weaver-hub` was already at `45badde`; `sudo ./upgrade.sh` completed with backup `/var/lib/skyweaver/backups/20260629-133322`.
+- `skyweaver.target`, `skyweaver-api.service`, `skyweaver-capture.service`, and `skyweaver-worker.service` were active; `systemctl --failed` reported no failed units; `/api/v1/health` returned `ok`.
+- Simulated night mode used a fixed active window and short interval with the IMX290/rpicam primary camera. Saved `scheduled` night captures completed, including jobs `62a2578d-790c-47c4-b885-d2d9d8d6b4a1` and `6582ddcf-6c55-407a-bdc3-5a1ed295da9a`.
+- Restart-safe interval acceptance passed: `skyweaver-capture.service` was restarted after a scheduled night capture, no duplicate scheduled capture appeared during the immediate post-restart wait, and the next scheduled capture completed after the interval became due.
+- Simulated day mode used a fixed inactive night window with daytime `save_enabled=false`; scheduled day captures updated latest artifacts with `unsaved_latest=true` without growing the saved gallery count.
+- End-of-night product queueing passed for day key `20260629`: keogram job `af7bcd25-1f1d-48d4-81b4-da83e400ddb1` and startrail job `0752e569-3f97-48c1-a49a-022435a9c5a9` were queued once from the night-to-day transition and completed.
+- Queue/control acceptance passed through the API: daemon-owned test shot job `a86653cb-3a8e-4804-8f65-ac5d150c3d1f`, pause/resume single job `5550a1a8-0955-4834-8b0b-0b259519efcf`, sequence job `76bf02b6-2aaf-41da-af12-0e7727b7473a` with 2/2 frames, and stop-canceled pending job `2bb03ae3-f340-47fd-8163-21c82baffca8` all behaved as expected.
+- After acceptance, the saved schedule/profile settings were restored. Final state showed capture running, no failed units, all Sky Weaver services active, `last_error=NULL`, and capture daemon heartbeat age `0` seconds.
+
 ## Recommended Next Phase
 
 The next development phase should focus on operational hardening, because interrupted job recovery and the initial night products now generate real downloadable artifacts.
@@ -387,5 +395,5 @@ The next development phase should focus on operational hardening, because interr
 Suggested next tasks:
 
 1. Expand system health recovery guidance after collecting more real Pi failure examples.
-2. Run longer real-Pi scheduled capture and stop/resume soak tests.
-3. Add audit logs for password changes, API-key lifecycle, and privileged settings changes.
+2. Run real outdoor overnight field validation once the Pi/camera can be placed outside.
+3. Expand API-key scope tests for every protected endpoint group.
