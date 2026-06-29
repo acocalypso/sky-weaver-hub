@@ -109,6 +109,8 @@ def test_public_latest_endpoints_are_unauthenticated(tmp_path):
     assert public_data["id"] == image["id"]
     assert public_data["download_url"] == "/api/v1/public/latest/download"
     assert public_data["thumbnail_url"] == "/api/v1/public/latest/thumbnail"
+    assert public_data["exposure_ms"] == image["exposure_ms"]
+    assert public_data["gain"] == image["gain"]
     assert "file_path" not in public_data
 
     public_download = client.get("/api/v1/public/latest/download")

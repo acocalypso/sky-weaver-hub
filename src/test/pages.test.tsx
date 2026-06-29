@@ -88,6 +88,8 @@ const mockPublicLatest = {
   width: 1280,
   height: 960,
   size_bytes: 12345,
+  exposure_ms: 1000,
+  gain: 2,
   camera_id: "cam-1",
   download_url: "/api/v1/public/latest/download",
   metadata_url: "/api/v1/public/latest",
@@ -154,7 +156,7 @@ beforeEach(() => {
     timezone: "Europe/Berlin",
   });
   vi.mocked(SkyApi.captureJobs).mockResolvedValue([
-    { id: "job-1", type: "single", status: "completed", request: { exposure_ms: 1000, gain: 2 }, progress: 1, created_at: "2026-06-23T22:00:00+00:00", result: { image_id: "img-1" } },
+    { id: "job-1", type: "single", status: "completed", request: { exposure_ms: 1000, gain: 2 }, progress: 1, created_at: "2026-06-23T22:00:00+00:00", completed_at: "2026-06-23T22:00:03+00:00", result: { image_id: "img-1" } },
   ] as any);
   vi.mocked(SkyApi.apiKeys).mockResolvedValue([
     { id: "key-1", name: "Mobile app", prefix: "swh_1234", scopes: ["read:status", "read:images"], enabled: true, created_at: "2026-06-23T12:00:00+00:00" },
@@ -181,6 +183,24 @@ describe("main pages", () => {
     expect(screen.getByText("Mock all-sky camera")).toBeInTheDocument();
     expect(screen.getByText("Recent captures")).toBeInTheDocument();
     expect(screen.getByText("single")).toBeInTheDocument();
+    expect(screen.getByText(/created .*done /)).toBeInTheDocument();
+    await waitFor(() => expect(SkyApi.publicLatest).toHaveBeenCalled());
+  });
+
+  it("shows latest-only captures in the dashboard hero", async () => {
+    vi.mocked(SkyApi.publicLatest).mockResolvedValueOnce({
+      ...mockPublicLatest,
+      id: "latest-only-1",
+      captured_at: "2026-06-23T22:16:30+00:00",
+      mode: "day",
+      exposure_ms: 10,
+      gain: 1,
+    });
+
+    render(<Dashboard />);
+
+    expect(await screen.findByText("latest only")).toBeInTheDocument();
+    expect(screen.getByAltText("Latest all-sky capture")).toHaveAttribute("src", expect.stringContaining("/api/v1/public/latest/download?v=latest-only-1-"));
   });
 
   it("renders gallery images and filters", async () => {

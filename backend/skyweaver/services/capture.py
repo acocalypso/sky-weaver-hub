@@ -151,6 +151,8 @@ def public_latest_payload(image: dict[str, Any], latest_image: Path | None = Non
         "width": image["width"],
         "height": image["height"],
         "size_bytes": image["size_bytes"],
+        "exposure_ms": image.get("exposure_ms"),
+        "gain": image.get("gain"),
         "camera_id": image.get("camera_id"),
         "download_url": "/api/v1/public/latest/download",
         "metadata_url": "/api/v1/public/latest",

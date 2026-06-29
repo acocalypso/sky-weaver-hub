@@ -5,12 +5,17 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { StatusBadge } from "@/components/StatusBadge";
-import { SkyApi, type CameraRow, type CaptureJob, type ImageRow, type SchedulePreview, type SkyStatus, type SystemMetrics } from "@/lib/api";
+import { SkyApi, type CameraRow, type CaptureJob, type ImageRow, type PublicLatestImage, type SchedulePreview, type SkyStatus, type SystemMetrics } from "@/lib/api";
 import { getTonightTimeline, getSunAltitude } from "@/lib/sun";
 import sampleSky from "@/assets/sample-sky-1.jpg";
 import { Play, Pause, Square, Camera, RefreshCw, Film, RotateCw, Cpu, MemoryStick, HardDrive, Thermometer, Activity, Clock } from "lucide-react";
 import { toast } from "sonner";
 import { format, formatDistanceToNow } from "date-fns";
+
+type DashboardLatest = (ImageRow | (PublicLatestImage & { public_url: string; latest_only: true })) & {
+  exposure_ms?: number | null;
+  gain?: number | null;
+};
 
 export default function Dashboard() {
   const [status, setStatus] = useState<SkyStatus | null>(null);
@@ -19,6 +24,7 @@ export default function Dashboard() {
   const [metrics, setMetrics] = useState<SystemMetrics>({ cpu_percent: 0, memory_percent: 0, disk_percent: 0, disk_free_gb: 0, temperature_c: null, uptime_seconds: 0 });
   const [schedulePreview, setSchedulePreview] = useState<SchedulePreview | null>(null);
   const [captureJobs, setCaptureJobs] = useState<CaptureJob[]>([]);
+  const [publicLatest, setPublicLatest] = useState<PublicLatestImage | null>(null);
   const [sequenceForm, setSequenceForm] = useState({ count: 5, delay_seconds: 2, exposure_ms: 1000, gain: 1 });
 
   useEffect(() => { document.title = "Dashboard - Sky Weaver Hub"; }, []);
@@ -30,8 +36,8 @@ export default function Dashboard() {
 
   async function load() {
     try {
-      const [st, imgs, sets, m, sched, jobs] = await Promise.all([SkyApi.status(), SkyApi.images("?limit=8"), SkyApi.settings(), SkyApi.metrics(), SkyApi.schedulePreview(), SkyApi.captureJobs()]);
-      setStatus(st); setImages(imgs); setSettings(sets); setMetrics(m); setSchedulePreview(sched); setCaptureJobs(jobs.slice(0, 6));
+      const [st, imgs, sets, m, sched, jobs, latestArtifact] = await Promise.all([SkyApi.status(), SkyApi.images("?limit=8"), SkyApi.settings(), SkyApi.metrics(), SkyApi.schedulePreview(), SkyApi.captureJobs(), loadPublicLatest()]);
+      setStatus(st); setImages(imgs); setSettings(sets); setMetrics(m); setSchedulePreview(sched); setCaptureJobs(jobs.slice(0, 6)); setPublicLatest(latestArtifact);
     } catch (e: any) {
       toast.error(e.message ?? "Unable to load dashboard");
     }
@@ -39,8 +45,8 @@ export default function Dashboard() {
 
   async function loadLight() {
     try {
-      const [st, imgs, m, sched, jobs] = await Promise.all([SkyApi.status(), SkyApi.images("?limit=8"), SkyApi.metrics(), SkyApi.schedulePreview(), SkyApi.captureJobs()]);
-      setStatus(st); setImages(imgs); setMetrics(m); setSchedulePreview(sched); setCaptureJobs(jobs.slice(0, 6));
+      const [st, imgs, m, sched, jobs, latestArtifact] = await Promise.all([SkyApi.status(), SkyApi.images("?limit=8"), SkyApi.metrics(), SkyApi.schedulePreview(), SkyApi.captureJobs(), loadPublicLatest()]);
+      setStatus(st); setImages(imgs); setMetrics(m); setSchedulePreview(sched); setCaptureJobs(jobs.slice(0, 6)); setPublicLatest(latestArtifact);
     } catch {
       // Keep the last visible telemetry during transient API restarts.
     }
@@ -48,7 +54,8 @@ export default function Dashboard() {
 
   const observatory = settings?.observatory ?? { name: "Sky Weaver Observatory", latitude: 0, longitude: 0, timezone: "UTC" };
   const camera = status?.camera as CameraRow | null;
-  const latest = images[0] ?? status?.latest_image;
+  const latestSaved = images[0] ?? status?.latest_image;
+  const latest = preferPublicLatest(publicLatest, latestSaved);
   const captureStatus = status?.capture?.status ?? "idle";
   const latitude = Number(observatory.latitude);
   const longitude = Number(observatory.longitude);
@@ -131,6 +138,7 @@ export default function Dashboard() {
               <div>
                 <p className="text-xs uppercase tracking-widest text-muted-foreground">Latest capture</p>
                 <p className="text-sm font-mono-data">{latest ? format(new Date(latest.captured_at), "yyyy-MM-dd HH:mm:ss") : "No images yet"}</p>
+                {latest?.latest_only && <p className="text-[10px] uppercase tracking-widest text-muted-foreground mt-1">latest only</p>}
               </div>
               <div className="flex gap-2">
                 <StatusBadge variant="ok">{latest?.exposure_ms ? `${(latest.exposure_ms / 1000).toFixed(2)}s` : "no exposure"}</StatusBadge>
@@ -211,6 +219,7 @@ export default function Dashboard() {
                     <StatusBadge variant={jobStatusVariant(job.status)}>{job.status}</StatusBadge>
                   </div>
                   <p className="text-xs text-muted-foreground font-mono-data truncate">{formatJobDetail(job)}</p>
+                  <p className="text-xs text-muted-foreground font-mono-data">{formatJobTiming(job)}</p>
                 </div>
                 <span className="text-xs font-mono-data text-muted-foreground">{Math.round((job.progress ?? 0) * 100)}%</span>
               </div>
@@ -242,6 +251,26 @@ export default function Dashboard() {
       </Card>
     </div>
   );
+}
+
+async function loadPublicLatest() {
+  try {
+    return await SkyApi.publicLatest();
+  } catch {
+    return null;
+  }
+}
+
+function preferPublicLatest(publicLatest: PublicLatestImage | null, savedLatest?: ImageRow | null): DashboardLatest | null {
+  if (!publicLatest) return savedLatest ?? null;
+  const publicTime = new Date(publicLatest.captured_at).getTime();
+  const savedTime = savedLatest ? new Date(savedLatest.captured_at).getTime() : Number.NEGATIVE_INFINITY;
+  if (!Number.isFinite(publicTime) || publicTime < savedTime) return savedLatest ?? null;
+  return {
+    ...publicLatest,
+    public_url: `${publicLatest.download_url}?v=${encodeURIComponent(`${publicLatest.id}-${publicLatest.captured_at}`)}`,
+    latest_only: !savedLatest || publicLatest.id !== savedLatest.id,
+  };
 }
 
 function Stat({ k, v }: { k: string; v: React.ReactNode }) {
@@ -296,6 +325,22 @@ function formatJobDetail(job: CaptureJob) {
   if (job.type === "sequence") return `${completed ?? 0}/${count ?? "-"} frames - job ${job.id}`;
   if (result?.image_id) return `image ${result.image_id} - job ${job.id}`;
   return `${capture?.exposure_ms ?? "-"} ms, gain ${capture?.gain ?? "-"} - job ${job.id}`;
+}
+
+function formatJobTiming(job: CaptureJob) {
+  const parts = [
+    ["created", job.created_at],
+    ["started", job.started_at],
+    ["done", job.completed_at],
+  ]
+    .filter((entry): entry is [string, string] => Boolean(entry[1]))
+    .map(([label, value]) => `${label} ${formatTimestamp(value)}`);
+  return parts.length ? parts.join(" - ") : "no timestamps";
+}
+
+function formatTimestamp(value: string) {
+  const date = new Date(value);
+  return isValidDate(date) ? format(date, "yyyy-MM-dd HH:mm:ss") : value;
 }
 
 function formatJobType(job: CaptureJob) {
