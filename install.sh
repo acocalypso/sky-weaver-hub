@@ -18,7 +18,6 @@ HARDWARE_GROUPS="${SKYWEAVER_HARDWARE_GROUPS:-video,render,input,gpio,i2c,spi}"
 ZWO_SDK_INSTALL="${SKYWEAVER_INSTALL_ZWO_SDK:-auto}"
 ZWO_SDK_URL="${SKYWEAVER_ZWO_SDK_URL:-}"
 ZWO_SDK_DIR="${SKYWEAVER_ZWO_SDK_DIR:-/opt/skyweaver/vendor/zwo}"
-ZWO_CLI_CONFIG_DIR="${SKYWEAVER_ZWO_CONFIG_DIR:-$CONFIG_DIR/zwo}"
 DEFAULT_ADMIN_PASSWORD="skyweaver-change-me"
 
 SETUP_ADMIN_USERNAME=""
@@ -170,7 +169,7 @@ detect_os() {
 
 install_packages() {
   run apt-get update
-  run apt-get install -y git curl jq nodejs npm python3 python3-venv python3-pip python3-dev ffmpeg imagemagick v4l-utils gphoto2 sqlite3 build-essential cmake ninja-build unzip ca-certificates libusb-1.0-0 libusb-1.0-0-dev libgl1 libglib2.0-dev libopencv-dev libatlas-base-dev
+  run apt-get install -y git curl jq nodejs npm python3 python3-venv python3-pip ffmpeg imagemagick v4l-utils gphoto2 sqlite3 build-essential unzip ca-certificates
   if [[ "$DRY_RUN" == "1" ]]; then
     run apt-get install -y rpicam-apps
     echo "+ apt-get install -y libcamera-apps # fallback if rpicam-apps is unavailable"
@@ -269,19 +268,30 @@ select_zwo_library() {
 
 install_zwo_sdk() {
   local tmp archive lib rules
-  zwo_sdk_requested || return
+  zwo_sdk_requested || return 0
+  if [[ "$DRY_RUN" == "1" ]]; then
+    run apt-get install -y libasi
+  elif ! apt-get install -y libasi; then
+    if [[ -z "$ZWO_SDK_URL" ]]; then
+      echo "ZWO camera adapter selected, but Debian package libasi could not be installed."
+      echo "Enable Debian non-free and install libasi, or set SKYWEAVER_ZWO_SDK_URL to a ZWO ASI SDK archive."
+      exit 1
+    fi
+    echo "Debian package libasi is unavailable; falling back to SKYWEAVER_ZWO_SDK_URL."
+  fi
   install_zwo_udev_rules
-  run mkdir -p "$ZWO_CLI_CONFIG_DIR"
-  run chown "$CONFIG_OWNER:$SERVICE_GROUP" "$ZWO_CLI_CONFIG_DIR"
+  if [[ "$DRY_RUN" == "1" ]]; then
+    echo "+ check libASICamera2.so from Debian libasi"
+    return
+  fi
   if zwo_sdk_library_available; then
-    echo "ZWO ASI SDK library already available."
+    echo "ZWO ASI SDK library available from Debian libasi or system library path."
     return
   fi
   if [[ -z "$ZWO_SDK_URL" ]]; then
-    echo "ZWO native SDK library not found; using camera-zwo-asi CLI backend from Python requirements."
-    echo "Set SKYWEAVER_ZWO_SDK_URL later if you want Sky Weaver to install libASICamera2.so as well."
-    ensure_config_env_line SKYWEAVER_ZWO_CONFIG_DIR "$ZWO_CLI_CONFIG_DIR"
-    return
+    echo "ZWO camera adapter selected, but libASICamera2.so was not found after installing libasi."
+    echo "Enable Debian non-free and install libasi, or set SKYWEAVER_ZWO_SDK_URL to a ZWO ASI SDK archive."
+    exit 1
   fi
   if [[ "$DRY_RUN" == "1" ]]; then
     echo "+ curl -L $ZWO_SDK_URL -o zwo-sdk archive"
@@ -311,7 +321,6 @@ install_zwo_sdk() {
   echo "$ZWO_SDK_DIR/lib" >/etc/ld.so.conf.d/skyweaver-zwo.conf
   ldconfig
   ensure_config_env_line SKYWEAVER_ZWO_SDK_LIBRARY "$ZWO_SDK_DIR/lib/libASICamera2.so"
-  ensure_config_env_line SKYWEAVER_ZWO_CONFIG_DIR "$ZWO_CLI_CONFIG_DIR"
   rm -rf "$tmp"
 }
 

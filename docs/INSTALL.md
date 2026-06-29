@@ -21,13 +21,13 @@ The admin password is stored as a bcrypt hash in `/etc/skyweaver/skyweaver.env`,
 
 ## ZWO ASI
 
-When the configured primary camera adapter is `zwo`, `install.sh` and `upgrade.sh` install USB/build dependencies, add ZWO ASI udev rules, create a ZWO config directory, and install `camera-zwo-asi==1.0.4` through `backend/requirements.txt`.
+When the configured primary camera adapter is `zwo`, `install.sh` and `upgrade.sh` install Debian package `libasi`, add a ZWO ASI udev permission rule, and use the native `libASICamera2.so` SDK library.
 
 ```bash
 sudo SKYWEAVER_PRIMARY_CAMERA_ADAPTER=zwo ./install.sh
 ```
 
-Sky Weaver prefers the native ZWO SDK library (`libASICamera2.so`) when it is installed and falls back to the `camera-zwo-asi` command line tools (`zwo-asi-print`, `zwo-asi-dump`, `zwo-asi-shot`) otherwise. To let the installer also copy the native SDK library, set `SKYWEAVER_ZWO_SDK_URL` to the official ZWO ASI Linux/Mac SDK archive before running install or upgrade. Use `SKYWEAVER_INSTALL_ZWO_SDK=0` only when you want to manage all ZWO setup outside Sky Weaver.
+On Debian/Raspberry Pi OS, `libasi` is provided by the non-free archive. If the package is unavailable on your distribution, set `SKYWEAVER_ZWO_SDK_URL` to the official ZWO ASI Linux/Mac SDK archive before running install or upgrade. Use `SKYWEAVER_INSTALL_ZWO_SDK=0` only when you want to manage all ZWO setup outside Sky Weaver.
 
 Use `SKYWEAVER_DRY_RUN=1 ./install.sh` to inspect commands without root privileges or filesystem writes.
 

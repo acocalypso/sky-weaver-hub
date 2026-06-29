@@ -12,7 +12,6 @@ SYSTEMCTL_BIN="${SKYWEAVER_SYSTEMCTL_BIN:-/usr/bin/systemctl}"
 ZWO_SDK_INSTALL="${SKYWEAVER_INSTALL_ZWO_SDK:-auto}"
 ZWO_SDK_URL="${SKYWEAVER_ZWO_SDK_URL:-}"
 ZWO_SDK_DIR="${SKYWEAVER_ZWO_SDK_DIR:-/opt/skyweaver/vendor/zwo}"
-ZWO_CLI_CONFIG_DIR="${SKYWEAVER_ZWO_CONFIG_DIR:-$CONFIG_DIR/zwo}"
 
 env_line() {
   local escaped
@@ -96,20 +95,25 @@ select_zwo_library() {
 
 install_zwo_sdk() {
   local tmp archive lib rules
-  zwo_sdk_requested || return
-  apt-get install -y curl unzip ca-certificates python3-dev build-essential cmake ninja-build libusb-1.0-0 libusb-1.0-0-dev libgl1 libglib2.0-dev libopencv-dev libatlas-base-dev
+  zwo_sdk_requested || return 0
+  apt-get install -y curl unzip ca-certificates
+  if ! apt-get install -y libasi; then
+    if [[ -z "$ZWO_SDK_URL" ]]; then
+      echo "ZWO camera adapter is configured, but Debian package libasi could not be installed."
+      echo "Enable Debian non-free and install libasi, or set SKYWEAVER_ZWO_SDK_URL to a ZWO ASI SDK archive."
+      exit 1
+    fi
+    echo "Debian package libasi is unavailable; falling back to SKYWEAVER_ZWO_SDK_URL."
+  fi
   install_zwo_udev_rules
-  mkdir -p "$ZWO_CLI_CONFIG_DIR"
-  chown "root:$SERVICE_USER" "$ZWO_CLI_CONFIG_DIR" 2>/dev/null || true
   if zwo_sdk_library_available; then
-    echo "ZWO ASI SDK library already available."
+    echo "ZWO ASI SDK library available from Debian libasi or system library path."
     return
   fi
   if [[ -z "$ZWO_SDK_URL" ]]; then
-    echo "ZWO native SDK library not found; using camera-zwo-asi CLI backend from Python requirements."
-    echo "Set SKYWEAVER_ZWO_SDK_URL later if you want Sky Weaver to install libASICamera2.so as well."
-    ensure_config_env_line SKYWEAVER_ZWO_CONFIG_DIR "$ZWO_CLI_CONFIG_DIR"
-    return
+    echo "ZWO camera adapter is configured, but libASICamera2.so was not found after installing libasi."
+    echo "Enable Debian non-free and install libasi, or set SKYWEAVER_ZWO_SDK_URL to a ZWO ASI SDK archive."
+    exit 1
   fi
   tmp="$(mktemp -d)"
   archive="$tmp/zwo-sdk"
@@ -134,7 +138,6 @@ install_zwo_sdk() {
   echo "$ZWO_SDK_DIR/lib" >/etc/ld.so.conf.d/skyweaver-zwo.conf
   ldconfig
   ensure_config_env_line SKYWEAVER_ZWO_SDK_LIBRARY "$ZWO_SDK_DIR/lib/libASICamera2.so"
-  ensure_config_env_line SKYWEAVER_ZWO_CONFIG_DIR "$ZWO_CLI_CONFIG_DIR"
   rm -rf "$tmp"
 }
 

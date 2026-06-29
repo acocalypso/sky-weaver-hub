@@ -36,7 +36,7 @@ Development and partial support:
 - Raspberry Pi Zero 2 W with reduced processing
 - Debian/Ubuntu Linux. A Raspberry Pi 3 Model B on Debian 13/trixie has passed install, repeat-install, service restart, reboot, API, mock capture, and IMX290 rpicam capture acceptance.
 - Mock camera
-- ZWO ASI cameras through native SDK or `camera-zwo-asi` CLI support; real hardware validation is pending
+- ZWO ASI cameras through the native SDK library from Debian `libasi`; real hardware validation is pending
 - gPhoto2, V4L2/webcam, INDI, and custom command adapters as extension points
 
 ## Raspberry Pi Quickstart

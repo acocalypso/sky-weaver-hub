@@ -7,7 +7,6 @@ bcrypt==5.0.0
 pillow==12.2.0
 psutil==7.2.2
 astral==3.2
-camera-zwo-asi==1.0.4
 pytest==9.1.1
 pytest-asyncio==1.4.0
 httpx==0.28.1
