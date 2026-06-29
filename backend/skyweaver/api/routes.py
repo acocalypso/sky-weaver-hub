@@ -183,6 +183,55 @@ def audit_auth_event(conn, level: str, action: str, message: str, request: Reque
     log(conn, level, "auth", message, context)
 
 
+def principal_context(principal: dict[str, Any]) -> dict[str, Any]:
+    context = {
+        "principal_type": principal.get("type", "user"),
+        "principal_id": principal.get("id"),
+        "principal_username": principal.get("username"),
+    }
+    scopes = principal.get("scopes")
+    if scopes:
+        context["principal_scopes"] = sorted(scopes)
+    return {key: value for key, value in context.items() if value is not None}
+
+
+def audit_security_event(
+    conn,
+    level: str,
+    action: str,
+    message: str,
+    request: Request,
+    principal: dict[str, Any],
+    context: dict[str, Any] | None = None,
+) -> None:
+    safe_context: dict[str, Any] = {
+        "action": action,
+        "client_host": client_host(request),
+        **principal_context(principal),
+    }
+    user_agent = audit_user_agent(request)
+    if user_agent:
+        safe_context["user_agent"] = user_agent
+    if context:
+        safe_context.update(context)
+    log(conn, level, "security", message, safe_context)
+
+
+def field_names(values: dict[str, Any]) -> list[str]:
+    return sorted(str(key) for key in values)
+
+
+def settings_keys(values: dict[str, Any]) -> list[str]:
+    return sorted(str(key) for key in values)
+
+
+def profile_settings_keys(payload: dict[str, Any]) -> list[str]:
+    settings = payload.get("settings")
+    if isinstance(settings, dict):
+        return field_names(settings)
+    return []
+
+
 def raise_rate_limited(retry_after_seconds: int) -> None:
     raise HTTPException(
         status_code=429,
@@ -635,19 +684,33 @@ def setup_complete(body: SetupComplete, request: Request, principal: Annotated[d
             conn.execute("UPDATE capture_state SET active_camera_id=?, updated_at=? WHERE id=1", (body.primary_camera_id, now_iso()))
         if body.admin_password:
             conn.execute("UPDATE users SET password_hash=?, updated_at=? WHERE id=?", (hash_password(body.admin_password), now_iso(), principal["id"]))
-        log(conn, "info", "setup", "First setup completed", {"user_id": principal["id"]})
+        audit_security_event(
+            conn,
+            "info",
+            "setup_completed",
+            "First setup completed",
+            request,
+            principal,
+            {
+                "password_changed": bool(body.admin_password),
+                "settings_keys": ["observatory", "public_page", "security"],
+                "schedule_fields": ["latitude", "longitude", "timezone"],
+                "public_page_enabled": body.public_page_enabled,
+                "primary_camera_id": body.primary_camera_id,
+            },
+        )
     auth_rate_limiter.reset(limit_key)
     return ok({"required": False})
 
 
 @router.patch("/users/me/password")
-def change_password(body: LoginRequest, principal: Annotated[dict, Depends(current_principal)]):
+def change_password(body: LoginRequest, request: Request, principal: Annotated[dict, Depends(current_principal)]):
     issues = password_issues(body.password)
     if issues:
         raise HTTPException(400, " ".join(issues))
     with session() as conn:
         conn.execute("UPDATE users SET password_hash=?, updated_at=? WHERE id=?", (hash_password(body.password), now_iso(), principal["id"]))
-        log(conn, "info", "auth", "Password changed", {"user_id": principal["id"]})
+        audit_security_event(conn, "info", "password_changed", "Password changed", request, principal, {"target_user_id": principal["id"]})
     return ok({"ok": True})
 
 
@@ -659,7 +722,7 @@ def users(_principal: Annotated[dict, Depends(require_scope("admin"))]):
 
 
 @router.post("/users")
-def create_user(body: LoginRequest, _principal: Annotated[dict, Depends(require_scope("admin"))]):
+def create_user(body: LoginRequest, request: Request, principal: Annotated[dict, Depends(require_scope("admin"))]):
     issues = password_issues(body.password)
     if issues:
         raise HTTPException(400, " ".join(issues))
@@ -669,23 +732,26 @@ def create_user(body: LoginRequest, _principal: Annotated[dict, Depends(require_
             "INSERT INTO users (id, username, password_hash, role, created_at, updated_at) VALUES (?, ?, ?, 'operator', ?, ?)",
             (user_id, body.username, hash_password(body.password), now_iso(), now_iso()),
         )
+        audit_security_event(conn, "info", "user_created", "User created", request, principal, {"target_user_id": user_id, "target_username": body.username, "target_role": "operator"})
     return ok({"id": user_id, "username": body.username, "role": "operator"})
 
 
 @router.patch("/users/{user_id}")
-def update_user(user_id: str, payload: dict[str, Any], _principal: Annotated[dict, Depends(require_scope("admin"))]):
+def update_user(user_id: str, payload: dict[str, Any], request: Request, principal: Annotated[dict, Depends(require_scope("admin"))]):
     role = payload.get("role")
     if role not in {"admin", "operator", "viewer"}:
         raise HTTPException(400, "Invalid role")
     with session() as conn:
         conn.execute("UPDATE users SET role=?, updated_at=? WHERE id=?", (role, now_iso(), user_id))
+        audit_security_event(conn, "info", "user_updated", "User updated", request, principal, {"target_user_id": user_id, "changed_fields": ["role"], "target_role": role})
     return ok({"id": user_id, "role": role})
 
 
 @router.delete("/users/{user_id}")
-def delete_user(user_id: str, _principal: Annotated[dict, Depends(require_scope("admin"))]):
+def delete_user(user_id: str, request: Request, principal: Annotated[dict, Depends(require_scope("admin"))]):
     with session() as conn:
         conn.execute("DELETE FROM users WHERE id=?", (user_id,))
+        audit_security_event(conn, "warning", "user_deleted", "User deleted", request, principal, {"target_user_id": user_id})
     return ok({"deleted": user_id})
 
 
@@ -697,7 +763,7 @@ def api_keys(_principal: Annotated[dict, Depends(require_scope("admin"))]):
 
 
 @router.post("/api-keys")
-def create_key(body: ApiKeyCreate, _principal: Annotated[dict, Depends(require_scope("admin"))]):
+def create_key(body: ApiKeyCreate, request: Request, principal: Annotated[dict, Depends(require_scope("admin"))]):
     raw, prefix, hashed = create_api_key()
     with session() as conn:
         item_id = new_id()
@@ -705,21 +771,24 @@ def create_key(body: ApiKeyCreate, _principal: Annotated[dict, Depends(require_s
             "INSERT INTO api_keys (id, name, key_hash, prefix, scopes, enabled, created_at, expires_at) VALUES (?, ?, ?, ?, ?, 1, ?, ?)",
             (item_id, body.name, hashed, prefix, json_dumps(body.scopes), now_iso(), body.expires_at),
         )
+        audit_security_event(conn, "info", "api_key_created", "API key created", request, principal, {"api_key_id": item_id, "name": body.name, "prefix": prefix, "scopes": body.scopes, "expires_at": body.expires_at})
     return ok({"id": item_id, "name": body.name, "key": raw, "prefix": prefix, "scopes": body.scopes})
 
 
 @router.patch("/api-keys/{key_id}")
-def patch_key(key_id: str, payload: dict[str, Any], _principal: Annotated[dict, Depends(require_scope("admin"))]):
+def patch_key(key_id: str, payload: dict[str, Any], request: Request, principal: Annotated[dict, Depends(require_scope("admin"))]):
     with session() as conn:
         if "enabled" in payload:
             conn.execute("UPDATE api_keys SET enabled=? WHERE id=?", (1 if payload["enabled"] else 0, key_id))
+        audit_security_event(conn, "info", "api_key_updated", "API key updated", request, principal, {"api_key_id": key_id, "changed_fields": field_names(payload), "enabled": payload.get("enabled")})
     return ok({"id": key_id})
 
 
 @router.delete("/api-keys/{key_id}")
-def delete_key(key_id: str, _principal: Annotated[dict, Depends(require_scope("admin"))]):
+def delete_key(key_id: str, request: Request, principal: Annotated[dict, Depends(require_scope("admin"))]):
     with session() as conn:
         conn.execute("DELETE FROM api_keys WHERE id=?", (key_id,))
+        audit_security_event(conn, "warning", "api_key_deleted", "API key deleted", request, principal, {"api_key_id": key_id})
     return ok({"deleted": key_id})
 
 
@@ -768,7 +837,7 @@ async def detect_cameras(_principal: Annotated[dict, Depends(require_scope("read
 
 
 @router.post("/cameras")
-def create_camera(body: CameraCreate, _principal: Annotated[dict, Depends(require_scope("write:settings"))]):
+def create_camera(body: CameraCreate, request: Request, principal: Annotated[dict, Depends(require_scope("write:settings"))]):
     camera_id = new_id()
     with session() as conn:
         if body.is_primary:
@@ -779,6 +848,15 @@ def create_camera(body: CameraCreate, _principal: Annotated[dict, Depends(requir
             (camera_id, body.name, body.adapter, body.device_id, body.model, body.serial, int(body.enabled), int(body.is_primary), now_iso(), now_iso()),
         )
         ensure_camera_profiles(conn, camera_id)
+        audit_security_event(
+            conn,
+            "info",
+            "camera_created",
+            "Camera created",
+            request,
+            principal,
+            {"camera_id": camera_id, "name": body.name, "adapter": body.adapter, "model": body.model, "enabled": body.enabled, "is_primary": body.is_primary},
+        )
     return ok({"id": camera_id})
 
 
@@ -792,7 +870,7 @@ def get_camera(camera_id: str, _principal: Annotated[dict, Depends(require_scope
 
 
 @router.patch("/cameras/{camera_id}")
-def patch_camera(camera_id: str, body: CameraPatch, _principal: Annotated[dict, Depends(require_scope("write:settings"))]):
+def patch_camera(camera_id: str, body: CameraPatch, request: Request, principal: Annotated[dict, Depends(require_scope("write:settings"))]):
     values = body.model_dump(exclude_unset=True)
     if not values:
         return ok({"id": camera_id})
@@ -804,13 +882,15 @@ def patch_camera(camera_id: str, body: CameraPatch, _principal: Annotated[dict, 
                 values[key] = int(values[key])
         assignments = ", ".join(f"{k}=?" for k in values)
         conn.execute(f"UPDATE cameras SET {assignments}, updated_at=? WHERE id=?", (*values.values(), now_iso(), camera_id))
+        audit_security_event(conn, "info", "camera_updated", "Camera updated", request, principal, {"camera_id": camera_id, "changed_fields": field_names(values), "is_primary": body.is_primary, "enabled": body.enabled})
     return ok({"id": camera_id})
 
 
 @router.delete("/cameras/{camera_id}")
-def delete_camera(camera_id: str, _principal: Annotated[dict, Depends(require_scope("write:settings"))]):
+def delete_camera(camera_id: str, request: Request, principal: Annotated[dict, Depends(require_scope("write:settings"))]):
     with session() as conn:
         conn.execute("DELETE FROM cameras WHERE id=?", (camera_id,))
+        audit_security_event(conn, "warning", "camera_deleted", "Camera deleted", request, principal, {"camera_id": camera_id})
     return ok({"deleted": camera_id})
 
 
@@ -848,10 +928,11 @@ def get_settings_rows(_principal: Annotated[dict, Depends(require_scope("read:se
 
 
 @router.patch("/settings")
-def patch_settings(body: SettingsPatch, _principal: Annotated[dict, Depends(require_scope("write:settings"))]):
+def patch_settings(body: SettingsPatch, request: Request, principal: Annotated[dict, Depends(require_scope("write:settings"))]):
     with session() as conn:
         for key, value in body.values.items():
             conn.execute("INSERT OR REPLACE INTO system_settings (key, value, updated_at) VALUES (?, ?, ?)", (key, json_dumps(value), now_iso()))
+        audit_security_event(conn, "info", "settings_updated", "Settings updated", request, principal, {"settings_keys": settings_keys(body.values)})
     return ok(body.values)
 
 
@@ -864,12 +945,21 @@ def camera_profiles(_principal: Annotated[dict, Depends(require_scope("read:sett
 
 
 @router.post("/camera-profiles")
-def create_profile(payload: dict[str, Any], _principal: Annotated[dict, Depends(require_scope("write:settings"))]):
+def create_profile(payload: dict[str, Any], request: Request, principal: Annotated[dict, Depends(require_scope("write:settings"))]):
     profile_id = new_id()
     with session() as conn:
         conn.execute(
             "INSERT INTO camera_profiles (id, camera_id, name, mode, settings, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
             (profile_id, payload["camera_id"], payload["name"], payload.get("mode", "custom"), json_dumps(payload.get("settings", {})), now_iso(), now_iso()),
+        )
+        audit_security_event(
+            conn,
+            "info",
+            "camera_profile_created",
+            "Camera profile created",
+            request,
+            principal,
+            {"profile_id": profile_id, "camera_id": payload["camera_id"], "mode": payload.get("mode", "custom"), "settings_keys": profile_settings_keys(payload)},
         )
     return ok({"id": profile_id})
 
@@ -884,17 +974,19 @@ def get_profile(profile_id: str, _principal: Annotated[dict, Depends(require_sco
 
 
 @router.patch("/camera-profiles/{profile_id}")
-def patch_profile(profile_id: str, payload: dict[str, Any], _principal: Annotated[dict, Depends(require_scope("write:settings"))]):
+def patch_profile(profile_id: str, payload: dict[str, Any], request: Request, principal: Annotated[dict, Depends(require_scope("write:settings"))]):
     with session() as conn:
         if "settings" in payload:
             conn.execute("UPDATE camera_profiles SET settings=?, updated_at=? WHERE id=?", (json_dumps(payload["settings"]), now_iso(), profile_id))
+        audit_security_event(conn, "info", "camera_profile_updated", "Camera profile updated", request, principal, {"profile_id": profile_id, "changed_fields": field_names(payload), "settings_keys": profile_settings_keys(payload)})
     return ok({"id": profile_id})
 
 
 @router.delete("/camera-profiles/{profile_id}")
-def delete_profile(profile_id: str, _principal: Annotated[dict, Depends(require_scope("write:settings"))]):
+def delete_profile(profile_id: str, request: Request, principal: Annotated[dict, Depends(require_scope("write:settings"))]):
     with session() as conn:
         conn.execute("DELETE FROM camera_profiles WHERE id=?", (profile_id,))
+        audit_security_event(conn, "warning", "camera_profile_deleted", "Camera profile deleted", request, principal, {"profile_id": profile_id})
     return ok({"deleted": profile_id})
 
 
@@ -1005,7 +1097,7 @@ def get_schedule(_principal: Annotated[dict, Depends(require_scope("read:setting
 
 
 @router.put("/schedule")
-def put_schedule(body: SchedulePut, _principal: Annotated[dict, Depends(require_scope("write:settings"))]):
+def put_schedule(body: SchedulePut, request: Request, principal: Annotated[dict, Depends(require_scope("write:settings"))]):
     with session() as conn:
         row = conn.execute("SELECT id FROM capture_schedule LIMIT 1").fetchone()
         schedule_id = row["id"] if row else new_id()
@@ -1018,6 +1110,15 @@ def put_schedule(body: SchedulePut, _principal: Annotated[dict, Depends(require_
              body.timezone, body.latitude, body.longitude, body.interval_seconds, int(body.exposure_ramping_enabled), schedule_id, now_iso(), now_iso()),
         )
         event(conn, "schedule_updated", {"id": schedule_id})
+        audit_security_event(
+            conn,
+            "info",
+            "schedule_updated",
+            "Schedule updated",
+            request,
+            principal,
+            {"schedule_id": schedule_id, "changed_fields": field_names(body.model_dump()), "enabled": body.enabled, "timezone": body.timezone},
+        )
     return ok({"id": schedule_id, **body.model_dump()})
 
 

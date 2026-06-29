@@ -16,7 +16,7 @@ Errors use:
 
 External clients use `Authorization: Bearer <API_KEY>`. Admin UI login receives a bearer token from `/api/v1/auth/login`.
 
-`GET /api/v1/logs?source=auth` exposes local auth audit entries to authenticated status readers, including failed login/setup attempts, rate-limit blocks, and successful login after previous failures. Audit contexts include failure counts and client metadata, but not submitted passwords or API secrets.
+`GET /api/v1/logs?source=auth` exposes local auth audit entries to authenticated status readers, including failed login/setup attempts, rate-limit blocks, and successful login after previous failures. `GET /api/v1/logs?source=security` exposes privileged-change audit entries for setup completion, password changes, user/API-key lifecycle, settings, schedule, camera, and camera-profile changes. Audit contexts include actor/client metadata, target identifiers, scopes, and changed field names, but not submitted passwords, raw API keys, key hashes, or secret setting values.
 
 Capture requests that can touch hardware are queued. `/api/v1/capture/test-shot`, `/api/v1/capture/single`, and `/api/v1/capture/sequence` return a capture job immediately; clients should poll `/api/v1/capture/jobs` or `/api/v1/capture/jobs/{job_id}` and then read `/api/v1/images/latest` or image detail endpoints after completion.
 

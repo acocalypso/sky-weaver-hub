@@ -263,6 +263,13 @@ def test_first_setup_status_and_completion(tmp_path):
     assert schedule["timezone"] == "Europe/Berlin"
     assert schedule["latitude"] == 47.25
 
+    logs = client.get("/api/v1/logs?source=security", headers=headers)
+    assert logs.status_code == 200
+    setup_log = next(row for row in logs.json()["data"] if row["message"] == "First setup completed")
+    assert setup_log["context"]["password_changed"] is True
+    assert setup_log["context"]["primary_camera_id"] == cameras[0]["id"]
+    assert "New-setup-secret-2026" not in logs.text
+
 
 def test_first_setup_remains_required_for_bootstrap_password(tmp_path, monkeypatch):
     monkeypatch.setenv("SKYWEAVER_FIRST_SETUP_REQUIRED", "0")
@@ -402,6 +409,106 @@ def test_setup_completion_failures_are_rate_limited(tmp_path):
     assert blocked[0]["context"]["failure_count"] == 5
     assert blocked[0]["context"]["rate_limited"] is True
     assert "skyweaver-change-me" not in logs.text
+
+
+def test_user_and_api_key_lifecycle_are_security_audited_without_secrets(tmp_path):
+    client = make_client(tmp_path)
+    token = login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    password_res = client.patch("/api/v1/users/me/password", headers=headers, json={"username": "admin", "password": "New-admin-secret-2026!"})
+    assert password_res.status_code == 200, password_res.text
+
+    user_res = client.post("/api/v1/users", headers=headers, json={"username": "operator-audit", "password": "Operator-secret-2026!"})
+    assert user_res.status_code == 200, user_res.text
+    user_id = user_res.json()["data"]["id"]
+    assert client.patch(f"/api/v1/users/{user_id}", headers=headers, json={"role": "viewer"}).status_code == 200
+    assert client.delete(f"/api/v1/users/{user_id}", headers=headers).status_code == 200
+
+    key_res = client.post(
+        "/api/v1/api-keys",
+        headers=headers,
+        json={"name": "mobile-audit", "scopes": ["read:status", "read:images"]},
+    )
+    assert key_res.status_code == 200, key_res.text
+    key_data = key_res.json()["data"]
+    assert client.patch(f"/api/v1/api-keys/{key_data['id']}", headers=headers, json={"enabled": False}).status_code == 200
+    assert client.delete(f"/api/v1/api-keys/{key_data['id']}", headers=headers).status_code == 200
+
+    logs = client.get("/api/v1/logs?source=security", headers=headers)
+    assert logs.status_code == 200, logs.text
+    messages = [row["message"] for row in logs.json()["data"]]
+    assert "Password changed" in messages
+    assert "User created" in messages
+    assert "User updated" in messages
+    assert "User deleted" in messages
+    assert "API key created" in messages
+    assert "API key updated" in messages
+    assert "API key deleted" in messages
+    assert key_data["key"] not in logs.text
+    assert "Operator-secret-2026!" not in logs.text
+    assert "New-admin-secret-2026!" not in logs.text
+    assert "key_hash" not in logs.text
+
+    created_key_log = next(row for row in logs.json()["data"] if row["message"] == "API key created")
+    assert created_key_log["context"]["api_key_id"] == key_data["id"]
+    assert created_key_log["context"]["prefix"] == key_data["prefix"]
+    assert created_key_log["context"]["scopes"] == ["read:status", "read:images"]
+    assert created_key_log["context"]["principal_username"] == "admin"
+
+
+def test_privileged_settings_schedule_and_camera_changes_are_security_audited(tmp_path):
+    client = make_client(tmp_path)
+    token = login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    settings_res = client.patch(
+        "/api/v1/settings",
+        headers=headers,
+        json={"values": {"remote_upload": {"enabled": True, "password": "remote-secret-value"}, "observatory": {"name": "Audit Garden"}}},
+    )
+    assert settings_res.status_code == 200, settings_res.text
+
+    schedule_res = client.put("/api/v1/schedule", headers=headers, json={"enabled": True, "interval_seconds": 45, "timezone": "Europe/Berlin"})
+    assert schedule_res.status_code == 200, schedule_res.text
+
+    camera_res = client.post(
+        "/api/v1/cameras",
+        headers=headers,
+        json={"name": "Audit Cam", "adapter": "mock", "device_id": "mock://audit", "model": "mock-audit", "enabled": True, "is_primary": False},
+    )
+    assert camera_res.status_code == 200, camera_res.text
+    camera_id = camera_res.json()["data"]["id"]
+    assert client.patch(f"/api/v1/cameras/{camera_id}", headers=headers, json={"enabled": False}).status_code == 200
+
+    profile_res = client.post(
+        "/api/v1/camera-profiles",
+        headers=headers,
+        json={"camera_id": camera_id, "name": "Audit Night", "mode": "nighttime", "settings": {"exposure_ms": 15000, "api_key": "profile-secret-value"}},
+    )
+    assert profile_res.status_code == 200, profile_res.text
+    profile_id = profile_res.json()["data"]["id"]
+    assert client.patch(f"/api/v1/camera-profiles/{profile_id}", headers=headers, json={"settings": {"gain": 4}}).status_code == 200
+
+    logs = client.get("/api/v1/logs?source=security", headers=headers)
+    assert logs.status_code == 200, logs.text
+    rows = logs.json()["data"]
+    messages = [row["message"] for row in rows]
+    assert "Settings updated" in messages
+    assert "Schedule updated" in messages
+    assert "Camera created" in messages
+    assert "Camera updated" in messages
+    assert "Camera profile created" in messages
+    assert "Camera profile updated" in messages
+    assert "remote-secret-value" not in logs.text
+    assert "profile-secret-value" not in logs.text
+
+    settings_log = next(row for row in rows if row["message"] == "Settings updated")
+    assert settings_log["context"]["settings_keys"] == ["observatory", "remote_upload"]
+    schedule_log = next(row for row in rows if row["message"] == "Schedule updated")
+    assert "interval_seconds" in schedule_log["context"]["changed_fields"]
+    profile_log = next(row for row in rows if row["message"] == "Camera profile created")
+    assert profile_log["context"]["settings_keys"] == ["api_key", "exposure_ms"]
 
 
 def test_system_diagnostics_export_is_redacted(tmp_path):

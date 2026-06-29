@@ -150,7 +150,7 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 | --- | --- | --- |
 | Phase 0: Repo inspection | Done | React/Vite frontend identified; local API direction established. |
 | Phase 1: API skeleton and SQLite | Done | Backend, schema, health/status, API client, core routes, mock capture, SQLite schema version tracking, idempotent migrations, query indexes, and `python -m skyweaver.migrate` status/upgrade command exist. |
-| Phase 2: Auth/API keys/settings/docs | Mostly done | JWT login, API-key scopes, settings, API Keys UI, Developer API UI, installer-seeded first setup values, in-app first-setup enforcement, bootstrap-password detection, password-strength guidance, in-process rate limiting, and local auth audit logging for failed login/setup completion attempts exist. Broader audit trails remain open. |
+| Phase 2: Auth/API keys/settings/docs | Done | JWT login, API-key scopes, settings, API Keys UI, Developer API UI, installer-seeded first setup values, in-app first-setup enforcement, bootstrap-password detection, password-strength guidance, in-process rate limiting, local auth audit logging, and privileged-change security audit logging exist. |
 | Phase 3: Camera adapters and test shot | Partial | Mock and rpicam/libcamera implemented and validated with an IMX290 on Raspberry Pi. Initial ZWO adapter exists with fake-SDK tests; real ZWO hardware validation is pending. gPhoto2, V4L2, INDI, custom command are placeholders. |
 | Phase 4: Capture daemon and realtime | Partial | Scheduled daemon loop, shared capture service, persistent job claiming for test/single/scheduled/sequence captures, day/night profile selection, per-mode interval and save policy, end-of-night product queueing, graceful stop reporting, real-Pi validated rpicam hard-cancel, pause/resume/stop queue semantics, active-window checks and UI preview, lock-file duplicate-loop guard with stale lock recovery, heartbeat/activity reporting, interrupted job recovery, SSE endpoint, Pi reboot service startup acceptance, and IMX290 capture after restart/reboot acceptance exist. More long-duration soak testing is still open. |
 | Phase 5: Image storage/gallery/latest/metadata | Partial | Mock capture artifacts, metadata, thumbnails, stable latest copies, image rows, gallery, latest image, public latest endpoints gated by public-page settings, and public sky page exist. Broader metadata extraction is open. |
@@ -171,8 +171,6 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 - Complete mock acceptance flow end to end:
   - run longer manual/dev overnight simulations outside pytest
   - validate behavior with real service restarts
-- Harden first-run setup:
-  - expand audit detail around setup completion and privileged account changes beyond the initial login/setup failure paths
 
 ### Raspberry Pi Deployment
 
@@ -252,7 +250,6 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 ### Security
 
 - Remove any permanent reliance on bootstrap `admin / skyweaver-change-me`.
-- Expand audit logging beyond login/setup failure paths to password changes, API-key lifecycle, and privileged settings changes.
 - Add CSRF protection if cookie auth is introduced.
 - Add better secret handling for remote targets.
 - Redact all secrets in diagnostics and logs.
