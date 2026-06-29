@@ -167,7 +167,7 @@ fi
 zwo_dry_output="$TMP_DIR/zwo-dry-run.out"
 run_installer 1 zwo >"$zwo_dry_output"
 assert_contains "+ install ZWO ASI udev rules /etc/udev/rules.d/99-zwo-asi.rules" "$zwo_dry_output"
-assert_contains "+ download ZWO ASI SDK archive from SKYWEAVER_ZWO_SDK_URL" "$zwo_dry_output"
+assert_contains "ZWO native SDK library not found; using camera-zwo-asi CLI backend from Python requirements." "$zwo_dry_output"
 
 run_installer 0 >"$TMP_DIR/install-1.out"
 cp "$TMP_DIR/config/skyweaver.env" "$TMP_DIR/skyweaver.env.first"

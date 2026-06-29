@@ -19,10 +19,10 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 | Database | SQLite via stdlib `sqlite3`, schema seeded in `backend/skyweaver/db.py`. No external database dependency. |
 | Storage | Local filesystem storage for images, thumbnails, products, logs, and config. Dev defaults are local paths; system install targets `/var/lib/skyweaver`, `/etc/skyweaver`, `/var/log/skyweaver`. |
 | Auth | Local admin JWT login plus hashed API keys with scopes. Installer can seed a configured admin password hash during first setup, and the app now enforces guided setup completion before normal admin use, including bootstrap-password detection, stronger password guidance, rate limiting, and local auth audit logs. |
-| Camera abstraction | `CameraAdapter` base class plus working `mock` adapter, initial `rpicam`/`libcamera` adapter, and initial SDK-backed ZWO ASI adapter. Other adapters are placeholders with actionable errors. |
+| Camera abstraction | `CameraAdapter` base class plus working `mock` adapter, initial `rpicam`/`libcamera` adapter, and initial ZWO ASI adapter using native SDK or `camera-zwo-asi` CLI support. Other adapters are placeholders with actionable errors. |
 | UI/API integration | Public Sky, Dashboard, Cameras, Schedule, Gallery, Night Products, Logs, Settings, API Keys, and Developer API call the local backend. |
-| Deployment | `install.sh`, `upgrade.sh`, `uninstall.sh`, `support.sh`, and systemd units exist. Fresh interactive installs prompt for first-setup values. Installer/upgrade can provision the ZWO ASI SDK path when ZWO is configured. |
-| Tests | Backend pytest coverage for health/status, login, auth audit logs, API keys, mock capture, first-setup hardening, system service controls, scheduled daemon capture, queued test/single/sequence capture execution, pause/resume/stop queue semantics, schedule preview, daemon heartbeat/activity, interrupted job recovery, mock overnight acceptance flow, night product generation, migration preview, mock adapter, and fake-SDK ZWO adapter behavior. Frontend component tests cover Public Sky, Dashboard, Gallery, Health, Settings, API Keys, and first setup. Shell tests cover installer dry-run, service-control sudoers generation, and repeat-install idempotency with mocked system commands. |
+| Deployment | `install.sh`, `upgrade.sh`, `uninstall.sh`, `support.sh`, and systemd units exist. Fresh interactive installs prompt for first-setup values. Installer/upgrade can provision ZWO USB rules, config paths, the `camera-zwo-asi` dependency, and optional native SDK library support when ZWO is configured. |
+| Tests | Backend pytest coverage for health/status, login, auth audit logs, API keys, mock capture, first-setup hardening, system service controls, scheduled daemon capture, queued test/single/sequence capture execution, pause/resume/stop queue semantics, schedule preview, daemon heartbeat/activity, interrupted job recovery, mock overnight acceptance flow, night product generation, migration preview, mock adapter, and fake-SDK/CLI ZWO adapter behavior. Frontend component tests cover Public Sky, Dashboard, Gallery, Health, Settings, API Keys, and first setup. Shell tests cover installer dry-run, service-control sudoers generation, and repeat-install idempotency with mocked system commands. |
 
 ## Implemented Capabilities
 
@@ -70,7 +70,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
   - capture state update
   - realtime event
 - `rpicam`/`libcamera` adapter can detect and capture through command-line tools when available.
-- `zwo` adapter can detect and capture through the ZWO ASI Camera SDK when `libASICamera2` is installed.
+- `zwo` adapter can detect and capture through the native ZWO ASI SDK when `libASICamera2` is installed, or through the `camera-zwo-asi` CLI tools when the native SDK is unavailable.
 - Subprocess calls use argv lists instead of shell string interpolation.
 
 ### Capture Daemon
@@ -114,7 +114,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 - `skyweaver-capture.service`
 - `skyweaver-worker.service`
 - Installer creates directories, system user, Python venv, frontend build, config, and services.
-- Installer and upgrade provision ZWO ASI USB udev rules and can install `libASICamera2.so` from a provided SDK archive URL when the configured primary adapter is `zwo`.
+- Installer and upgrade provision ZWO ASI USB udev rules, a ZWO config directory, the `camera-zwo-asi` dependency, and optional `libASICamera2.so` installation from a provided SDK archive URL when the configured primary adapter is `zwo`.
 - Installer grants the `skyweaver` service user available camera hardware groups and systemd supplementary groups for Pi camera access.
 - Installer and upgrade grant the `skyweaver` service user constrained sudoers permissions for Sky Weaver `systemctl` start/stop/restart controls only.
 - Installer dry-run no longer requires root or writes config, and CI has a temp-dir test harness for dry-run and repeat-install idempotency.
@@ -150,12 +150,12 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 | Phase 0: Repo inspection | Done | React/Vite frontend identified; local API direction established. |
 | Phase 1: API skeleton and SQLite | Mostly done | Backend, schema, health/status, API client, core routes, and mock capture exist. Dedicated migration framework still needed. |
 | Phase 2: Auth/API keys/settings/docs | Mostly done | JWT login, API-key scopes, settings, API Keys UI, Developer API UI, installer-seeded first setup values, in-app first-setup enforcement, bootstrap-password detection, password-strength guidance, in-process rate limiting, and local auth audit logging for failed login/setup completion attempts exist. Broader audit trails remain open. |
-| Phase 3: Camera adapters and test shot | Partial | Mock and rpicam/libcamera implemented and validated with an IMX290 on Raspberry Pi. Initial SDK-backed ZWO adapter exists with fake-SDK tests; real ZWO hardware validation is pending. gPhoto2, V4L2, INDI, custom command are placeholders. |
+| Phase 3: Camera adapters and test shot | Partial | Mock and rpicam/libcamera implemented and validated with an IMX290 on Raspberry Pi. Initial ZWO adapter exists with fake-SDK and CLI-path tests; real ZWO hardware validation is pending. gPhoto2, V4L2, INDI, custom command are placeholders. |
 | Phase 4: Capture daemon and realtime | Partial | Scheduled daemon loop, shared capture service, persistent job claiming for test/single/scheduled/sequence captures, graceful stop reporting, real-Pi validated rpicam hard-cancel, pause/resume/stop queue semantics, active-window checks and UI preview, interval gating, lock-file duplicate-loop guard with stale lock recovery, heartbeat/activity reporting, interrupted job recovery, SSE endpoint, Pi reboot service startup acceptance, and IMX290 capture after restart/reboot acceptance exist. More long-duration soak testing is still open. |
 | Phase 5: Image storage/gallery/latest/metadata | Partial | Mock capture artifacts, metadata, thumbnails, stable latest copies, image rows, gallery, latest image, public latest endpoints gated by public-page settings, and public sky page exist. Broader metadata extraction is open. |
 | Phase 6: Processing worker/products/retention | Partial | Worker claims jobs, thumbnail reprocess exists, keogram JPEG generation, ffmpeg timelapse/mini-timelapse generation, and startrail generation exist, and product job progress is visible in the UI. Cleanup and upload execution are open. |
 | Phase 7: Overlay/modules | Early scaffold | Module tables/endpoints exist. Overlay editor, processor, built-in modules, safe module execution are open. |
-| Phase 8: Installer/systemd/support/docs | Partial | Scripts and units exist. Shellcheck CI, installer dry-run/idempotency tests, service-control sudoers generation, interactive first-setup prompts, ZWO SDK provisioning hooks, real Pi install, repeat install, service restart, and reboot verification exist. Nginx option and broader Pi camera verification are open. |
+| Phase 8: Installer/systemd/support/docs | Partial | Scripts and units exist. Shellcheck CI, installer dry-run/idempotency tests, service-control sudoers generation, interactive first-setup prompts, ZWO package/SDK provisioning hooks, real Pi install, repeat install, service restart, and reboot verification exist. Nginx option and broader Pi camera verification are open. |
 | Phase 9: Allsky migration/remote upload | Early scaffold | Detection and dry-run count preview exist. Real import, rollback, unsupported-setting report, and remote upload execution are open. |
 | Phase 10: Polish/mobile/tests/hardening | Partial | Mobile API docs, latest/status/gallery endpoints, route bundle splitting, system health diagnostics/service detail UI with failure analysis and unit history, initial frontend component tests, and CI workflow exist. Broader tests, UX polish, performance, and security hardening remain. |
 
@@ -196,7 +196,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
   - better parsing of camera list output
 - Implement V4L2/webcam capture through ffmpeg or OpenCV.
 - Implement gPhoto2 detection/capture for DSLR/mirrorless.
-- Validate the ZWO SDK-backed adapter on real ZWO ASI hardware and expand control coverage.
+- Validate the ZWO native-SDK and `camera-zwo-asi` CLI backends on real ZWO ASI hardware and expand control coverage.
 - Add INDI adapter skeleton with expected integration contract.
 - Design custom command adapter with explicit security controls and sandbox warnings.
 
@@ -333,7 +333,7 @@ The product is not yet Allsky feature-complete. The main missing areas are full 
 - Worker now generates thumbnails, keograms, ffmpeg timelapses, mini timelapses, and startrails, but retention cleanup and upload execution are still open.
 - Product endpoints queue jobs; keogram, timelapse, mini timelapse, and startrail currently produce downloadable night products.
 - Public page exists for latest-image display and honors the public-page enabled setting; richer public archives and branding controls are still open.
-- ZWO ASI support is SDK-backed and covered by fake-SDK tests, but it has not yet been validated with real ZWO hardware in this environment.
+- ZWO ASI support is adapter-backed with native-SDK and `camera-zwo-asi` CLI paths covered by tests, but it has not yet been validated with real ZWO hardware in this environment.
 - Remote upload is not implemented.
 - Allsky migration does not yet import data.
 - API server no longer performs camera capture inline for test shots; test-shot requests enqueue daemon-owned `test` jobs so manual verification still works while automation is stopped.

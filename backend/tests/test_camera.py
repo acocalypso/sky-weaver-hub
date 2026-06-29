@@ -6,7 +6,7 @@ import pytest
 from skyweaver.camera.base import CaptureRequest
 from skyweaver.camera.mock import MockCameraAdapter
 from skyweaver.camera.rpicam import RpiCamAdapter
-from skyweaver.camera.zwo import ASI_EXP_SUCCESS, ASI_EXP_WORKING, ASI_EXPOSURE, ASI_GAIN, ASI_IMG_END, ASI_IMG_RGB24, ASI_TEMPERATURE, ASICameraInfo, ZwoAsiAdapter
+from skyweaver.camera.zwo import ASI_EXP_SUCCESS, ASI_EXP_WORKING, ASI_EXPOSURE, ASI_GAIN, ASI_IMG_END, ASI_IMG_RGB24, ASI_TEMPERATURE, ASICameraInfo, ZwoAsiAdapter, ZwoSdkUnavailable, merge_toml_lines, parse_zwo_print_output
 
 
 def zwo_camera_info(camera_id: int = 2) -> ASICameraInfo:
@@ -207,3 +207,92 @@ async def test_zwo_capture_uses_sdk_and_writes_image(tmp_path: Path):
     assert ("set_roi", 2, 16, 8, ASI_IMG_RGB24) in sdk.calls
     assert ("data_after_exposure", 2, 16 * 8 * 3) in sdk.calls
     assert sdk.calls[-1] == ("close", 2)
+
+
+def test_zwo_cli_detection_parser_supports_print_output():
+    found = parse_zwo_print_output(
+        """
+        ---- camera 0 ----
+        ASI294MC Pro (id: 0)
+        1: ASI120MM Mini
+        """
+    )
+
+    assert [cam.id for cam in found] == ["zwo://0", "zwo://1"]
+    assert found[0].name == "ASI294MC Pro"
+    assert found[0].metadata["cli"] is True
+
+
+def test_zwo_cli_toml_merge_preserves_existing_config():
+    merged = merge_toml_lines("[controllables]\nGain = 1\nunchanged = true\n", {"controllables.Gain": 42, "roi.width": 24, "controllables.CoolerOn": True})
+
+    assert "Gain = 42" in merged
+    assert "[roi]" in merged
+    assert "width = 24" in merged
+    assert "CoolerOn = true" in merged
+    assert "unchanged = true" in merged
+
+
+def test_zwo_cli_capture_generates_config_and_output(tmp_path: Path):
+    class CliOnlyAdapter(ZwoAsiAdapter):
+        def _get_sdk(self):
+            raise ZwoSdkUnavailable("sdk unavailable")
+
+        def _run_cli(self, args, cwd, job_key, timeout):
+            self.calls.append((args, cwd, job_key, timeout))
+            if args == ["zwo-asi-dump"]:
+                (cwd / "zwo_asi.toml").write_text("[controllables]\nGain = 1\n", encoding="utf-8")
+                return
+            output = tmp_path / "cli.jpg"
+            from PIL import Image
+
+            Image.new("RGB", (24, 16), color=(44, 55, 66)).save(output)
+
+    adapter = CliOnlyAdapter(cli_tool="zwo-asi-shot", dump_tool="zwo-asi-dump")
+    adapter.calls = []
+    output = tmp_path / "cli.jpg"
+
+    result = adapter._capture_sync(
+        CaptureRequest(
+            output_path=output,
+            job_id="cli-job",
+            exposure_ms=500,
+            gain=22,
+            width=24,
+            height=16,
+            settings={"device_id": "zwo://1", "zwo_cli_config": {"binning": 1}},
+        )
+    )
+
+    config = tmp_path / ".zwo" / "zwo_asi.toml"
+    assert output.exists()
+    assert result.width == 24
+    assert result.height == 16
+    assert result.metadata["backend_mode"] == "camera-zwo-asi"
+    text = config.read_text(encoding="utf-8")
+    assert "Gain = 22" in text
+    assert "Exposure = 500000" in text
+    assert "width = 24" in text
+    assert "binning = 1" in text
+    assert adapter.calls[0][0] == ["zwo-asi-dump"]
+    assert adapter.calls[1][0] == ["zwo-asi-shot", "-silent", "--path", str(output), "--index", "1"]
+
+
+@pytest.mark.asyncio
+async def test_zwo_cli_cancel_terminates_active_process():
+    class FakeProc:
+        def __init__(self) -> None:
+            self.terminated = False
+
+        def terminate(self) -> None:
+            self.terminated = True
+
+    adapter = ZwoAsiAdapter(cli_tool="zwo-asi-shot")
+    proc = FakeProc()
+    adapter._active_cli_by_job["job-cli"] = proc
+
+    result = await adapter.cancel_capture("job-cli", "Operator stop")
+
+    assert result.canceled is True
+    assert result.method == "terminate"
+    assert proc.terminated is True
