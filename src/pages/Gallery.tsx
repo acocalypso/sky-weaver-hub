@@ -87,6 +87,9 @@ export default function Gallery() {
                 <Stat label="Gain" value={selected.gain} />
                 <Stat label="Mean brightness" value={selected.mean_brightness} />
                 <Stat label="Size bytes" value={selected.size_bytes} />
+                <Stat label="Format" value={selected.metadata?.storage?.image?.format ?? selected.format?.toUpperCase()} />
+                <Stat label="Dimensions" value={formatDimensions(selected)} />
+                <Stat label="EXIF tags" value={Object.keys(selected.metadata?.storage?.exif ?? {}).length} />
                 <div>
                   <p className="text-xs uppercase tracking-widest text-muted-foreground mb-1">API response</p>
                   <pre className="text-[11px] font-mono-data bg-muted/40 p-3 rounded-md overflow-auto max-h-72">{JSON.stringify(apiPreview, null, 2)}</pre>
@@ -102,4 +105,10 @@ export default function Gallery() {
 
 function Stat({ label, value }: { label: string; value: any }) {
   return <div className="flex justify-between p-2 rounded-md bg-muted/30"><span className="text-xs uppercase tracking-widest text-muted-foreground">{label}</span><span className="font-mono-data">{value ?? "-"}</span></div>;
+}
+
+function formatDimensions(image: ImageRow) {
+  const width = image.metadata?.storage?.image?.width ?? image.width;
+  const height = image.metadata?.storage?.image?.height ?? image.height;
+  return width && height ? `${width} x ${height}` : "-";
 }

@@ -93,6 +93,34 @@ def test_mock_capture_creates_image(tmp_path):
     latest_payload = json.loads(latest_json.read_text(encoding="utf-8"))
     assert latest_payload["id"] == image["id"]
     assert latest_payload["download_url"] == "/api/v1/public/latest/download"
+    assert image["metadata"]["storage"]["image"]["width"] == image["width"]
+    assert image["metadata"]["storage"]["image"]["height"] == image["height"]
+    assert image["metadata"]["storage"]["file"]["size_bytes"] == image["size_bytes"]
+    assert image["metadata"]["storage"]["exif"] == {}
+    sidecar = json.loads(Path(image["file_path"] + ".json").read_text(encoding="utf-8"))
+    assert sidecar["storage"]["image"]["format"] == "JPEG"
+
+
+def test_extract_image_metadata_reads_exif_and_basic_file_data(tmp_path):
+    from PIL import ExifTags, Image
+    from skyweaver.services.capture import extract_image_metadata
+
+    path = tmp_path / "exif-test.jpg"
+    img = Image.new("RGB", (12, 8), "black")
+    exif = Image.Exif()
+    exif[ExifTags.Base.Make.value] = "Sky Weaver"
+    exif[ExifTags.Base.Model.value] = "MockCam"
+    img.save(path, exif=exif)
+
+    metadata = extract_image_metadata(path)
+
+    assert metadata["file"]["name"] == "exif-test.jpg"
+    assert metadata["file"]["size_bytes"] == path.stat().st_size
+    assert metadata["image"]["format"] == "JPEG"
+    assert metadata["image"]["width"] == 12
+    assert metadata["image"]["height"] == 8
+    assert metadata["exif"]["Make"] == "Sky Weaver"
+    assert metadata["exif"]["Model"] == "MockCam"
 
 
 def test_public_latest_endpoints_are_unauthenticated(tmp_path):

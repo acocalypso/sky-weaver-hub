@@ -60,7 +60,7 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 ### Camera and Capture
 
 - Mock camera generates synthetic all-sky images.
-- Mock capture writes:
+- Captures write:
   - original image
   - metadata JSON sidecar
   - thumbnail
@@ -100,7 +100,7 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 - Schedule page with sun-angle/fixed/manual mode settings.
 - Schedule page displays the backend active window, next transition, and fixed-time controls.
 - Dashboard Tonight panel displays capture-window status and the next schedule transition.
-- Gallery page with day/mode/quality filters and image detail.
+- Gallery page with day/mode/quality filters, image detail, quality fields, and storage/EXIF metadata preview.
 - Night Products page queues product jobs, shows processing job progress, and lists generated downloads.
 - System Health page shows metrics, service status, start/stop/restart actions, per-service detail/journal output, failure analysis, unit history, queue counts, recent logs, and diagnostics JSON export.
 - Logs page reads backend logs.
@@ -153,7 +153,7 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 | Phase 2: Auth/API keys/settings/docs | Done | JWT login, API-key scopes, settings, API Keys UI, Developer API UI, installer-seeded first setup values, in-app first-setup enforcement, bootstrap-password detection, password-strength guidance, in-process rate limiting, local auth audit logging, and privileged-change security audit logging exist. |
 | Phase 3: Camera adapters and test shot | Partial | Mock and rpicam/libcamera implemented and validated with an IMX290 on Raspberry Pi. Initial ZWO adapter exists with fake-SDK tests; real ZWO hardware validation is pending. gPhoto2, V4L2, INDI, custom command are placeholders. |
 | Phase 4: Capture daemon and realtime | Done | Scheduled daemon loop, shared capture service, persistent job claiming for test/single/scheduled/sequence captures, day/night profile selection, restart-safe per-mode interval and save policy, next-capture due visibility, latest-only day captures, saved night captures, end-of-night product queueing, graceful stop reporting, real-Pi validated rpicam hard-cancel, pause/resume/stop queue semantics, active-window checks and UI preview, lock-file duplicate-loop guard with stale lock recovery, heartbeat/activity reporting, interrupted job recovery, SSE endpoint, Pi reboot service startup acceptance, IMX290 capture after restart/reboot acceptance, and accelerated indoor Pi day/night acceptance exist. Real outdoor overnight field validation remains a hardening task. |
-| Phase 5: Image storage/gallery/latest/metadata | Partial | Mock capture artifacts, metadata, thumbnails, stable latest copies, image rows, gallery, latest image, public latest endpoints gated by public-page settings, and public sky page exist. Broader metadata extraction is open. |
+| Phase 5: Image storage/gallery/latest/metadata | Done | Capture artifacts, metadata sidecars, thumbnails, stable latest copies, image rows, gallery, latest image, public latest endpoints gated by public-page settings, public sky page, image detail, basic file/image metadata extraction, and JSON-safe EXIF extraction exist. |
 | Phase 6: Processing worker/products/retention | Partial | Worker claims jobs, thumbnail reprocess exists, keogram JPEG generation, ffmpeg timelapse/mini-timelapse generation, and startrail generation exist, and product job progress is visible in the UI. Cleanup and upload execution are open. |
 | Phase 7: Overlay/modules | Early scaffold | Module tables/endpoints exist. Overlay editor, processor, built-in modules, safe module execution are open. |
 | Phase 8: Installer/systemd/support/docs | Partial | Scripts and units exist. Shellcheck CI, installer dry-run/idempotency tests, service-control sudoers generation, interactive first-setup prompts, ZWO `libasi`/SDK provisioning hooks, real Pi install, repeat install, service restart, and reboot verification exist. Nginx option and broader Pi camera verification are open. |
@@ -198,7 +198,6 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 
 ### Image Pipeline
 
-- Add EXIF/basic metadata extraction.
 - Add image resize/crop/stretch processing.
 - Add configurable bad image thresholds.
 - Add dark-frame capture and median combine.
@@ -312,7 +311,7 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 - Add backend tests for:
   - schedule calculation
   - settings validation
-  - image database CRUD
+  - destructive image delete behavior and file cleanup policy
   - processing job lifecycle
   - every API-key scope boundary
 - Expand GitHub Actions after Pi validation:

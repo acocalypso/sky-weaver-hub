@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import psutil
-from PIL import Image, ImageStat
+from PIL import ExifTags, Image, ImageStat
 
 from ..camera.base import CameraAdapter, CaptureCancelResult, CaptureCanceled, CaptureRequest, CaptureResult
 from ..camera.registry import get_adapter
@@ -309,6 +309,7 @@ async def execute_capture(command: CaptureCommand, job_type: str = "manual", job
             "captured_at": captured_at.isoformat(),
             "camera": {"id": cam["id"], "adapter": cam["adapter"], "model": cam.get("model")},
             "settings": {"exposure_ms": command.exposure_ms, "gain": command.gain, "format": command.format},
+            "storage": extract_image_metadata(result.file_path),
             "environment": {"sensor_temperature_c": result.temperature_c, "system_temperature_c": read_pi_temp()},
             "analysis": analyze_image(result.file_path),
             **result.metadata,
@@ -634,6 +635,65 @@ def analyze_image(path: Path) -> dict[str, Any]:
         gray = img.convert("L")
         mean = ImageStat.Stat(gray).mean[0] / 255
     return {"mean_brightness": round(mean, 4), "star_count": None, "cloud_score": None, "bad_image": mean < 0.01 or mean > 0.98}
+
+
+def metadata_value(value: Any) -> Any:
+    if isinstance(value, bytes):
+        return f"<{len(value)} bytes>"
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    if isinstance(value, tuple):
+        return [metadata_value(item) for item in value]
+    if isinstance(value, list):
+        return [metadata_value(item) for item in value]
+    if isinstance(value, dict):
+        return {str(key): metadata_value(item) for key, item in value.items()}
+    if hasattr(value, "numerator") and hasattr(value, "denominator"):
+        try:
+            return float(value)
+        except (TypeError, ZeroDivisionError):
+            return str(value)
+    return str(value)
+
+
+def extract_exif_metadata(img: Image.Image) -> dict[str, Any]:
+    try:
+        exif = img.getexif()
+    except Exception:
+        return {}
+    if not exif:
+        return {}
+    metadata: dict[str, Any] = {}
+    for tag_id, value in exif.items():
+        tag_name = ExifTags.TAGS.get(tag_id, str(tag_id))
+        if tag_name == "MakerNote":
+            continue
+        if tag_name == "GPSInfo" and isinstance(value, dict):
+            metadata[tag_name] = {ExifTags.GPSTAGS.get(key, str(key)): metadata_value(item) for key, item in value.items()}
+            continue
+        metadata[tag_name] = metadata_value(value)
+    return metadata
+
+
+def extract_image_metadata(path: Path) -> dict[str, Any]:
+    stat = path.stat()
+    with Image.open(path) as img:
+        return {
+            "file": {
+                "name": path.name,
+                "suffix": path.suffix.lower(),
+                "size_bytes": stat.st_size,
+                "modified_at": datetime.fromtimestamp(stat.st_mtime, UTC).isoformat(),
+            },
+            "image": {
+                "format": img.format,
+                "mode": img.mode,
+                "width": img.width,
+                "height": img.height,
+                "has_transparency": img.mode in {"RGBA", "LA"} or "transparency" in img.info,
+            },
+            "exif": extract_exif_metadata(img),
+        }
 
 
 def make_thumbnail(source: Path, target: Path) -> Path | None:
