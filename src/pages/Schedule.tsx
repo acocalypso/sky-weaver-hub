@@ -64,10 +64,11 @@ export default function Schedule() {
               <span className="text-xs text-muted-foreground font-mono-data">{preview?.timezone ?? s.timezone}</span>
             </div>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs font-mono-data">
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs font-mono-data">
             <PreviewStat icon={<Moon className="h-3.5 w-3.5" />} label="Start" value={formatPreview(preview?.window_start)} />
             <PreviewStat icon={<Sunrise className="h-3.5 w-3.5" />} label="End" value={formatPreview(preview?.window_end)} />
             <PreviewStat icon={<CalendarClock className="h-3.5 w-3.5" />} label="Next" value={preview?.next_transition_at ? `${preview.next_state} ${formatDistanceToNow(new Date(preview.next_transition_at), { addSuffix: true })}` : "-"} />
+            <PreviewStat icon={<CalendarClock className="h-3.5 w-3.5" />} label="Capture" value={formatNextCapture(preview)} />
           </div>
         </div>
       </Card>
@@ -105,4 +106,12 @@ function PreviewStat({ icon, label, value }: { icon: React.ReactNode; label: str
 function formatPreview(value?: string | null) {
   if (!value) return "-";
   return format(new Date(value), "MMM d HH:mm");
+}
+
+function formatNextCapture(preview?: SchedulePreview | null) {
+  if (!preview) return "-";
+  if (!preview.capture_enabled) return `${preview.capture_mode ?? "capture"} disabled`;
+  if (preview.capture_due) return `${preview.capture_mode ?? "capture"} due now`;
+  if (!preview.next_capture_due_at) return "-";
+  return `${preview.capture_mode ?? "capture"} ${formatDistanceToNow(new Date(preview.next_capture_due_at), { addSuffix: true })}`;
 }

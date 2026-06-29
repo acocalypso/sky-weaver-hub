@@ -90,7 +90,24 @@ export interface CameraProfile { id: string; camera_id: string; name: string; mo
 export interface ImageRow { id: string; camera_id: string | null; captured_at: string; day_key: string; mode: string; file_path: string; public_url: string | null; thumbnail_path: string | null; format: string; width: number | null; height: number | null; size_bytes: number | null; exposure_ms: number | null; gain: number | null; temperature_c: number | null; mean_brightness: number | null; star_count: number | null; cloud_score: number | null; bad_image: boolean; metadata: any; }
 export interface PublicLatestImage { id: string; captured_at: string; day_key: string; mode: string; format: string; width: number | null; height: number | null; size_bytes: number | null; exposure_ms?: number | null; gain?: number | null; camera_id?: string | null; download_url: string; metadata_url: string; thumbnail_url?: string | null; latest_file?: string; latest_thumbnail_file?: string; }
 export interface ScheduleRow { id?: string; enabled: boolean; start_mode: string; end_mode: string; sun_angle: number; fixed_start_time?: string | null; fixed_end_time?: string | null; timezone: string; latitude: number; longitude: number; interval_seconds: number; exposure_ramping_enabled: boolean; }
-export interface SchedulePreview { enabled: boolean; active: boolean; now: string; window_start: string | null; window_end: string | null; next_transition_at: string | null; next_state: string; timezone: string; }
+export interface SchedulePreview {
+  enabled: boolean;
+  active: boolean;
+  now: string;
+  window_start: string | null;
+  window_end: string | null;
+  next_transition_at: string | null;
+  next_state: string;
+  timezone: string;
+  capture_mode?: "day" | "night";
+  capture_enabled?: boolean;
+  save_enabled?: boolean;
+  interval_seconds?: number | null;
+  last_scheduled_capture_at?: string | null;
+  next_capture_due_at?: string | null;
+  capture_due?: boolean;
+  seconds_until_due?: number | null;
+}
 export interface ProductRow { id: string; type: string; day_key: string; file_path: string | null; thumbnail_path: string | null; status: string; metadata: any; created_at: string; }
 export interface ProcessingJob { id: string; type: string; status: string; input: any; output?: any; error?: string | null; progress: number; created_at: string; started_at?: string | null; completed_at?: string | null; }
 export interface CaptureJob { id: string; type: string; status: string; request: any; result?: any; error?: string | null; progress: number; created_at: string; started_at?: string | null; completed_at?: string | null; }

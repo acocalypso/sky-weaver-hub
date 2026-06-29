@@ -45,10 +45,50 @@ def test_daemon_respects_interval(tmp_path: Path):
 
     daemon = CaptureDaemon()
     assert asyncio.run(daemon.run_once(True)) is True
-    assert asyncio.run(daemon.run_once()) is False
+    restarted_daemon = CaptureDaemon()
+    assert asyncio.run(restarted_daemon.run_once()) is False
 
     images = client.get("/api/v1/images", headers={"Authorization": f"Bearer {token}"}).json()["data"]
     assert len(images) == 1
+
+
+def test_schedule_preview_reports_persisted_next_capture_due(tmp_path: Path):
+    client = make_client(tmp_path)
+    token = login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+    assert client.put(
+        "/api/v1/schedule",
+        headers=headers,
+        json={
+            "enabled": True,
+            "start_mode": "fixed",
+            "end_mode": "fixed",
+            "fixed_start_time": "00:00",
+            "fixed_end_time": "23:59",
+            "sun_angle": -6,
+            "timezone": "UTC",
+            "latitude": 0,
+            "longitude": 0,
+            "interval_seconds": 60,
+            "exposure_ramping_enabled": False,
+        },
+    ).status_code == 200
+    assert client.post("/api/v1/capture/start", headers=headers).status_code == 200
+
+    from skyweaver.capture_daemon import CaptureDaemon
+
+    daemon = CaptureDaemon()
+    assert asyncio.run(daemon.run_once(True)) is True
+
+    preview = client.post("/api/v1/schedule/preview-tonight", headers=headers, json={})
+    assert preview.status_code == 200, preview.text
+    data = preview.json()["data"]
+    assert data["capture_mode"] == "night"
+    assert data["interval_seconds"] >= 1
+    assert data["last_scheduled_capture_at"]
+    assert data["next_capture_due_at"]
+    assert data["seconds_until_due"] >= 0
+    assert data["capture_due"] is False
 
 
 def test_daemon_skips_scheduled_capture_when_schedule_disabled(tmp_path: Path):

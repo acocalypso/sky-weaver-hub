@@ -1,6 +1,5 @@
 import asyncio
 import os
-import time
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
@@ -8,7 +7,6 @@ from typing import Iterator
 from .config import get_settings
 from .db import init_db, log, session
 from .services.capture import (
-    capture_interval_seconds,
     capture_is_running,
     claim_next_capture_job,
     create_capture_job,
@@ -19,6 +17,7 @@ from .services.capture import (
     night_profile_settings,
     queue_end_of_night_products,
     schedule_command,
+    scheduled_capture_due,
     scheduled_capture_enabled,
     scheduled_capture_mode,
     set_scheduled_mode_state,
@@ -41,7 +40,6 @@ def _pid_is_running(pid: int) -> bool:
 
 class CaptureDaemon:
     def __init__(self) -> None:
-        self.last_capture_monotonic: float | None = None
         self.last_scheduled_mode: str | None = None
 
     async def run_once(self, force: bool = False) -> bool:
@@ -57,8 +55,6 @@ class CaptureDaemon:
         queued_job = claim_next_capture_job()
         if queued_job:
             await execute_capture_job(queued_job)
-            if queued_job["type"] == "scheduled":
-                self.last_capture_monotonic = time.monotonic()
             return True
 
         mode = "night" if force else scheduled_capture_mode()
@@ -73,16 +69,13 @@ class CaptureDaemon:
         if not scheduled_capture_enabled(mode):
             return False
 
-        interval = capture_interval_seconds(mode)
-        now = time.monotonic()
-        if not force and self.last_capture_monotonic is not None and now - self.last_capture_monotonic < interval:
+        if not force and not scheduled_capture_due(mode):
             return False
 
         command = schedule_command(mode=mode)
         with session() as conn:
             job_id = create_capture_job(conn, "scheduled", command.as_dict())
         await execute_capture(command, job_type="scheduled", job_id=job_id)
-        self.last_capture_monotonic = time.monotonic()
         return True
 
     async def run_forever(self, poll_seconds: float = 1.0) -> None:

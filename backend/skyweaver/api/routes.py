@@ -18,7 +18,7 @@ from ..config import get_settings
 from ..db import default_profile, event, json_dumps, json_loads, log, new_id, now_iso, row_to_dict, session
 from ..rate_limit import InMemoryRateLimiter, RateLimitStatus
 from ..security import create_api_key, hash_password, make_token, verify_password
-from ..services.capture import CaptureCommand, all_rows, count_files, create_capture_job, current_schedule, decode_row, enqueue_capture, get_primary_camera, public_latest_payload, read_latest_payload, system_metrics
+from ..services.capture import CaptureCommand, all_rows, count_files, create_capture_job, current_schedule, decode_row, enqueue_capture, get_primary_camera, public_latest_payload, read_latest_payload, scheduled_capture_timing, system_metrics
 from ..services.schedule import active_window
 from .deps import current_principal, require_scope
 from .responses import ok
@@ -1128,7 +1128,23 @@ def preview_tonight(payload: dict[str, Any], _principal: Annotated[dict, Depends
     preview_now = None
     if isinstance(schedule.get("now"), str):
         preview_now = datetime.fromisoformat(schedule.pop("now"))
-    return ok(active_window(schedule, preview_now))
+    preview = active_window(schedule, preview_now)
+    mode = "night" if preview["active"] else "day"
+    try:
+        preview = {**preview, **scheduled_capture_timing(mode, preview_now)}
+    except LookupError:
+        preview = {
+            **preview,
+            "capture_mode": mode,
+            "capture_enabled": False,
+            "save_enabled": False,
+            "interval_seconds": None,
+            "last_scheduled_capture_at": None,
+            "next_capture_due_at": None,
+            "capture_due": False,
+            "seconds_until_due": None,
+        }
+    return ok(preview)
 
 
 @router.post("/schedule/recalculate")

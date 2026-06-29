@@ -3,7 +3,7 @@ import json
 import os
 import shutil
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -482,6 +482,56 @@ def capture_interval_seconds(mode: str | None = None, camera_id: str | None = No
     fallback = int(row["interval_seconds"]) if row else 30
     settings = profile["settings"] if profile else {}
     return max(1, int(settings.get("interval_seconds") or fallback))
+
+
+def parse_timestamp(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
+
+
+def latest_completed_scheduled_capture_at(mode: str | None = None) -> datetime | None:
+    with session() as conn:
+        rows = conn.execute(
+            "SELECT request, completed_at FROM capture_jobs WHERE type='scheduled' AND status='completed' AND completed_at IS NOT NULL ORDER BY completed_at DESC LIMIT 200"
+        ).fetchall()
+    for row in rows:
+        decoded = decode_row(row_to_dict(row)) or {}
+        request = decoded.get("request") if isinstance(decoded.get("request"), dict) else {}
+        if mode is None or request.get("mode") == mode:
+            return parse_timestamp(decoded.get("completed_at"))
+    return None
+
+
+def scheduled_capture_timing(mode: str, now: datetime | None = None, camera_id: str | None = None) -> dict[str, Any]:
+    current = (now or datetime.now(UTC)).astimezone(UTC)
+    interval = capture_interval_seconds(mode, camera_id)
+    last_capture_at = latest_completed_scheduled_capture_at(mode)
+    due_at = last_capture_at + timedelta(seconds=interval) if last_capture_at else current
+    capture_enabled = scheduled_capture_enabled(mode, camera_id)
+    command = schedule_command(camera_id, mode)
+    save_enabled = bool(command.settings.get("save_enabled", True))
+    due = current >= due_at
+    return {
+        "capture_mode": mode,
+        "capture_enabled": capture_enabled,
+        "save_enabled": save_enabled,
+        "interval_seconds": interval,
+        "last_scheduled_capture_at": last_capture_at.isoformat() if last_capture_at else None,
+        "next_capture_due_at": due_at.isoformat(),
+        "capture_due": due,
+        "seconds_until_due": max(0, int((due_at - current).total_seconds())),
+    }
+
+
+def scheduled_capture_due(mode: str, now: datetime | None = None, camera_id: str | None = None) -> bool:
+    return bool(scheduled_capture_timing(mode, now, camera_id)["capture_due"])
 
 
 def current_schedule() -> dict[str, Any]:

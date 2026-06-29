@@ -192,6 +192,7 @@ export default function Dashboard() {
         <div className="mt-4 pt-4 border-t border-border flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs font-mono-data">
           <span className="text-muted-foreground">Capture window: {formatScheduleTime(schedulePreview?.window_start)} to {formatScheduleTime(schedulePreview?.window_end)}</span>
           <span>Next: {schedulePreview?.next_transition_at ? `${schedulePreview.next_state} ${formatDistanceToNow(new Date(schedulePreview.next_transition_at), { addSuffix: true })}` : "-"}</span>
+          <span>Capture: {formatNextCapture(schedulePreview)}</span>
         </div>
       </Card>
 
@@ -302,6 +303,15 @@ function formatScheduleTime(value?: string | null) {
   if (!value) return "-";
   const date = new Date(value);
   return isValidDate(date) ? format(date, "HH:mm") : "-";
+}
+
+function formatNextCapture(preview?: SchedulePreview | null) {
+  if (!preview) return "-";
+  if (!preview.capture_enabled) return `${preview.capture_mode ?? "capture"} disabled`;
+  if (preview.capture_due) return `${preview.capture_mode ?? "capture"} due now`;
+  if (!preview.next_capture_due_at) return "-";
+  const due = new Date(preview.next_capture_due_at);
+  return isValidDate(due) ? `${preview.capture_mode ?? "capture"} ${formatDistanceToNow(due, { addSuffix: true })}` : "-";
 }
 
 function formatRelative(value?: string | null) {
