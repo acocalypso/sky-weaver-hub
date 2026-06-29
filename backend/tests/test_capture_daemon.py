@@ -1,7 +1,7 @@
 from pathlib import Path
 import asyncio
 
-from test_api import login, make_client
+from test_api import login, make_client, run_queued_test_capture
 
 
 def test_daemon_run_once_creates_scheduled_capture(tmp_path: Path):
@@ -64,6 +64,85 @@ def test_daemon_skips_scheduled_capture_when_schedule_disabled(tmp_path: Path):
 
     images = client.get("/api/v1/images", headers=headers).json()["data"]
     assert images == []
+
+
+def test_daemon_day_profile_can_update_latest_without_saving(tmp_path: Path):
+    client = make_client(tmp_path)
+    token = login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    from skyweaver.db import json_dumps, json_loads, session
+
+    with session() as conn:
+        row = conn.execute("SELECT id, settings FROM camera_profiles WHERE mode='daytime' LIMIT 1").fetchone()
+        settings = json_loads(row["settings"], {})
+        settings.update({"capture_enabled": True, "save_enabled": False, "interval_seconds": 1})
+        conn.execute("UPDATE camera_profiles SET settings=? WHERE id=?", (json_dumps(settings), row["id"]))
+
+    assert client.post("/api/v1/capture/start", headers=headers).status_code == 200
+
+    from skyweaver.capture_daemon import CaptureDaemon
+
+    daemon = CaptureDaemon()
+    assert asyncio.run(daemon.run_once()) is True
+
+    images = client.get("/api/v1/images", headers=headers).json()["data"]
+    assert images == []
+
+    jobs = client.get("/api/v1/capture/jobs", headers=headers).json()["data"]
+    assert jobs[0]["status"] == "completed"
+    assert jobs[0]["result"]["unsaved_latest"] is True
+
+    public_latest = client.get("/api/v1/public/latest")
+    assert public_latest.status_code == 200
+    latest_data = public_latest.json()["data"]
+    assert latest_data["mode"] == "day"
+    assert latest_data["download_url"] == "/api/v1/public/latest/download"
+    assert client.get("/api/v1/public/latest/download").status_code == 200
+
+
+def test_daemon_queues_end_of_night_products_once(tmp_path: Path):
+    client = make_client(tmp_path)
+    token = login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    from skyweaver.db import json_dumps, json_loads, session
+
+    _queued, _job, image = run_queued_test_capture(client, headers, {"exposure_ms": 250, "gain": 1, "format": "jpg", "mode": "night"})
+    day_key = image["day_key"]
+    assert client.post("/api/v1/capture/start", headers=headers).status_code == 200
+
+    with session() as conn:
+        row = conn.execute("SELECT id, settings FROM camera_profiles WHERE mode='nighttime' LIMIT 1").fetchone()
+        settings = json_loads(row["settings"], {})
+        settings.update(
+            {
+                "save_enabled": True,
+                "end_of_night_keogram": True,
+                "end_of_night_startrail": True,
+                "end_of_night_timelapse": False,
+                "end_of_night_mini_timelapse": False,
+            }
+        )
+        conn.execute("UPDATE camera_profiles SET settings=? WHERE id=?", (json_dumps(settings), row["id"]))
+
+    from skyweaver.capture_daemon import CaptureDaemon
+    from skyweaver.services.capture import set_scheduled_mode_state
+
+    daemon = CaptureDaemon()
+    set_scheduled_mode_state("night")
+    assert asyncio.run(daemon.run_once()) is False
+
+    jobs = client.get("/api/v1/processing/jobs", headers=headers).json()["data"]
+    queued_types = {job["type"] for job in jobs}
+    assert queued_types == {"keogram", "startrail"}
+    assert all(job["input"]["day_key"] == day_key for job in jobs)
+
+    set_scheduled_mode_state("night")
+    daemon.last_scheduled_mode = None
+    assert asyncio.run(daemon.run_once()) is False
+    jobs_after = client.get("/api/v1/processing/jobs", headers=headers).json()["data"]
+    assert len(jobs_after) == 2
 
 
 def test_daemon_consumes_queued_single_capture(tmp_path: Path):

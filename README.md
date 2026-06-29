@@ -12,9 +12,9 @@ This repository now contains a working local-first platform slice:
 - Mock camera adapter plus initial rpicam/libcamera and ZWO ASI camera support.
 - Raspberry Pi `rpicam-still` / `libcamera-still` adapter path, validated with an IMX290 camera.
 - Versioned REST endpoints, OpenAPI docs at `/api/docs`, and SSE events at `/api/v1/events/stream`.
-- Daemon-owned scheduled capture loop with queued test/single/sequence captures, pause/resume/stop queue semantics, best-effort rpicam hard-cancel wiring, graceful fallback for unsupported adapters, heartbeat reporting, interrupted job recovery, and stale daemon lock recovery.
-- Processing worker for thumbnail reprocess, keogram JPEGs, ffmpeg timelapses, mini timelapses, and startrail JPEGs.
-- Public unauthenticated sky page at `/public`, backed by stable latest-image artifacts and public latest API endpoints that honor the public-page enabled setting.
+- Daemon-owned scheduled capture loop with day/night profile selection, per-mode capture intervals, latest-only unsaved captures, queued test/single/sequence captures, pause/resume/stop queue semantics, best-effort rpicam hard-cancel wiring, heartbeat reporting, interrupted job recovery, and stale daemon lock recovery.
+- Processing worker for thumbnail reprocess, keogram JPEGs, ffmpeg timelapses, mini timelapses, and startrail JPEGs, with end-of-night product jobs queued from the nighttime profile.
+- Public unauthenticated sky page at `/public`, backed by stable latest-image artifacts and public latest API endpoints that honor the public-page enabled setting, including latest-only captures that are not saved to the gallery.
 - System Health UI with service controls, per-service detail, recent journal output, diagnostics export, and queue/metric summaries.
 - Systemd units and installer scripts for Pi deployment, with first-setup prompts, constrained service-control permissions, and dry-run/idempotency tests.
 - Allsky migration detection and dry-run preview endpoints. Real import is still scaffolded.

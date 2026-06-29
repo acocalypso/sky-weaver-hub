@@ -20,6 +20,8 @@ External clients use `Authorization: Bearer <API_KEY>`. Admin UI login receives 
 
 Capture requests that can touch hardware are queued. `/api/v1/capture/test-shot`, `/api/v1/capture/single`, and `/api/v1/capture/sequence` return a capture job immediately; clients should poll `/api/v1/capture/jobs` or `/api/v1/capture/jobs/{job_id}` and then read `/api/v1/images/latest` or image detail endpoints after completion.
 
+Scheduled capture uses the primary camera's `daytime` or `nighttime` profile based on the configured schedule window. Profile settings now include `capture_enabled`, `save_enabled`, and `interval_seconds`; `save_enabled=false` updates the stable latest public artifacts without inserting a permanent gallery image row. Night profiles can also enable `end_of_night_keogram`, `end_of_night_startrail`, `end_of_night_timelapse`, and `end_of_night_mini_timelapse` so the daemon queues processing jobs once when the night window ends.
+
 Successful captures also publish stable latest artifacts under the local data directory:
 
 - `latest/latest.<format>`

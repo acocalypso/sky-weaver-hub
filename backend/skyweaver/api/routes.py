@@ -18,7 +18,7 @@ from ..config import get_settings
 from ..db import event, json_dumps, json_loads, log, new_id, now_iso, row_to_dict, session
 from ..rate_limit import InMemoryRateLimiter, RateLimitStatus
 from ..security import create_api_key, hash_password, make_token, verify_password
-from ..services.capture import CaptureCommand, all_rows, count_files, create_capture_job, current_schedule, decode_row, enqueue_capture, get_primary_camera, public_latest_payload, system_metrics
+from ..services.capture import CaptureCommand, all_rows, count_files, create_capture_job, current_schedule, decode_row, enqueue_capture, get_primary_camera, public_latest_payload, read_latest_payload, system_metrics
 from ..services.schedule import active_window
 from .deps import current_principal, require_scope
 from .responses import ok
@@ -1054,8 +1054,12 @@ def public_latest_image():
     require_public_page_enabled()
     with session() as conn:
         row = decode_row(row_to_dict(conn.execute("SELECT * FROM images ORDER BY captured_at DESC LIMIT 1").fetchone()))
-    if not row:
+    latest_payload = read_latest_payload()
+    if not row and not latest_payload:
         raise HTTPException(404, "No latest image is available")
+    if latest_payload and (not row or latest_payload.get("id") != row.get("id")):
+        latest_payload.pop("metadata", None)
+        return ok(latest_payload)
     settings = get_settings()
     latest_image = settings.latest_dir / f"latest.{row['format'].lower()}"
     latest_thumbnail = next(settings.latest_dir.glob("latest-thumbnail.*"), None)
@@ -1067,9 +1071,14 @@ def public_latest_download():
     require_public_page_enabled()
     with session() as conn:
         row = conn.execute("SELECT format FROM images ORDER BY captured_at DESC LIMIT 1").fetchone()
-    if not row:
+    latest_payload = read_latest_payload()
+    latest_file_name = latest_payload.get("latest_file") if latest_payload else None
+    if latest_file_name:
+        latest_image = get_settings().latest_dir / Path(str(latest_file_name)).name
+    elif row:
+        latest_image = get_settings().latest_dir / f"latest.{row['format'].lower()}"
+    else:
         raise HTTPException(404, "No latest image is available")
-    latest_image = get_settings().latest_dir / f"latest.{row['format'].lower()}"
     if not latest_image.exists():
         raise HTTPException(404, "Latest image file not found")
     return FileResponse(latest_image)

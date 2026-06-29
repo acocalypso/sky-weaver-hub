@@ -3,6 +3,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -27,6 +28,7 @@ export default function Cameras() {
   const [detected, setDetected] = useState<DetectedCamera[]>([]);
   const [profiles, setProfiles] = useState<CameraProfile[]>([]);
   const [selected, setSelected] = useState<CameraRow | null>(null);
+  const [profileMode, setProfileMode] = useState<"daytime" | "nighttime">("nighttime");
   const [settings, setSettings] = useState<Record<string, any>>({});
   const [dlgOpen, setDlgOpen] = useState(false);
   const [editing, setEditing] = useState<CameraRow | null>(null);
@@ -34,8 +36,8 @@ export default function Cameras() {
 
   const pick = useCallback((camera: CameraRow, profs = profiles) => {
     setSelected(camera);
-    setSettings(profs.find((p) => p.camera_id === camera.id && p.mode === "nighttime")?.settings ?? {});
-  }, [profiles]);
+    setSettings(profs.find((p) => p.camera_id === camera.id && p.mode === profileMode)?.settings ?? {});
+  }, [profileMode, profiles]);
 
   const load = useCallback(async () => {
     const [cams, profs] = await Promise.all([SkyApi.cameras(), SkyApi.cameraProfiles()]);
@@ -44,9 +46,14 @@ export default function Cameras() {
     const first = selectedId ? cams.find((c) => c.id === selectedId) : cams[0];
     if (first) {
       setSelected(first);
-      setSettings(profs.find((p) => p.camera_id === first.id && p.mode === "nighttime")?.settings ?? {});
+      setSettings(profs.find((p) => p.camera_id === first.id && p.mode === profileMode)?.settings ?? {});
     }
-  }, [selectedId]);
+  }, [profileMode, selectedId]);
+
+  useEffect(() => {
+    if (!selected) return;
+    setSettings(profiles.find((p) => p.camera_id === selected.id && p.mode === profileMode)?.settings ?? {});
+  }, [profileMode, profiles, selected]);
 
   useEffect(() => { document.title = "Cameras - Sky Weaver Hub"; load(); }, [load]);
 
@@ -72,11 +79,11 @@ export default function Cameras() {
   }
 
   async function saveSettings() {
-    const profile = profiles.find((p) => p.camera_id === selected?.id && p.mode === "nighttime");
-    if (!profile) return toast.error("No nighttime profile exists for this camera yet");
+    const profile = profiles.find((p) => p.camera_id === selected?.id && p.mode === profileMode);
+    if (!profile) return toast.error(`No ${profileMode === "nighttime" ? "night" : "day"} profile exists for this camera yet`);
     try {
       await SkyApi.patchProfile(profile.id, settings);
-      toast.success("Night profile saved");
+      toast.success(`${profileMode === "nighttime" ? "Night" : "Day"} profile saved`);
       await load();
     } catch (e: any) {
       toast.error(e.message ?? "Settings save failed");
@@ -143,6 +150,17 @@ export default function Cameras() {
               </div>
             </div>
 
+            <div className="inline-flex w-fit rounded-md border border-border bg-muted/30 p-1">
+              <button type="button" onClick={() => setProfileMode("nighttime")} className={`px-3 py-1.5 text-sm rounded-sm ${profileMode === "nighttime" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>Night</button>
+              <button type="button" onClick={() => setProfileMode("daytime")} className={`px-3 py-1.5 text-sm rounded-sm ${profileMode === "daytime" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>Day</button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <ToggleRow label="Capture" description="Daemon may take images in this mode." checked={Boolean(settings.capture_enabled)} onChange={(v) => setSettings({ ...settings, capture_enabled: v })} />
+              <ToggleRow label="Save frames" description="Off keeps latest updated without growing the gallery." checked={settings.save_enabled !== false} onChange={(v) => setSettings({ ...settings, save_enabled: v })} />
+              <Field label="Interval (seconds)" type="number" min={1} value={String(settings.interval_seconds ?? (profileMode === "nighttime" ? 30 : 300))} onChange={(v) => setSettings({ ...settings, interval_seconds: Math.max(1, Number(v) || 1) })} />
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <Field label="Manual exposure (ms)" type="number" value={String(settings.manual_exposure_ms ?? 1000)} onChange={(v) => setSettings({ ...settings, manual_exposure_ms: Number(v) })} />
               <Field label="Gain" type="number" value={String(settings.gain ?? 1)} onChange={(v) => setSettings({ ...settings, gain: Number(v) })} />
@@ -152,8 +170,17 @@ export default function Cameras() {
               <Field label="Blue balance" type="number" step="0.1" value={String(settings.blue_balance ?? 1)} onChange={(v) => setSettings({ ...settings, blue_balance: Number(v) })} />
             </div>
 
+            {profileMode === "nighttime" && (
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                <ToggleRow label="Keogram" description="Queue after night ends." checked={Boolean(settings.end_of_night_keogram)} onChange={(v) => setSettings({ ...settings, end_of_night_keogram: v })} />
+                <ToggleRow label="Startrail" description="Queue after night ends." checked={Boolean(settings.end_of_night_startrail)} onChange={(v) => setSettings({ ...settings, end_of_night_startrail: v })} />
+                <ToggleRow label="Timelapse" description="Queue after night ends." checked={Boolean(settings.end_of_night_timelapse)} onChange={(v) => setSettings({ ...settings, end_of_night_timelapse: v })} />
+                <ToggleRow label="Mini timelapse" description="Queue after night ends." checked={Boolean(settings.end_of_night_mini_timelapse)} onChange={(v) => setSettings({ ...settings, end_of_night_mini_timelapse: v })} />
+              </div>
+            )}
+
             <div className="flex justify-end">
-              <Button onClick={saveSettings} className="bg-gradient-primary text-primary-foreground">Save night profile</Button>
+              <Button onClick={saveSettings} className="bg-gradient-primary text-primary-foreground">Save {profileMode === "nighttime" ? "night" : "day"} profile</Button>
             </div>
           </Card>
         )}
@@ -164,6 +191,18 @@ export default function Cameras() {
 
 function Field({ label, value, onChange, ...rest }: { label: string; value: string; onChange: (v: string) => void } & React.InputHTMLAttributes<HTMLInputElement>) {
   return <div className="space-y-2"><Label>{label}</Label><Input value={value} onChange={(e) => onChange(e.target.value)} {...rest} /></div>;
+}
+
+function ToggleRow({ label, description, checked, onChange }: { label: string; description: string; checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-md border border-border bg-muted/20 p-3">
+      <div className="min-w-0">
+        <p className="text-sm font-medium">{label}</p>
+        <p className="text-xs text-muted-foreground mt-0.5">{description}</p>
+      </div>
+      <Switch checked={checked} onCheckedChange={onChange} />
+    </div>
+  );
 }
 
 function CameraDialog({ editing, onSave }: { editing: CameraRow | null; onSave: (f: { name: string; model: string | null; adapter: AdapterType; is_primary: boolean }) => void }) {

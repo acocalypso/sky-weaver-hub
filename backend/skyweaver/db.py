@@ -208,6 +208,11 @@ def seed_defaults(conn: sqlite3.Connection, settings: Settings) -> None:
                 "INSERT INTO camera_profiles (id, camera_id, name, mode, settings, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (new_id(), camera_id, mode.title(), mode, json_dumps(default_profile(mode)), ts, ts),
             )
+    for row in conn.execute("SELECT id, mode, settings FROM camera_profiles WHERE mode IN ('daytime', 'nighttime')").fetchall():
+        current = json_loads(row["settings"], {}) or {}
+        merged = {**default_profile(row["mode"]), **current}
+        if merged != current:
+            conn.execute("UPDATE camera_profiles SET settings=?, updated_at=? WHERE id=?", (json_dumps(merged), ts, row["id"]))
     if conn.execute("SELECT COUNT(*) FROM capture_schedule").fetchone()[0] == 0:
         conn.execute(
             """INSERT INTO capture_schedule
@@ -231,8 +236,9 @@ def seed_defaults(conn: sqlite3.Connection, settings: Settings) -> None:
 def default_profile(mode: str) -> dict[str, Any]:
     night = mode == "nighttime"
     return {
-        "capture_enabled": True,
+        "capture_enabled": night,
         "save_enabled": True,
+        "interval_seconds": 30 if night else 300,
         "auto_exposure": not night,
         "max_auto_exposure_ms": 30000,
         "manual_exposure_ms": 10000 if night else 10,
@@ -252,6 +258,10 @@ def default_profile(mode: str) -> dict[str, Any]:
         "cooling": False,
         "target_temperature_c": None,
         "tuning_file": None,
+        "end_of_night_keogram": False,
+        "end_of_night_startrail": False,
+        "end_of_night_timelapse": False,
+        "end_of_night_mini_timelapse": False,
     }
 
 

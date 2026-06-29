@@ -21,6 +21,7 @@ __pycache__/
 .coverage
 htmlcov/
 backend/.venv/
+tmpskyweaver_pytest_cache/
 
 # Sky Weaver local runtime data
 data/

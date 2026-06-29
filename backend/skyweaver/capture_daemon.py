@@ -14,8 +14,14 @@ from .services.capture import (
     create_capture_job,
     execute_capture,
     execute_capture_job,
-    schedule_allows_capture,
+    last_scheduled_mode_state,
+    latest_saved_night_day_key,
+    night_profile_settings,
+    queue_end_of_night_products,
     schedule_command,
+    scheduled_capture_enabled,
+    scheduled_capture_mode,
+    set_scheduled_mode_state,
     update_daemon_heartbeat,
 )
 from .services.recovery import recover_capture_jobs
@@ -36,6 +42,7 @@ def _pid_is_running(pid: int) -> bool:
 class CaptureDaemon:
     def __init__(self) -> None:
         self.last_capture_monotonic: float | None = None
+        self.last_scheduled_mode: str | None = None
 
     async def run_once(self, force: bool = False) -> bool:
         update_daemon_heartbeat()
@@ -54,14 +61,24 @@ class CaptureDaemon:
                 self.last_capture_monotonic = time.monotonic()
             return True
 
-        interval = capture_interval_seconds()
+        mode = "night" if force else scheduled_capture_mode()
+        previous_mode = self.last_scheduled_mode or last_scheduled_mode_state()
+        if previous_mode == "night" and mode == "day":
+            day_key = latest_saved_night_day_key()
+            if day_key:
+                queue_end_of_night_products(day_key, night_profile_settings())
+        self.last_scheduled_mode = mode
+        set_scheduled_mode_state(mode)
+
+        if not scheduled_capture_enabled(mode):
+            return False
+
+        interval = capture_interval_seconds(mode)
         now = time.monotonic()
         if not force and self.last_capture_monotonic is not None and now - self.last_capture_monotonic < interval:
             return False
-        if not force and not schedule_allows_capture():
-            return False
 
-        command = schedule_command()
+        command = schedule_command(mode=mode)
         with session() as conn:
             job_id = create_capture_job(conn, "scheduled", command.as_dict())
         await execute_capture(command, job_type="scheduled", job_id=job_id)

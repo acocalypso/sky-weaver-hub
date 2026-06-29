@@ -17,6 +17,9 @@ from ..db import event, json_dumps, json_loads, log, new_id, now_iso, row_to_dic
 from .schedule import should_capture_now
 
 
+CAPTURE_MODE_TO_PROFILE = {"day": "daytime", "night": "nighttime"}
+
+
 @dataclass
 class CaptureCommand:
     camera_id: str | None = None
@@ -188,6 +191,16 @@ def publish_latest_image(image: dict[str, Any], metadata: dict[str, Any], thumbn
     return payload
 
 
+def read_latest_payload() -> dict[str, Any] | None:
+    path = get_settings().latest_dir / "latest.json"
+    if not path.exists():
+        return None
+    try:
+        return json_loads(path.read_text(encoding="utf-8"), None)
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
 def claim_next_capture_job(job_types: tuple[str, ...] = ("single", "scheduled", "sequence")) -> dict[str, Any] | None:
     placeholders = ",".join("?" for _ in job_types)
     with session() as conn:
@@ -261,7 +274,13 @@ async def execute_capture(command: CaptureCommand, job_type: str = "manual", job
     captured_at = datetime.now(UTC)
     day_key = captured_at.strftime("%Y%m%d")
     image_id = new_id()
-    output = settings.image_dir / day_key / f"{captured_at.strftime('%H%M%S')}_{image_id[:8]}.{command.format.lower()}"
+    save_enabled = bool(command.settings.get("save_enabled", True))
+    filename = f"{captured_at.strftime('%H%M%S')}_{image_id[:8]}.{command.format.lower()}"
+    output = (
+        settings.image_dir / day_key / filename
+        if save_enabled
+        else settings.latest_dir / f"latest-unsaved.{command.format.lower()}"
+    )
     adapter = get_adapter(cam["adapter"])
     adapter_settings = {**command.settings}
     if cam.get("device_id") and "device_id" not in adapter_settings:
@@ -294,7 +313,10 @@ async def execute_capture(command: CaptureCommand, job_type: str = "manual", job
         }
         sidecar = Path(str(result.file_path) + ".json")
         sidecar.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
-        thumb = make_thumbnail(result.file_path, settings.thumbnail_dir / day_key / result.file_path.name)
+        thumb = make_thumbnail(
+            result.file_path,
+            settings.thumbnail_dir / day_key / result.file_path.name if save_enabled else settings.latest_dir / f"latest-unsaved-thumbnail.{result.format.lower()}",
+        )
 
         with session() as conn:
             state = conn.execute("SELECT status, updated_at FROM capture_state WHERE id=1").fetchone()
@@ -331,49 +353,69 @@ async def execute_capture(command: CaptureCommand, job_type: str = "manual", job
                 "created_at": now_iso(),
             }
             publish_payload = publish_latest_image(image_row, metadata, thumb)
-            conn.execute(
-                """INSERT INTO images
-                   (id, camera_id, captured_at, day_key, mode, file_path, public_url, thumbnail_path, format, width, height,
-                    size_bytes, exposure_ms, gain, temperature_c, mean_brightness, star_count, cloud_score, bad_image, metadata, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    image_row["id"],
-                    image_row["camera_id"],
-                    image_row["captured_at"],
-                    image_row["day_key"],
-                    image_row["mode"],
-                    image_row["file_path"],
-                    image_row["public_url"],
-                    image_row["thumbnail_path"],
-                    image_row["format"],
-                    image_row["width"],
-                    image_row["height"],
-                    image_row["size_bytes"],
-                    image_row["exposure_ms"],
-                    image_row["gain"],
-                    image_row["temperature_c"],
-                    image_row["mean_brightness"],
-                    image_row["star_count"],
-                    image_row["cloud_score"],
-                    image_row["bad_image"],
-                    json_dumps(metadata),
-                    image_row["created_at"],
-                ),
-            )
-            conn.execute(
-                "UPDATE capture_state SET last_image_id=?, active_camera_id=?, daemon_last_success_at=?, last_error=NULL, updated_at=? WHERE id=1",
-                (image_id, cam["id"], now_iso(), now_iso()),
-            )
-            job_result = {"image_id": image_id}
+            if save_enabled:
+                conn.execute(
+                    """INSERT INTO images
+                       (id, camera_id, captured_at, day_key, mode, file_path, public_url, thumbnail_path, format, width, height,
+                        size_bytes, exposure_ms, gain, temperature_c, mean_brightness, star_count, cloud_score, bad_image, metadata, created_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        image_row["id"],
+                        image_row["camera_id"],
+                        image_row["captured_at"],
+                        image_row["day_key"],
+                        image_row["mode"],
+                        image_row["file_path"],
+                        image_row["public_url"],
+                        image_row["thumbnail_path"],
+                        image_row["format"],
+                        image_row["width"],
+                        image_row["height"],
+                        image_row["size_bytes"],
+                        image_row["exposure_ms"],
+                        image_row["gain"],
+                        image_row["temperature_c"],
+                        image_row["mean_brightness"],
+                        image_row["star_count"],
+                        image_row["cloud_score"],
+                        image_row["bad_image"],
+                        json_dumps(metadata),
+                        image_row["created_at"],
+                    ),
+                )
+                conn.execute(
+                    "UPDATE capture_state SET last_image_id=?, active_camera_id=?, daemon_last_success_at=?, last_error=NULL, updated_at=? WHERE id=1",
+                    (image_id, cam["id"], now_iso(), now_iso()),
+                )
+                job_result = {"image_id": image_id}
+                event_payload = {"image_id": image_id, "path": str(result.file_path), "public_latest": publish_payload}
+                event_type = "new_image"
+            else:
+                conn.execute(
+                    "UPDATE capture_state SET active_camera_id=?, daemon_last_success_at=?, last_error=NULL, updated_at=? WHERE id=1",
+                    (cam["id"], now_iso(), now_iso()),
+                )
+                job_result = {"image_id": image_id, "unsaved_latest": True}
+                event_payload = {"image_id": image_id, "path": str(result.file_path), "public_latest": publish_payload, "unsaved_latest": True}
+                event_type = "latest_image_updated"
             if stopped_after_start:
                 job_result.update({"completed_after_stop": True, "stop_mode": "graceful"})
             conn.execute(
                 "UPDATE capture_jobs SET status=?, progress=1, result=?, completed_at=? WHERE id=?",
                 ("stopped" if stopped_after_start else "completed", json_dumps(job_result), now_iso(), job_id),
             )
-            event(conn, "new_image", {"image_id": image_id, "path": str(result.file_path), "public_latest": publish_payload})
+            event(conn, event_type, event_payload)
 
-        return {"job_id": job_id, "image": {**metadata, "file_path": str(result.file_path), "thumbnail_path": str(thumb) if thumb else None, "public_latest": publish_payload}}
+        return {
+            "job_id": job_id,
+            "image": {
+                **metadata,
+                "file_path": str(result.file_path),
+                "thumbnail_path": str(thumb) if thumb else None,
+                "public_latest": publish_payload,
+                "unsaved_latest": not save_enabled,
+            },
+        }
     except CaptureCanceled as exc:
         cancel_result = getattr(exc, "cancel_result", None)
         payload = {
@@ -404,14 +446,20 @@ async def execute_capture(command: CaptureCommand, job_type: str = "manual", job
         raise
 
 
-def schedule_command(camera_id: str | None = None) -> CaptureCommand:
+def profile_for_mode(conn, camera_id: str, mode: str) -> dict[str, Any] | None:
+    profile_mode = CAPTURE_MODE_TO_PROFILE.get(mode, mode)
+    row = conn.execute(
+        "SELECT * FROM camera_profiles WHERE camera_id=? AND mode=? ORDER BY updated_at DESC LIMIT 1",
+        (camera_id, profile_mode),
+    ).fetchone()
+    return decode_row(row_to_dict(row))
+
+
+def schedule_command(camera_id: str | None = None, mode: str = "night") -> CaptureCommand:
     with session() as conn:
         camera = get_primary_camera(conn, camera_id)
-        profile = conn.execute(
-            "SELECT * FROM camera_profiles WHERE camera_id=? AND mode='nighttime' ORDER BY updated_at DESC LIMIT 1",
-            (camera["id"],),
-        ).fetchone()
-    settings = json_loads(profile["settings"], {}) if profile else {}
+        profile = profile_for_mode(conn, camera["id"], mode)
+    settings = profile["settings"] if profile else {}
     return CaptureCommand(
         camera_id=camera["id"],
         exposure_ms=float(settings.get("manual_exposure_ms", 1000)),
@@ -419,17 +467,19 @@ def schedule_command(camera_id: str | None = None) -> CaptureCommand:
         width=settings.get("width", 1280),
         height=settings.get("height", 960),
         format=settings.get("format", "jpg"),
-        mode="night",
+        mode=mode,
         settings=settings,
     )
 
 
-def capture_interval_seconds() -> int:
+def capture_interval_seconds(mode: str | None = None, camera_id: str | None = None) -> int:
     with session() as conn:
+        camera = get_primary_camera(conn, camera_id) if mode else None
+        profile = profile_for_mode(conn, camera["id"], mode) if camera and mode else None
         row = conn.execute("SELECT interval_seconds FROM capture_schedule LIMIT 1").fetchone()
-    if not row:
-        return 30
-    return max(1, int(row["interval_seconds"]))
+    fallback = int(row["interval_seconds"]) if row else 30
+    settings = profile["settings"] if profile else {}
+    return max(1, int(settings.get("interval_seconds") or fallback))
 
 
 def current_schedule() -> dict[str, Any]:
@@ -441,6 +491,76 @@ def current_schedule() -> dict[str, Any]:
 def schedule_allows_capture() -> bool:
     schedule = current_schedule()
     return should_capture_now(schedule)
+
+
+def scheduled_capture_mode() -> str:
+    return "night" if schedule_allows_capture() else "day"
+
+
+def scheduled_capture_enabled(mode: str, camera_id: str | None = None) -> bool:
+    with session() as conn:
+        camera = get_primary_camera(conn, camera_id)
+        profile = profile_for_mode(conn, camera["id"], mode)
+    settings = profile["settings"] if profile else {}
+    return bool(settings.get("capture_enabled", False))
+
+
+def latest_saved_night_day_key() -> str | None:
+    with session() as conn:
+        row = conn.execute("SELECT day_key FROM images WHERE mode='night' ORDER BY captured_at DESC LIMIT 1").fetchone()
+    return row["day_key"] if row else None
+
+
+def last_scheduled_mode_state() -> str | None:
+    with session() as conn:
+        row = conn.execute("SELECT value FROM system_settings WHERE key='capture_daemon_last_schedule_mode'").fetchone()
+    value = json_loads(row["value"], None) if row else None
+    return value if value in {"day", "night"} else None
+
+
+def set_scheduled_mode_state(mode: str) -> None:
+    with session() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO system_settings (key, value, updated_at) VALUES ('capture_daemon_last_schedule_mode', ?, ?)",
+            (json_dumps(mode), now_iso()),
+        )
+
+
+def queue_end_of_night_products(day_key: str, profile_settings: dict[str, Any]) -> list[dict[str, Any]]:
+    product_flags = {
+        "keogram": "end_of_night_keogram",
+        "startrail": "end_of_night_startrail",
+        "timelapse": "end_of_night_timelapse",
+        "mini_timelapse": "end_of_night_mini_timelapse",
+    }
+    requested = [job_type for job_type, key in product_flags.items() if bool(profile_settings.get(key))]
+    if not requested or not bool(profile_settings.get("save_enabled", True)):
+        return []
+
+    queued: list[dict[str, Any]] = []
+    with session() as conn:
+        marker_key = f"end_of_night_products:{day_key}"
+        existing = conn.execute("SELECT value FROM system_settings WHERE key=?", (marker_key,)).fetchone()
+        if existing:
+            return []
+        for job_type in requested:
+            job_id = new_id()
+            payload = {"day_key": day_key, "source": "end_of_night"}
+            conn.execute(
+                "INSERT INTO processing_jobs (id, type, status, input, created_at) VALUES (?, ?, 'pending', ?, ?)",
+                (job_id, job_type, json_dumps(payload), now_iso()),
+            )
+            queued.append({"id": job_id, "type": job_type, "status": "pending", "input": payload})
+        conn.execute("INSERT OR REPLACE INTO system_settings (key, value, updated_at) VALUES (?, ?, ?)", (marker_key, json_dumps({"queued": queued}), now_iso()))
+        event(conn, "end_of_night_products_queued", {"day_key": day_key, "jobs": queued})
+    return queued
+
+
+def night_profile_settings(camera_id: str | None = None) -> dict[str, Any]:
+    with session() as conn:
+        camera = get_primary_camera(conn, camera_id)
+        profile = profile_for_mode(conn, camera["id"], "night")
+    return profile["settings"] if profile else {}
 
 
 def capture_is_running() -> bool:
