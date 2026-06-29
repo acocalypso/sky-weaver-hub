@@ -18,6 +18,7 @@ __pycache__/
 *$py.class
 .pytest_cache/
 .tmp/
+.codex-tmp/
 .coverage
 htmlcov/
 backend/.venv/

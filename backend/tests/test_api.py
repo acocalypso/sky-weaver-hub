@@ -191,6 +191,49 @@ def test_image_retention_cleanup_removes_old_images_only(tmp_path):
     assert client.get("/api/v1/public/latest").json()["data"]["id"] == new_image["id"]
 
 
+def test_builtin_overlay_module_can_render_on_capture(tmp_path):
+    client = make_client(tmp_path)
+    token = login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    modules = client.get("/api/v1/modules", headers=headers)
+    assert modules.status_code == 200, modules.text
+    overlay = next(row for row in modules.json()["data"] if row["id"] == "builtin.overlay")
+    assert overlay["trusted"] is True
+    assert overlay["enabled"] is False
+    assert overlay["module_path"] is None
+
+    patch_res = client.patch(
+        "/api/v1/modules/builtin.overlay",
+        headers=headers,
+        json={
+            "enabled": True,
+            "settings": {
+                "lines": [{"text": "Sky Weaver {mode} {exposure_ms}", "position": "top_left"}],
+                "font_size": 20,
+                "margin": 4,
+                "padding": 4,
+                "text_color": "#ffffffff",
+                "background_color": "#000000cc",
+            },
+        },
+    )
+    assert patch_res.status_code == 200, patch_res.text
+    assert patch_res.json()["data"]["enabled"] is True
+
+    _queued, _job, image = run_queued_test_capture(client, headers, {"exposure_ms": 500, "gain": 1, "format": "jpg", "mode": "manual"})
+    assert image["overlay_applied"] is True
+    assert image["metadata"]["overlay"]["applied"] is True
+    assert image["metadata"]["overlay"]["lines"] == 1
+    assert image["metadata"]["storage"]["file"]["size_bytes"] == image["size_bytes"]
+
+    sidecar = json.loads(Path(image["file_path"] + ".json").read_text(encoding="utf-8"))
+    assert sidecar["overlay"]["applied"] is True
+
+    delete_res = client.delete("/api/v1/modules/builtin.overlay", headers=headers)
+    assert delete_res.status_code == 403
+
+
 def test_deleting_latest_republishes_next_newest_image(tmp_path):
     client = make_client(tmp_path)
     token = login(client)

@@ -9,6 +9,7 @@ import ApiKeys from "@/pages/ApiKeys";
 import SetupPage from "@/pages/Setup";
 import Health from "@/pages/Health";
 import PublicSky from "@/pages/PublicSky";
+import Modules from "@/pages/Modules";
 import { SkyApi } from "@/lib/api";
 
 vi.mock("sonner", () => ({
@@ -45,6 +46,8 @@ vi.mock("@/lib/api", async () => {
       detectCameras: vi.fn(),
       createCamera: vi.fn(),
       publicLatest: vi.fn(),
+      modules: vi.fn(),
+      patchModule: vi.fn(),
     },
   };
 });
@@ -173,6 +176,42 @@ beforeEach(() => {
   vi.mocked(SkyApi.detectCameras).mockResolvedValue([]);
   vi.mocked(SkyApi.createCamera).mockResolvedValue({ id: "cam-2" });
   vi.mocked(SkyApi.publicLatest).mockResolvedValue(mockPublicLatest);
+  vi.mocked(SkyApi.modules).mockResolvedValue([
+    {
+      id: "builtin.overlay",
+      name: "Built-in overlay",
+      description: "Renders configured text variables onto captured images.",
+      version: "1.0.0",
+      author: "Sky Weaver Hub",
+      module_path: null,
+      enabled: false,
+      trusted: true,
+      settings_schema: {},
+      settings: {
+        lines: [{ text: "{observatory_name}", position: "top_left" }],
+        font_size: 24,
+        margin: 18,
+        padding: 8,
+        background_color: "#00000099",
+      },
+      created_at: "2026-06-23T12:00:00+00:00",
+      updated_at: "2026-06-23T12:00:00+00:00",
+    },
+  ] as any);
+  vi.mocked(SkyApi.patchModule).mockImplementation(async (_id, body) => ({
+    id: "builtin.overlay",
+    name: "Built-in overlay",
+    description: "Renders configured text variables onto captured images.",
+    version: "1.0.0",
+    author: "Sky Weaver Hub",
+    module_path: null,
+    enabled: Boolean(body.enabled),
+    trusted: true,
+    settings_schema: {},
+    settings: body.settings ?? {},
+    created_at: "2026-06-23T12:00:00+00:00",
+    updated_at: "2026-06-23T12:00:00+00:00",
+  }) as any);
 });
 
 describe("main pages", () => {
@@ -227,6 +266,16 @@ describe("main pages", () => {
     expect(screen.getByText("swh_1234")).toBeInTheDocument();
     expect(screen.getByText("read:images")).toBeInTheDocument();
     await waitFor(() => expect(SkyApi.apiKeys).toHaveBeenCalled());
+  });
+
+  it("renders built-in overlay module controls", async () => {
+    render(<Modules />);
+
+    expect(await screen.findByRole("heading", { name: "Modules", level: 1 })).toBeInTheDocument();
+    expect(screen.getAllByText("Built-in overlay")[0]).toBeInTheDocument();
+    expect(screen.getByDisplayValue("{observatory_name}")).toBeInTheDocument();
+    expect(screen.getByText("trusted")).toBeInTheDocument();
+    await waitFor(() => expect(SkyApi.modules).toHaveBeenCalled());
   });
 
   it("runs service controls from health", async () => {

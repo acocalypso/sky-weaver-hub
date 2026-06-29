@@ -32,6 +32,8 @@ Image row `metadata` includes capture context, environment readings, analysis va
 
 Image and product cleanup endpoints use the same success envelope and require `write:processing`. `DELETE /api/v1/images/{image_id}` removes the database row plus the owned image file, thumbnail, JSON sidecar, and matching latest artifacts; if an older image remains it republishes that image as latest. `POST /api/v1/images/retention/run?days=30` removes image rows and owned artifacts older than the cutoff. Generated night products have matching lifecycle endpoints: `DELETE /api/v1/products/{product_id}` removes the product row and owned product/thumbnail files, and `POST /api/v1/products/retention/run?days=30` removes old generated products.
 
+`GET /api/v1/modules` lists built-in and installed modules. The trusted built-in overlay module (`builtin.overlay`) can be enabled and configured with `PATCH /api/v1/modules/builtin.overlay`; custom module uploads stay disabled until sandboxing and signing are implemented. When enabled, overlay metadata is recorded on image rows under `metadata.overlay` and `overlay_applied`.
+
 Public latest endpoints are intentionally unauthenticated for kiosk/public-page/mobile display use when `public_page.enabled` is true. When the public page is disabled, these endpoints return `403` with `Public page is disabled`:
 
 - `GET /api/v1/public/latest`

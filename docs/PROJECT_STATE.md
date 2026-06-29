@@ -20,7 +20,7 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 | Storage | Local filesystem storage for images, thumbnails, products, logs, and config. Image/product delete and retention cleanup remove Sky Weaver-owned artifacts, sidecars, thumbnails, and matching latest artifacts. Dev defaults are local paths; system install targets `/var/lib/skyweaver`, `/etc/skyweaver`, `/var/log/skyweaver`. |
 | Auth | Local admin JWT login plus hashed API keys with scopes. Installer can seed a configured admin password hash during first setup, and the app now enforces guided setup completion before normal admin use, including bootstrap-password detection, stronger password guidance, rate limiting, and local auth audit logs. |
 | Camera abstraction | `CameraAdapter` base class plus working `mock` adapter, initial `rpicam`/`libcamera` adapter, and initial ZWO ASI adapter using the native `libASICamera2` SDK library from Debian `libasi` or a vendor SDK install. Other adapters are placeholders with actionable errors. |
-| UI/API integration | Public Sky, Dashboard, Cameras, Schedule, Gallery, Night Products, Logs, Settings, API Keys, and Developer API call the local backend. |
+| UI/API integration | Public Sky, Dashboard, Cameras, Schedule, Gallery, Night Products, Logs, Settings, API Keys, Modules, and Developer API call the local backend. |
 | Deployment | `install.sh`, `upgrade.sh`, `uninstall.sh`, `support.sh`, and systemd units exist. Fresh interactive installs prompt for first-setup values. Installer/upgrade can provision Debian `libasi`, ZWO USB rules, and optional vendor SDK library support when ZWO is configured. |
 | Tests | Backend pytest coverage for health/status, login, auth audit logs, API keys, mock capture, image/product delete, retention cleanup, first-setup hardening, system service controls, scheduled daemon capture, day/night profile scheduling, latest-only unsaved captures, end-of-night product queuing, queued test/single/sequence capture execution, pause/resume/stop queue semantics, schedule preview, daemon heartbeat/activity, interrupted job recovery, mock overnight acceptance flow, night product generation, migration preview, mock adapter, and fake-SDK ZWO adapter behavior. Frontend component tests cover Public Sky, Dashboard, Gallery, Health, Settings, API Keys, and first setup. Shell tests cover installer dry-run, service-control sudoers generation, and repeat-install idempotency with mocked system commands. |
 
@@ -51,7 +51,7 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 - Public latest metadata/download/thumbnail endpoints gated by `public_page.enabled`
 - Products list/detail/queue/download/delete and retention cleanup
 - Dark frame placeholder endpoints
-- Module and module-flow placeholder endpoints
+- Module and module-flow endpoints, with a trusted built-in overlay module and custom uploads still disabled
 - Remote target placeholder endpoints
 - Allsky migration detect/preview/import/job endpoints
 - Server-Sent Events at `/api/v1/events/stream`
@@ -138,6 +138,15 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 - Worker startup requeues interrupted claimed/running processing jobs after service restart.
 - Backend tests verify keogram, timelapse, mini timelapse, and startrail product generation from mock captures.
 
+### Modules And Overlays
+
+- A trusted built-in overlay module is seeded as `builtin.overlay`.
+- Admins can enable/disable the built-in overlay module and edit line templates/positioning through the Modules UI.
+- Overlay text variables include observatory name, capture timestamp/date/time, mode, camera, exposure, gain, and sensor temperature.
+- Enabled overlays render directly onto captured images before sidecar metadata, thumbnails, and latest artifacts are generated.
+- Image rows and metadata record whether an overlay was applied.
+- Custom module uploads remain disabled until sandboxing and signing are implemented.
+
 ### Documentation
 
 - README updated with architecture, quickstart, API examples, status, and limitations.
@@ -155,7 +164,7 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 | Phase 4: Capture daemon and realtime | Done | Scheduled daemon loop, shared capture service, persistent job claiming for test/single/scheduled/sequence captures, day/night profile selection, restart-safe per-mode interval and save policy, next-capture due visibility, latest-only day captures, saved night captures, end-of-night product queueing, graceful stop reporting, real-Pi validated rpicam hard-cancel, pause/resume/stop queue semantics, active-window checks and UI preview, lock-file duplicate-loop guard with stale lock recovery, heartbeat/activity reporting, interrupted job recovery, SSE endpoint, Pi reboot service startup acceptance, IMX290 capture after restart/reboot acceptance, and accelerated indoor Pi day/night acceptance exist. Real outdoor overnight field validation remains a hardening task. |
 | Phase 5: Image storage/gallery/latest/metadata | Done | Capture artifacts, metadata sidecars, thumbnails, stable latest copies, image rows, gallery, latest image, public latest endpoints gated by public-page settings, public sky page, image detail, basic file/image metadata extraction, and JSON-safe EXIF extraction exist. |
 | Phase 6: Processing worker/products/retention | Done | Worker claims jobs, thumbnail reprocess exists, keogram JPEG generation, ffmpeg timelapse/mini-timelapse generation, startrail generation, image/product retention cleanup, and product deletion exist, and product job progress is visible in the UI. Remote upload execution is intentionally tracked in Phase 9. |
-| Phase 7: Overlay/modules | Early scaffold | Module tables/endpoints exist. Overlay editor, processor, built-in modules, safe module execution are open. |
+| Phase 7: Overlay/modules | Partial | Trusted built-in overlay module seeding, API configuration, capture-time text rendering with variables, image metadata/flagging, and Modules UI exist. Module-flow execution, richer overlay editor, custom module sandboxing/signing, and external module packaging remain open. |
 | Phase 8: Installer/systemd/support/docs | Partial | Scripts and units exist. Shellcheck CI, installer dry-run/idempotency tests, service-control sudoers generation, interactive first-setup prompts, ZWO `libasi`/SDK provisioning hooks, real Pi install, repeat install, service restart, and reboot verification exist. Nginx option and broader Pi camera verification are open. |
 | Phase 9: Allsky migration/remote upload | Early scaffold | Detection and dry-run count preview exist. Real import, rollback, unsupported-setting report, and remote upload execution are open. |
 | Phase 10: Polish/mobile/tests/hardening | Partial | Mobile API docs, latest/status/gallery endpoints, route bundle splitting, system health diagnostics/service detail UI with failure analysis and unit history, initial frontend component tests, and CI workflow exist. Broader tests, UX polish, performance, and security hardening remain. |
@@ -202,7 +211,7 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 - Add configurable bad image thresholds.
 - Add dark-frame capture and median combine.
 - Add dark-frame matching by exposure/gain/temperature/camera.
-- Add overlay rendering with variables.
+- Expand overlay rendering with richer variables and layout controls.
 - Add star count placeholder or simple implementation.
 - Add cloud score placeholder or simple heuristic.
 
@@ -218,8 +227,8 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 
 - Add capture control page separate from dashboard.
 - Add image detail route.
-- Add overlay editor.
-- Add module/plugin manager.
+- Expand overlay editor.
+- Expand module/plugin manager.
 - Add dark frames page.
 - Add remote upload page.
 - Expand system health views with deeper unit history, failure classification, and recovery guidance after more real Pi failures are observed.
@@ -281,8 +290,8 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 
 ### Plugin/Module System
 
-- Define Python module contract in code.
-- Add built-in module registry.
+- Define Python module contract in code beyond the built-in overlay contract.
+- Expand built-in module registry.
 - Add built-in modules:
   - thumbnail
   - overlay
@@ -294,7 +303,7 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
   - metadata writer
 - Add flow execution ordering.
 - Add timeout and failure behavior.
-- Keep uploaded custom modules disabled by default.
+- Keep uploaded custom modules disabled by default until sandboxing/signing is implemented.
 
 ### Database and Migrations
 
@@ -325,6 +334,7 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 - Worker now generates thumbnails, keograms, ffmpeg timelapses, mini timelapses, and startrails. Image/product retention cleanup and product deletion exist. Remote upload execution is still open under Phase 9.
 - Product endpoints queue jobs; keogram, timelapse, mini timelapse, and startrail currently produce downloadable night products.
 - Public page exists for latest-image display and honors the public-page enabled setting; richer public archives and branding controls are still open.
+- Phase 7 has a trusted built-in overlay module, but module-flow execution and custom module sandboxing/signing are still open.
 - ZWO ASI support is adapter-backed with native-SDK fake tests, but it has not yet been validated with real ZWO hardware in this environment.
 - Remote upload is not implemented.
 - Allsky migration does not yet import data.

@@ -1415,11 +1415,34 @@ def upload_module(_principal: Annotated[dict, Depends(require_scope("admin"))]):
 
 @router.patch("/modules/{module_id}")
 def patch_module(module_id: str, payload: dict[str, Any], _principal: Annotated[dict, Depends(require_scope("admin"))]):
-    return ok({"id": module_id, "payload": payload})
+    allowed = {key: payload[key] for key in ("enabled", "settings") if key in payload}
+    if not allowed:
+        raise HTTPException(400, "No supported module fields provided")
+    with session() as conn:
+        row = decode_row(row_to_dict(conn.execute("SELECT * FROM plugin_modules WHERE id=?", (module_id,)).fetchone()))
+        if not row:
+            raise HTTPException(404, "Module not found")
+        if row.get("module_path"):
+            raise HTTPException(403, "Uploaded custom modules cannot be changed until sandboxing and signing are implemented")
+        enabled = int(bool(allowed.get("enabled", row.get("enabled"))))
+        settings = allowed.get("settings", row.get("settings") or {})
+        if not isinstance(settings, dict):
+            raise HTTPException(400, "Module settings must be an object")
+        conn.execute("UPDATE plugin_modules SET enabled=?, settings=?, updated_at=? WHERE id=?", (enabled, json_dumps(settings), now_iso(), module_id))
+        event(conn, "module_updated", {"module_id": module_id, "enabled": bool(enabled), "settings_keys": sorted(settings.keys())})
+        updated = decode_row(row_to_dict(conn.execute("SELECT * FROM plugin_modules WHERE id=?", (module_id,)).fetchone()))
+    return ok(updated)
 
 
 @router.delete("/modules/{module_id}")
 def delete_module(module_id: str, _principal: Annotated[dict, Depends(require_scope("admin"))]):
+    with session() as conn:
+        row = decode_row(row_to_dict(conn.execute("SELECT * FROM plugin_modules WHERE id=?", (module_id,)).fetchone()))
+        if not row:
+            raise HTTPException(404, "Module not found")
+        if row.get("trusted") or row.get("module_path") is None:
+            raise HTTPException(403, "Built-in modules cannot be deleted")
+        conn.execute("DELETE FROM plugin_modules WHERE id=?", (module_id,))
     return ok({"deleted": module_id})
 
 

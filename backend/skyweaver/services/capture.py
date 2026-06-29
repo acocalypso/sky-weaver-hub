@@ -14,6 +14,7 @@ from ..camera.base import CameraAdapter, CaptureCancelResult, CaptureCanceled, C
 from ..camera.registry import get_adapter
 from ..config import get_settings
 from ..db import event, json_dumps, json_loads, log, new_id, now_iso, row_to_dict, session
+from .overlay import apply_overlay, overlay_enabled, overlay_settings
 from .schedule import should_capture_now
 
 
@@ -429,6 +430,28 @@ async def execute_capture(command: CaptureCommand, job_type: str = "manual", job
             ),
             job_id,
         )
+        overlay_result: dict[str, Any] = {"applied": False}
+        with session() as conn:
+            if overlay_enabled(conn):
+                observatory_row = conn.execute("SELECT value FROM system_settings WHERE key='observatory'").fetchone()
+                observatory = json_loads(observatory_row["value"], {}) if observatory_row else {}
+                overlay_result = apply_overlay(
+                    result.file_path,
+                    {
+                        "observatory_name": observatory.get("name", "Sky Weaver Observatory"),
+                        "captured_at": captured_at.isoformat(),
+                        "date": captured_at.strftime("%Y-%m-%d"),
+                        "time": captured_at.strftime("%H:%M:%S"),
+                        "mode": command.mode,
+                        "camera_id": cam["id"],
+                        "camera_model": cam.get("model") or "",
+                        "exposure_ms": result.exposure_ms,
+                        "gain": result.gain,
+                        "temperature_c": result.temperature_c,
+                    },
+                    overlay_settings(conn),
+                )
+        size_bytes = result.file_path.stat().st_size
         metadata = {
             "id": image_id,
             "captured_at": captured_at.isoformat(),
@@ -437,6 +460,7 @@ async def execute_capture(command: CaptureCommand, job_type: str = "manual", job
             "storage": extract_image_metadata(result.file_path),
             "environment": {"sensor_temperature_c": result.temperature_c, "system_temperature_c": read_pi_temp()},
             "analysis": analyze_image(result.file_path),
+            "overlay": overlay_result,
             **result.metadata,
         }
         sidecar = Path(str(result.file_path) + ".json")
@@ -469,7 +493,7 @@ async def execute_capture(command: CaptureCommand, job_type: str = "manual", job
                 "format": result.format,
                 "width": result.width,
                 "height": result.height,
-                "size_bytes": result.size_bytes,
+                "size_bytes": size_bytes,
                 "exposure_ms": result.exposure_ms,
                 "gain": result.gain,
                 "temperature_c": result.temperature_c,
@@ -477,6 +501,7 @@ async def execute_capture(command: CaptureCommand, job_type: str = "manual", job
                 "star_count": metadata["analysis"]["star_count"],
                 "cloud_score": metadata["analysis"]["cloud_score"],
                 "bad_image": int(metadata["analysis"]["bad_image"]),
+                "overlay_applied": int(bool(overlay_result.get("applied"))),
                 "metadata": metadata,
                 "created_at": now_iso(),
             }
@@ -485,8 +510,8 @@ async def execute_capture(command: CaptureCommand, job_type: str = "manual", job
                 conn.execute(
                     """INSERT INTO images
                        (id, camera_id, captured_at, day_key, mode, file_path, public_url, thumbnail_path, format, width, height,
-                        size_bytes, exposure_ms, gain, temperature_c, mean_brightness, star_count, cloud_score, bad_image, metadata, created_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        size_bytes, exposure_ms, gain, temperature_c, mean_brightness, star_count, cloud_score, bad_image, overlay_applied, metadata, created_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         image_row["id"],
                         image_row["camera_id"],
@@ -507,6 +532,7 @@ async def execute_capture(command: CaptureCommand, job_type: str = "manual", job
                         image_row["star_count"],
                         image_row["cloud_score"],
                         image_row["bad_image"],
+                        image_row["overlay_applied"],
                         json_dumps(metadata),
                         image_row["created_at"],
                     ),

@@ -204,6 +204,26 @@ def seed_defaults(conn: sqlite3.Connection, settings: Settings) -> None:
             "INSERT OR IGNORE INTO system_settings (key, value, updated_at) VALUES (?, ?, ?)",
             (key, json_dumps(value), ts),
         )
+    overlay = default_overlay_module(ts)
+    conn.execute(
+        """INSERT OR IGNORE INTO plugin_modules
+           (id, name, description, version, author, module_path, enabled, trusted, settings_schema, settings, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            overlay["id"],
+            overlay["name"],
+            overlay["description"],
+            overlay["version"],
+            overlay["author"],
+            overlay["module_path"],
+            overlay["enabled"],
+            overlay["trusted"],
+            json_dumps(overlay["settings_schema"]),
+            json_dumps(overlay["settings"]),
+            overlay["created_at"],
+            overlay["updated_at"],
+        ),
+    )
 
 
 def default_profile(mode: str) -> dict[str, Any]:
@@ -235,6 +255,44 @@ def default_profile(mode: str) -> dict[str, Any]:
         "end_of_night_startrail": False,
         "end_of_night_timelapse": False,
         "end_of_night_mini_timelapse": False,
+    }
+
+
+def default_overlay_module(ts: str) -> dict[str, Any]:
+    return {
+        "id": "builtin.overlay",
+        "name": "Built-in overlay",
+        "description": "Renders configured text variables onto captured images before thumbnails and latest artifacts are published.",
+        "version": "1.0.0",
+        "author": "Sky Weaver Hub",
+        "module_path": None,
+        "enabled": 0,
+        "trusted": 1,
+        "settings_schema": {
+            "type": "object",
+            "properties": {
+                "lines": {"type": "array"},
+                "font_size": {"type": "integer", "minimum": 8, "maximum": 96},
+                "margin": {"type": "integer", "minimum": 0, "maximum": 256},
+                "padding": {"type": "integer", "minimum": 0, "maximum": 64},
+                "text_color": {"type": "string"},
+                "background_color": {"type": "string"},
+            },
+        },
+        "settings": {
+            "lines": [
+                {"text": "{observatory_name}", "position": "top_left"},
+                {"text": "{captured_at}", "position": "bottom_left"},
+                {"text": "Exp {exposure_ms} ms  Gain {gain}", "position": "bottom_right"},
+            ],
+            "font_size": 24,
+            "margin": 18,
+            "padding": 8,
+            "text_color": "#ffffffff",
+            "background_color": "#00000099",
+        },
+        "created_at": ts,
+        "updated_at": ts,
     }
 
 

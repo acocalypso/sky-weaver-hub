@@ -1,0 +1,135 @@
+import { useEffect, useMemo, useState } from "react";
+import type { InputHTMLAttributes } from "react";
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { StatusBadge } from "@/components/StatusBadge";
+import { SkyApi, type ModuleRow } from "@/lib/api";
+import { Puzzle, Save } from "lucide-react";
+import { toast } from "sonner";
+
+const POSITIONS = ["top_left", "top_right", "bottom_left", "bottom_right"];
+
+export default function Modules() {
+  const [modules, setModules] = useState<ModuleRow[]>([]);
+  const [overlaySettings, setOverlaySettings] = useState<Record<string, any>>({});
+  const [overlayEnabled, setOverlayEnabled] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    document.title = "Modules - Sky Weaver Hub";
+    load();
+  }, []);
+
+  async function load() {
+    try {
+      const rows = await SkyApi.modules();
+      setModules(rows);
+      const overlay = rows.find((row) => row.id === "builtin.overlay");
+      if (overlay) {
+        setOverlayEnabled(Boolean(overlay.enabled));
+        setOverlaySettings(overlay.settings ?? {});
+      }
+    } catch (e: any) {
+      toast.error(e.message ?? "Unable to load modules");
+    }
+  }
+
+  const overlay = useMemo(() => modules.find((row) => row.id === "builtin.overlay"), [modules]);
+  const lines = Array.isArray(overlaySettings.lines) ? overlaySettings.lines : [];
+
+  function setSetting(key: string, value: any) {
+    setOverlaySettings({ ...overlaySettings, [key]: value });
+  }
+
+  function setLine(index: number, patch: Record<string, any>) {
+    setOverlaySettings({
+      ...overlaySettings,
+      lines: lines.map((line, lineIndex) => lineIndex === index ? { ...line, ...patch } : line),
+    });
+  }
+
+  async function saveOverlay() {
+    if (!overlay) return;
+    setSaving(true);
+    try {
+      const updated = await SkyApi.patchModule(overlay.id, { enabled: overlayEnabled, settings: overlaySettings });
+      setModules(modules.map((row) => row.id === updated.id ? updated : row));
+      setOverlayEnabled(updated.enabled);
+      setOverlaySettings(updated.settings ?? {});
+      toast.success("Overlay module saved");
+    } catch (e: any) {
+      toast.error(e.message ?? "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <p className="text-xs uppercase tracking-widest text-muted-foreground">Processing</p>
+        <h1 className="text-3xl font-semibold tracking-tight flex items-center gap-3"><Puzzle className="h-7 w-7 text-primary" /> Modules</h1>
+      </div>
+
+      {overlay && (
+        <Card className="telemetry-card space-y-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold">{overlay.name}</h2>
+              <p className="text-xs text-muted-foreground">{overlay.description}</p>
+            </div>
+            <div className="flex items-center gap-3">
+              <StatusBadge variant={overlay.trusted ? "ok" : "warn"}>{overlay.trusted ? "trusted" : "untrusted"}</StatusBadge>
+              <Switch checked={overlayEnabled} onCheckedChange={setOverlayEnabled} />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <Field label="Font size" type="number" value={String(overlaySettings.font_size ?? 24)} onChange={(value) => setSetting("font_size", Number(value))} />
+            <Field label="Margin" type="number" value={String(overlaySettings.margin ?? 18)} onChange={(value) => setSetting("margin", Number(value))} />
+            <Field label="Padding" type="number" value={String(overlaySettings.padding ?? 8)} onChange={(value) => setSetting("padding", Number(value))} />
+            <Field label="Background" value={overlaySettings.background_color ?? "#00000099"} onChange={(value) => setSetting("background_color", value)} />
+          </div>
+
+          <div className="space-y-3">
+            {lines.map((line, index) => (
+              <div key={index} className="grid grid-cols-1 md:grid-cols-[1fr_180px] gap-3">
+                <Field label={`Line ${index + 1}`} value={line.text ?? ""} onChange={(value) => setLine(index, { text: value })} />
+                <div className="space-y-2">
+                  <Label>Position</Label>
+                  <select className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm" value={line.position ?? "bottom_left"} onChange={(event) => setLine(index, { position: event.target.value })}>
+                    {POSITIONS.map((position) => <option key={position} value={position}>{position.replace("_", " ")}</option>)}
+                  </select>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex justify-end">
+            <Button onClick={saveOverlay} disabled={saving}><Save className="h-4 w-4 mr-2" />{saving ? "Saving..." : "Save overlay"}</Button>
+          </div>
+        </Card>
+      )}
+
+      <Card className="telemetry-card space-y-3">
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Installed modules</h2>
+        {modules.map((module) => (
+          <div key={module.id} className="flex items-center justify-between border border-border rounded-md p-3">
+            <div>
+              <p className="font-medium">{module.name}</p>
+              <p className="text-xs text-muted-foreground">{module.id}</p>
+            </div>
+            <StatusBadge variant={module.enabled ? "active" : "idle"}>{module.enabled ? "enabled" : "disabled"}</StatusBadge>
+          </div>
+        ))}
+      </Card>
+    </div>
+  );
+}
+
+function Field({ label, value, onChange, ...rest }: { label: string; value: string; onChange: (value: string) => void } & InputHTMLAttributes<HTMLInputElement>) {
+  return <div className="space-y-2"><Label>{label}</Label><Input value={value} onChange={(event) => onChange(event.target.value)} {...rest} /></div>;
+}
