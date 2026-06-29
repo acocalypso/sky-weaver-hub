@@ -41,6 +41,8 @@ export const SkyApi = {
   createCamera: (body: Partial<CameraRow>) => api<{ id: string }>("/api/v1/cameras", { method: "POST", body: JSON.stringify(body) }),
   patchCamera: (id: string, body: Partial<CameraRow>) => api<{ id: string }>(`/api/v1/cameras/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   cameraProfiles: () => api<CameraProfile[]>("/api/v1/camera-profiles"),
+  createProfile: (body: { camera_id: string; name: string; mode: string; settings: Record<string, any> }) =>
+    api<{ id: string }>("/api/v1/camera-profiles", { method: "POST", body: JSON.stringify(body) }),
   patchProfile: (id: string, settings: any) => api(`/api/v1/camera-profiles/${id}`, { method: "PATCH", body: JSON.stringify({ settings }) }),
   captureStart: () => api("/api/v1/capture/start", { method: "POST" }),
   captureStop: () => api<CaptureStopResult>("/api/v1/capture/stop", { method: "POST" }),

@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 
 from ..camera.registry import adapters, get_adapter
 from ..config import get_settings
-from ..db import event, json_dumps, json_loads, log, new_id, now_iso, row_to_dict, session
+from ..db import default_profile, event, json_dumps, json_loads, log, new_id, now_iso, row_to_dict, session
 from ..rate_limit import InMemoryRateLimiter, RateLimitStatus
 from ..security import create_api_key, hash_password, make_token, verify_password
 from ..services.capture import CaptureCommand, all_rows, count_files, create_capture_job, current_schedule, decode_row, enqueue_capture, get_primary_camera, public_latest_payload, read_latest_payload, system_metrics
@@ -730,6 +730,29 @@ def list_cameras(_principal: Annotated[dict, Depends(require_scope("read:setting
     return ok(rows)
 
 
+def ensure_camera_profiles(conn, camera_id: str) -> None:
+    ts = now_iso()
+    existing = {
+        row["mode"]
+        for row in conn.execute(
+            "SELECT mode FROM camera_profiles WHERE camera_id=? AND mode IN ('daytime', 'nighttime')",
+            (camera_id,),
+        ).fetchall()
+    }
+    for mode in ("daytime", "nighttime"):
+        if mode in existing:
+            continue
+        conn.execute(
+            "INSERT INTO camera_profiles (id, camera_id, name, mode, settings, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (new_id(), camera_id, mode.title(), mode, json_dumps(default_profile(mode)), ts, ts),
+        )
+
+
+def ensure_all_camera_profiles(conn) -> None:
+    for row in conn.execute("SELECT id FROM cameras").fetchall():
+        ensure_camera_profiles(conn, row["id"])
+
+
 @router.post("/cameras/detect")
 async def detect_cameras(_principal: Annotated[dict, Depends(require_scope("read:settings"))]):
     found = []
@@ -755,6 +778,7 @@ def create_camera(body: CameraCreate, _principal: Annotated[dict, Depends(requir
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, '{}', ?, ?)""",
             (camera_id, body.name, body.adapter, body.device_id, body.model, body.serial, int(body.enabled), int(body.is_primary), now_iso(), now_iso()),
         )
+        ensure_camera_profiles(conn, camera_id)
     return ok({"id": camera_id})
 
 
@@ -834,6 +858,7 @@ def patch_settings(body: SettingsPatch, _principal: Annotated[dict, Depends(requ
 @router.get("/camera-profiles")
 def camera_profiles(_principal: Annotated[dict, Depends(require_scope("read:settings"))]):
     with session() as conn:
+        ensure_all_camera_profiles(conn)
         rows = all_rows(conn, "SELECT * FROM camera_profiles ORDER BY mode, name")
     return ok(rows)
 

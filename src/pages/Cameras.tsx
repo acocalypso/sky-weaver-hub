@@ -80,9 +80,18 @@ export default function Cameras() {
 
   async function saveSettings() {
     const profile = profiles.find((p) => p.camera_id === selected?.id && p.mode === profileMode);
-    if (!profile) return toast.error(`No ${profileMode === "nighttime" ? "night" : "day"} profile exists for this camera yet`);
+    if (!selected) return;
     try {
-      await SkyApi.patchProfile(profile.id, settings);
+      if (profile) {
+        await SkyApi.patchProfile(profile.id, settings);
+      } else {
+        await SkyApi.createProfile({
+          camera_id: selected.id,
+          name: profileMode === "nighttime" ? "Nighttime" : "Daytime",
+          mode: profileMode,
+          settings,
+        });
+      }
       toast.success(`${profileMode === "nighttime" ? "Night" : "Day"} profile saved`);
       await load();
     } catch (e: any) {

@@ -178,12 +178,48 @@ def test_setup_environment_seeds_admin_camera_schedule_and_settings(tmp_path, mo
     assert schedule["timezone"] == "Europe/Berlin"
     assert schedule["latitude"] == 47.1234
     assert schedule["longitude"] == 15.5678
-
     settings = client.get("/api/v1/settings", headers=headers).json()["data"]
     assert settings["observatory"]["name"] == "Back Garden"
     assert settings["observatory"]["timezone"] == "Europe/Berlin"
     assert settings["public_page"]["enabled"] is False
     assert settings["security"]["first_setup_required"] is False
+
+
+def test_created_camera_gets_day_and_night_profiles(tmp_path):
+    client = make_client(tmp_path)
+    token = login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    created = client.post(
+        "/api/v1/cameras",
+        headers=headers,
+        json={"name": "IMX290", "adapter": "rpicam", "device_id": "rpicam://0", "model": "imx290", "enabled": True, "is_primary": True},
+    )
+    assert created.status_code == 200, created.text
+    camera_id = created.json()["data"]["id"]
+
+    profiles = client.get("/api/v1/camera-profiles", headers=headers).json()["data"]
+    camera_profiles = [profile for profile in profiles if profile["camera_id"] == camera_id]
+    assert {profile["mode"] for profile in camera_profiles} == {"daytime", "nighttime"}
+    assert next(profile for profile in camera_profiles if profile["mode"] == "daytime")["settings"]["interval_seconds"] == 300
+    assert next(profile for profile in camera_profiles if profile["mode"] == "nighttime")["settings"]["capture_enabled"] is True
+
+
+def test_camera_profiles_endpoint_backfills_missing_default_profiles(tmp_path):
+    client = make_client(tmp_path)
+    token = login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    from skyweaver.db import session
+
+    with session() as conn:
+        camera = conn.execute("SELECT id FROM cameras WHERE is_primary=1 LIMIT 1").fetchone()
+        conn.execute("DELETE FROM camera_profiles WHERE camera_id=? AND mode='daytime'", (camera["id"],))
+        camera_id = camera["id"]
+
+    profiles = client.get("/api/v1/camera-profiles", headers=headers).json()["data"]
+    camera_profiles = [profile for profile in profiles if profile["camera_id"] == camera_id]
+    assert {profile["mode"] for profile in camera_profiles} >= {"daytime", "nighttime"}
 
 
 def test_first_setup_status_and_completion(tmp_path):
