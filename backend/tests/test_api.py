@@ -123,6 +123,94 @@ def test_extract_image_metadata_reads_exif_and_basic_file_data(tmp_path):
     assert metadata["exif"]["Model"] == "MockCam"
 
 
+def test_delete_image_removes_files_row_and_matching_latest(tmp_path):
+    client = make_client(tmp_path)
+    token = login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+    _queued, _job, image = run_queued_test_capture(client, headers, {"exposure_ms": 500, "gain": 1, "format": "jpg", "mode": "manual"})
+
+    file_path = Path(image["file_path"])
+    sidecar_path = Path(image["file_path"] + ".json")
+    thumbnail_path = Path(image["thumbnail_path"])
+    latest_dir = tmp_path / "data" / "latest"
+    latest_file = latest_dir / "latest.jpg"
+    latest_thumb = latest_dir / "latest-thumbnail.jpg"
+    latest_json = latest_dir / "latest.json"
+    assert file_path.exists()
+    assert sidecar_path.exists()
+    assert thumbnail_path.exists()
+    assert latest_file.exists()
+    assert latest_thumb.exists()
+    assert latest_json.exists()
+
+    delete_res = client.delete(f"/api/v1/images/{image['id']}", headers=headers)
+    assert delete_res.status_code == 200, delete_res.text
+    payload = delete_res.json()["data"]
+    assert payload["deleted"] == image["id"]
+    assert str(file_path) in payload["deleted_files"]
+    assert str(sidecar_path) in payload["deleted_files"]
+    assert str(thumbnail_path) in payload["deleted_files"]
+    assert str(latest_file) in payload["deleted_files"]
+    assert str(latest_thumb) in payload["deleted_files"]
+    assert str(latest_json) in payload["deleted_files"]
+    assert client.get(f"/api/v1/images/{image['id']}", headers=headers).status_code == 404
+    for path in (file_path, sidecar_path, thumbnail_path, latest_file, latest_thumb, latest_json):
+        assert not path.exists()
+    assert client.get("/api/v1/public/latest").status_code == 404
+
+
+def test_image_retention_cleanup_removes_old_images_only(tmp_path):
+    client = make_client(tmp_path)
+    token = login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+    _queued_old, _job_old, old_image = run_queued_test_capture(client, headers, {"exposure_ms": 500, "gain": 1, "format": "jpg", "mode": "manual"})
+    _queued_new, _job_new, new_image = run_queued_test_capture(client, headers, {"exposure_ms": 500, "gain": 1, "format": "jpg", "mode": "manual"})
+    old_file = Path(old_image["file_path"])
+    new_file = Path(new_image["file_path"])
+
+    from skyweaver.db import session
+
+    with session() as conn:
+        conn.execute(
+            "UPDATE images SET captured_at=?, day_key=? WHERE id=?",
+            ("2020-01-01T00:00:00+00:00", "20200101", old_image["id"]),
+        )
+
+    cleanup_res = client.post("/api/v1/images/retention/run?days=30", headers=headers)
+    assert cleanup_res.status_code == 200, cleanup_res.text
+    payload = cleanup_res.json()["data"]
+    assert payload["retention_days"] == 30
+    assert payload["deleted_images"] == 1
+    assert payload["deleted_image_ids"] == [old_image["id"]]
+    assert str(old_file) in payload["deleted_files"]
+    assert not old_file.exists()
+    assert not Path(old_image["thumbnail_path"]).exists()
+    assert not Path(old_image["file_path"] + ".json").exists()
+    assert new_file.exists()
+    assert client.get(f"/api/v1/images/{new_image['id']}", headers=headers).status_code == 200
+    assert client.get("/api/v1/public/latest").json()["data"]["id"] == new_image["id"]
+
+
+def test_deleting_latest_republishes_next_newest_image(tmp_path):
+    client = make_client(tmp_path)
+    token = login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+    _queued_old, _job_old, old_image = run_queued_test_capture(client, headers, {"exposure_ms": 500, "gain": 1, "format": "jpg", "mode": "manual"})
+    _queued_new, _job_new, new_image = run_queued_test_capture(client, headers, {"exposure_ms": 500, "gain": 1, "format": "jpg", "mode": "manual"})
+
+    delete_res = client.delete(f"/api/v1/images/{new_image['id']}", headers=headers)
+    assert delete_res.status_code == 200, delete_res.text
+    payload = delete_res.json()["data"]
+    assert payload["latest_republished"]["id"] == old_image["id"]
+
+    public_latest = client.get("/api/v1/public/latest")
+    assert public_latest.status_code == 200
+    assert public_latest.json()["data"]["id"] == old_image["id"]
+    public_download = client.get("/api/v1/public/latest/download")
+    assert public_download.status_code == 200
+    assert public_download.content == Path(old_image["file_path"]).read_bytes()
+
+
 def test_public_latest_endpoints_are_unauthenticated(tmp_path):
     client = make_client(tmp_path)
     assert client.get("/api/v1/public/latest").status_code == 404

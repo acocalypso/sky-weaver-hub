@@ -9,7 +9,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { SkyApi, type ImageRow } from "@/lib/api";
 import sampleSky from "@/assets/sample-sky-1.jpg";
 import { format } from "date-fns";
-import { Images, Tag } from "lucide-react";
+import { Images, Tag, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 export default function Gallery() {
@@ -18,6 +18,7 @@ export default function Gallery() {
   const [mode, setMode] = useState<string>("all");
   const [quality, setQuality] = useState<string>("any");
   const [selected, setSelected] = useState<ImageRow | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const load = useCallback(async () => {
     const params = new URLSearchParams({ limit: "200" });
@@ -42,6 +43,21 @@ export default function Gallery() {
     metadata: selected.metadata,
     quality: { mean_brightness: selected.mean_brightness, star_count: selected.star_count, cloud_score: selected.cloud_score, bad_image: selected.bad_image },
   }, [selected]);
+
+  async function deleteSelected() {
+    if (!selected || deleting) return;
+    setDeleting(true);
+    try {
+      const result = await SkyApi.deleteImage(selected.id);
+      toast.success(`Deleted image and ${result.deleted_files.length} file${result.deleted_files.length === 1 ? "" : "s"}`);
+      setSelected(null);
+      await load();
+    } catch (e: any) {
+      toast.error(e.message ?? "Delete failed");
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -94,6 +110,9 @@ export default function Gallery() {
                   <p className="text-xs uppercase tracking-widest text-muted-foreground mb-1">API response</p>
                   <pre className="text-[11px] font-mono-data bg-muted/40 p-3 rounded-md overflow-auto max-h-72">{JSON.stringify(apiPreview, null, 2)}</pre>
                 </div>
+                <Button type="button" variant="destructive" className="w-full" onClick={deleteSelected} disabled={deleting}>
+                  <Trash2 className="h-4 w-4 mr-2" />{deleting ? "Deleting..." : "Delete image"}
+                </Button>
               </div>
             </div>
           )}

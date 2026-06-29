@@ -203,6 +203,127 @@ def read_latest_payload() -> dict[str, Any] | None:
         return None
 
 
+def _storage_delete_roots() -> list[Path]:
+    settings = get_settings()
+    return [
+        settings.data_dir,
+        settings.image_dir,
+        settings.thumbnail_dir,
+        settings.latest_dir,
+    ]
+
+
+def _path_within_roots(path: Path, roots: list[Path]) -> bool:
+    try:
+        resolved = path.resolve()
+    except OSError:
+        resolved = path.absolute()
+    for root in roots:
+        try:
+            resolved.relative_to(root.resolve())
+            return True
+        except ValueError:
+            continue
+    return False
+
+
+def _delete_storage_file(path: Path, roots: list[Path]) -> dict[str, Any]:
+    result = {"path": str(path), "status": "missing"}
+    if not _path_within_roots(path, roots):
+        result["status"] = "skipped"
+        result["reason"] = "outside_storage_roots"
+        return result
+    if not path.exists():
+        return result
+    if not path.is_file():
+        result["status"] = "skipped"
+        result["reason"] = "not_a_file"
+        return result
+    path.unlink()
+    result["status"] = "deleted"
+    return result
+
+
+def image_storage_artifacts(image: dict[str, Any]) -> list[Path]:
+    paths: list[Path] = []
+    for key in ("file_path", "thumbnail_path"):
+        value = image.get(key)
+        if value:
+            paths.append(Path(str(value)))
+    if image.get("file_path"):
+        paths.append(Path(str(image["file_path"]) + ".json"))
+    return paths
+
+
+def latest_artifacts_for_image(image_id: str) -> list[Path]:
+    settings = get_settings()
+    payload = read_latest_payload()
+    if not payload or payload.get("id") != image_id:
+        return []
+    paths = [settings.latest_dir / "latest.json"]
+    for key in ("latest_file", "latest_thumbnail_file"):
+        name = payload.get(key)
+        if name:
+            paths.append(settings.latest_dir / Path(str(name)).name)
+    return paths
+
+
+def delete_image_files(image: dict[str, Any]) -> dict[str, Any]:
+    roots = _storage_delete_roots()
+    seen: set[Path] = set()
+    files: list[dict[str, Any]] = []
+    for path in [*image_storage_artifacts(image), *latest_artifacts_for_image(str(image["id"]))]:
+        marker = path.absolute()
+        if marker in seen:
+            continue
+        seen.add(marker)
+        files.append(_delete_storage_file(path, roots))
+    return {
+        "deleted_files": [item["path"] for item in files if item["status"] == "deleted"],
+        "missing_files": [item["path"] for item in files if item["status"] == "missing"],
+        "skipped_files": [item for item in files if item["status"] == "skipped"],
+    }
+
+
+def configured_image_retention_days(conn) -> int:
+    row = conn.execute("SELECT value FROM system_settings WHERE key='storage'").fetchone()
+    if not row:
+        return 30
+    value = json_loads(row["value"], {})
+    if not isinstance(value, dict):
+        return 30
+    try:
+        return max(0, int(value.get("retention_days", 30)))
+    except (TypeError, ValueError):
+        return 30
+
+
+def cleanup_images_by_retention(conn, retention_days: int) -> dict[str, Any]:
+    days = max(0, int(retention_days))
+    cutoff = datetime.now(UTC) - timedelta(days=days)
+    rows = all_rows(conn, "SELECT * FROM images WHERE captured_at < ? ORDER BY captured_at", (cutoff.isoformat(),))
+    deleted_ids: list[str] = []
+    deleted_files: list[str] = []
+    missing_files: list[str] = []
+    skipped_files: list[dict[str, Any]] = []
+    for image in rows:
+        file_result = delete_image_files(image)
+        conn.execute("DELETE FROM images WHERE id=?", (image["id"],))
+        deleted_ids.append(image["id"])
+        deleted_files.extend(file_result["deleted_files"])
+        missing_files.extend(file_result["missing_files"])
+        skipped_files.extend(file_result["skipped_files"])
+    return {
+        "retention_days": days,
+        "cutoff": cutoff.isoformat(),
+        "deleted_images": len(deleted_ids),
+        "deleted_image_ids": deleted_ids,
+        "deleted_files": deleted_files,
+        "missing_files": missing_files,
+        "skipped_files": skipped_files,
+    }
+
+
 def claim_next_capture_job(job_types: tuple[str, ...] = ("single", "scheduled", "sequence")) -> dict[str, Any] | None:
     placeholders = ",".join("?" for _ in job_types)
     with session() as conn:

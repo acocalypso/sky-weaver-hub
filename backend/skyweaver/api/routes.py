@@ -18,7 +18,7 @@ from ..config import get_settings
 from ..db import default_profile, event, json_dumps, json_loads, log, new_id, now_iso, row_to_dict, session
 from ..rate_limit import InMemoryRateLimiter, RateLimitStatus
 from ..security import create_api_key, hash_password, make_token, verify_password
-from ..services.capture import CaptureCommand, all_rows, count_files, create_capture_job, current_schedule, decode_row, enqueue_capture, get_primary_camera, public_latest_payload, read_latest_payload, scheduled_capture_timing, system_metrics
+from ..services.capture import CaptureCommand, all_rows, cleanup_images_by_retention, configured_image_retention_days, count_files, create_capture_job, current_schedule, decode_row, delete_image_files, enqueue_capture, get_primary_camera, public_latest_payload, publish_latest_image, read_latest_payload, scheduled_capture_timing, system_metrics
 from ..services.schedule import active_window
 from .deps import current_principal, require_scope
 from .responses import ok
@@ -1175,6 +1175,18 @@ def latest_image(_principal: Annotated[dict, Depends(require_scope("read:images"
     return ok(row)
 
 
+@router.post("/images/retention/run")
+def run_image_retention(
+    _principal: Annotated[dict, Depends(require_scope("write:processing"))],
+    days: int | None = Query(default=None, ge=0, le=3650),
+):
+    with session() as conn:
+        retention_days = configured_image_retention_days(conn) if days is None else days
+        result = cleanup_images_by_retention(conn, retention_days)
+        event(conn, "image_retention_cleanup", {"retention_days": retention_days, "deleted_images": result["deleted_images"]})
+    return ok(result)
+
+
 def public_page_enabled() -> bool:
     with session() as conn:
         row = conn.execute("SELECT value FROM system_settings WHERE key='public_page'").fetchone()
@@ -1267,11 +1279,26 @@ def image_download(image_id: str):
     return FileResponse(row["file_path"])
 
 
+def republish_latest_from_database(conn) -> dict[str, Any] | None:
+    row = decode_row(row_to_dict(conn.execute("SELECT * FROM images ORDER BY captured_at DESC LIMIT 1").fetchone()))
+    if not row or not row.get("file_path") or not Path(row["file_path"]).exists():
+        return None
+    metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
+    thumbnail = Path(row["thumbnail_path"]) if row.get("thumbnail_path") and Path(row["thumbnail_path"]).exists() else None
+    return publish_latest_image(row, metadata, thumbnail)
+
+
 @router.delete("/images/{image_id}")
 def delete_image(image_id: str, _principal: Annotated[dict, Depends(require_scope("write:processing"))]):
     with session() as conn:
+        row = decode_row(row_to_dict(conn.execute("SELECT * FROM images WHERE id=?", (image_id,)).fetchone()))
+        if not row:
+            raise HTTPException(404, "Image not found")
+        file_result = delete_image_files(row)
         conn.execute("DELETE FROM images WHERE id=?", (image_id,))
-    return ok({"deleted": image_id})
+        republished_latest = republish_latest_from_database(conn) if any(Path(path).name == "latest.json" for path in file_result["deleted_files"]) else None
+        event(conn, "image_deleted", {"image_id": image_id, "deleted_files": len(file_result["deleted_files"]), "skipped_files": len(file_result["skipped_files"])})
+    return ok({"deleted": image_id, **file_result, "latest_republished": republished_latest})
 
 
 @router.post("/images/{image_id}/reprocess")

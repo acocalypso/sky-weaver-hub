@@ -53,6 +53,8 @@ export const SkyApi = {
   queueSequenceCapture: (body: any = {}) => api<CaptureJob>("/api/v1/capture/sequence", { method: "POST", body: JSON.stringify(body) }),
   captureJobs: () => api<CaptureJob[]>("/api/v1/capture/jobs"),
   images: (query = "") => api<ImageRow[]>(`/api/v1/images${query}`),
+  deleteImage: (id: string) => api<ImageDeleteResult>(`/api/v1/images/${id}`, { method: "DELETE" }),
+  runImageRetention: (days?: number) => api<ImageRetentionResult>(`/api/v1/images/retention/run${days === undefined ? "" : `?days=${encodeURIComponent(days)}`}`, { method: "POST" }),
   publicLatest: () => api<PublicLatestImage>("/api/v1/public/latest"),
   settings: () => api<Record<string, any>>("/api/v1/settings"),
   patchSettings: (values: Record<string, any>) => api<Record<string, any>>("/api/v1/settings", { method: "PATCH", body: JSON.stringify({ values }) }),
@@ -88,6 +90,9 @@ export interface CameraRow { id: string; name: string; adapter: string; device_i
 export interface DetectedCamera { id: string; name: string; backend: string; model?: string | null; serial?: string | null; metadata?: any; }
 export interface CameraProfile { id: string; camera_id: string; name: string; mode: string; settings: Record<string, any>; }
 export interface ImageRow { id: string; camera_id: string | null; captured_at: string; day_key: string; mode: string; file_path: string; public_url: string | null; thumbnail_path: string | null; format: string; width: number | null; height: number | null; size_bytes: number | null; exposure_ms: number | null; gain: number | null; temperature_c: number | null; mean_brightness: number | null; star_count: number | null; cloud_score: number | null; bad_image: boolean; metadata: any; }
+export interface ImageSkippedFile { path: string; status: "skipped"; reason?: string; }
+export interface ImageDeleteResult { deleted: string; deleted_files: string[]; missing_files: string[]; skipped_files: ImageSkippedFile[]; latest_republished?: PublicLatestImage | null; }
+export interface ImageRetentionResult { retention_days: number; cutoff: string; deleted_images: number; deleted_image_ids: string[]; deleted_files: string[]; missing_files: string[]; skipped_files: ImageSkippedFile[]; }
 export interface PublicLatestImage { id: string; captured_at: string; day_key: string; mode: string; format: string; width: number | null; height: number | null; size_bytes: number | null; exposure_ms?: number | null; gain?: number | null; camera_id?: string | null; download_url: string; metadata_url: string; thumbnail_url?: string | null; latest_file?: string; latest_thumbnail_file?: string; }
 export interface ScheduleRow { id?: string; enabled: boolean; start_mode: string; end_mode: string; sun_angle: number; fixed_start_time?: string | null; fixed_end_time?: string | null; timezone: string; latitude: number; longitude: number; interval_seconds: number; exposure_ramping_enabled: boolean; }
 export interface SchedulePreview {

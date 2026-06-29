@@ -5,11 +5,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { SkyApi } from "@/lib/api";
-import { Settings as SettingsIcon, MapPin, HardDrive, Shield } from "lucide-react";
+import { Settings as SettingsIcon, MapPin, HardDrive, Shield, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 export default function SettingsPage() {
   const [values, setValues] = useState<Record<string, any> | null>(null);
+  const [cleaningRetention, setCleaningRetention] = useState(false);
 
   useEffect(() => {
     document.title = "Settings - Sky Weaver Hub";
@@ -33,6 +34,20 @@ export default function SettingsPage() {
     }
   }
 
+  async function runRetentionCleanup() {
+    if (!values || cleaningRetention) return;
+    setCleaningRetention(true);
+    try {
+      const days = Math.max(0, Number(values.storage?.retention_days ?? 30));
+      const result = await SkyApi.runImageRetention(days);
+      toast.success(`Deleted ${result.deleted_images} image${result.deleted_images === 1 ? "" : "s"} and ${result.deleted_files.length} file${result.deleted_files.length === 1 ? "" : "s"}`);
+    } catch (e: any) {
+      toast.error(e.message ?? "Retention cleanup failed");
+    } finally {
+      setCleaningRetention(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -52,6 +67,11 @@ export default function SettingsPage() {
         <Field label="Video storage path" value={storage.videos ?? "./data/videos"} onChange={(v) => updateGroup("storage", { videos: v })} />
         <Field label="Retention days" type="number" value={String(storage.retention_days ?? 30)} onChange={(v) => updateGroup("storage", { retention_days: Number(v) })} />
         <Field label="Minimum free GB" type="number" value={String(storage.min_free_gb ?? 2)} onChange={(v) => updateGroup("storage", { min_free_gb: Number(v) })} />
+        <div className="flex items-end">
+          <Button type="button" variant="outline" className="w-full" onClick={runRetentionCleanup} disabled={cleaningRetention}>
+            <Trash2 className="h-4 w-4 mr-2" />{cleaningRetention ? "Cleaning..." : "Run retention cleanup"}
+          </Button>
+        </div>
       </Section>
 
       <Section icon={<Shield className="h-4 w-4 text-primary" />} title="Public and API">

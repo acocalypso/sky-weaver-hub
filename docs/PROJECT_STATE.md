@@ -1,6 +1,6 @@
 # Sky Weaver Hub Project State
 
-Last updated: 2026-06-24
+Last updated: 2026-06-29
 
 This document tracks the current implementation state against the all-sky platform prompt. It is intended to be updated after each implementation phase.
 
@@ -17,12 +17,12 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 | Frontend | Vite, React 19, TypeScript, shadcn/Radix UI, Tailwind 4 via the official Vite plugin, with the existing Tailwind config loaded explicitly for theme compatibility. |
 | Backend | FastAPI under `backend/skyweaver`, OpenAPI docs at `/api/docs`, REST API under `/api/v1`. |
 | Database | SQLite via stdlib `sqlite3`, baseline schema seeded in `backend/skyweaver/db.py`, and versioned migrations tracked in `schema_migrations`. No external database dependency. |
-| Storage | Local filesystem storage for images, thumbnails, products, logs, and config. Dev defaults are local paths; system install targets `/var/lib/skyweaver`, `/etc/skyweaver`, `/var/log/skyweaver`. |
+| Storage | Local filesystem storage for images, thumbnails, products, logs, and config. Image delete and retention cleanup remove Sky Weaver-owned image artifacts, sidecars, thumbnails, and matching latest artifacts. Dev defaults are local paths; system install targets `/var/lib/skyweaver`, `/etc/skyweaver`, `/var/log/skyweaver`. |
 | Auth | Local admin JWT login plus hashed API keys with scopes. Installer can seed a configured admin password hash during first setup, and the app now enforces guided setup completion before normal admin use, including bootstrap-password detection, stronger password guidance, rate limiting, and local auth audit logs. |
 | Camera abstraction | `CameraAdapter` base class plus working `mock` adapter, initial `rpicam`/`libcamera` adapter, and initial ZWO ASI adapter using the native `libASICamera2` SDK library from Debian `libasi` or a vendor SDK install. Other adapters are placeholders with actionable errors. |
 | UI/API integration | Public Sky, Dashboard, Cameras, Schedule, Gallery, Night Products, Logs, Settings, API Keys, and Developer API call the local backend. |
 | Deployment | `install.sh`, `upgrade.sh`, `uninstall.sh`, `support.sh`, and systemd units exist. Fresh interactive installs prompt for first-setup values. Installer/upgrade can provision Debian `libasi`, ZWO USB rules, and optional vendor SDK library support when ZWO is configured. |
-| Tests | Backend pytest coverage for health/status, login, auth audit logs, API keys, mock capture, first-setup hardening, system service controls, scheduled daemon capture, day/night profile scheduling, latest-only unsaved captures, end-of-night product queuing, queued test/single/sequence capture execution, pause/resume/stop queue semantics, schedule preview, daemon heartbeat/activity, interrupted job recovery, mock overnight acceptance flow, night product generation, migration preview, mock adapter, and fake-SDK ZWO adapter behavior. Frontend component tests cover Public Sky, Dashboard, Gallery, Health, Settings, API Keys, and first setup. Shell tests cover installer dry-run, service-control sudoers generation, and repeat-install idempotency with mocked system commands. |
+| Tests | Backend pytest coverage for health/status, login, auth audit logs, API keys, mock capture, image delete, retention cleanup, first-setup hardening, system service controls, scheduled daemon capture, day/night profile scheduling, latest-only unsaved captures, end-of-night product queuing, queued test/single/sequence capture execution, pause/resume/stop queue semantics, schedule preview, daemon heartbeat/activity, interrupted job recovery, mock overnight acceptance flow, night product generation, migration preview, mock adapter, and fake-SDK ZWO adapter behavior. Frontend component tests cover Public Sky, Dashboard, Gallery, Health, Settings, API Keys, and first setup. Shell tests cover installer dry-run, service-control sudoers generation, and repeat-install idempotency with mocked system commands. |
 
 ## Implemented Capabilities
 
@@ -47,7 +47,7 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 - Camera profiles get/create/get/patch/delete
 - Capture state/start/stop/pause/resume/test-shot/single/sequence/jobs
 - Schedule get/put/preview/recalculate
-- Image list/latest/detail/download/delete/reprocess/days/day
+- Image list/latest/detail/download/delete/reprocess/days/day and retention cleanup
 - Public latest metadata/download/thumbnail endpoints gated by `public_page.enabled`
 - Products list/detail/queue/download
 - Dark frame placeholder endpoints
@@ -100,11 +100,11 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 - Schedule page with sun-angle/fixed/manual mode settings.
 - Schedule page displays the backend active window, next transition, and fixed-time controls.
 - Dashboard Tonight panel displays capture-window status and the next schedule transition.
-- Gallery page with day/mode/quality filters, image detail, quality fields, and storage/EXIF metadata preview.
+- Gallery page with day/mode/quality filters, image detail, delete action, quality fields, and storage/EXIF metadata preview.
 - Night Products page queues product jobs, shows processing job progress, and lists generated downloads.
 - System Health page shows metrics, service status, start/stop/restart actions, per-service detail/journal output, failure analysis, unit history, queue counts, recent logs, and diagnostics JSON export.
 - Logs page reads backend logs.
-- Settings page edits local settings groups.
+- Settings page edits local settings groups and can run image retention cleanup using the configured retention period.
 - API Keys page creates scoped keys, shows full key once, enables/disables, and revokes.
 - Developer API page includes core endpoints and curl/JavaScript/Python examples.
 
@@ -154,7 +154,7 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 | Phase 3: Camera adapters and test shot | Partial | Mock and rpicam/libcamera implemented and validated with an IMX290 on Raspberry Pi. Initial ZWO adapter exists with fake-SDK tests; real ZWO hardware validation is pending. gPhoto2, V4L2, INDI, custom command are placeholders. |
 | Phase 4: Capture daemon and realtime | Done | Scheduled daemon loop, shared capture service, persistent job claiming for test/single/scheduled/sequence captures, day/night profile selection, restart-safe per-mode interval and save policy, next-capture due visibility, latest-only day captures, saved night captures, end-of-night product queueing, graceful stop reporting, real-Pi validated rpicam hard-cancel, pause/resume/stop queue semantics, active-window checks and UI preview, lock-file duplicate-loop guard with stale lock recovery, heartbeat/activity reporting, interrupted job recovery, SSE endpoint, Pi reboot service startup acceptance, IMX290 capture after restart/reboot acceptance, and accelerated indoor Pi day/night acceptance exist. Real outdoor overnight field validation remains a hardening task. |
 | Phase 5: Image storage/gallery/latest/metadata | Done | Capture artifacts, metadata sidecars, thumbnails, stable latest copies, image rows, gallery, latest image, public latest endpoints gated by public-page settings, public sky page, image detail, basic file/image metadata extraction, and JSON-safe EXIF extraction exist. |
-| Phase 6: Processing worker/products/retention | Partial | Worker claims jobs, thumbnail reprocess exists, keogram JPEG generation, ffmpeg timelapse/mini-timelapse generation, and startrail generation exist, and product job progress is visible in the UI. Cleanup and upload execution are open. |
+| Phase 6: Processing worker/products/retention | Partial | Worker claims jobs, thumbnail reprocess exists, keogram JPEG generation, ffmpeg timelapse/mini-timelapse generation, startrail generation, and image retention cleanup exist, and product job progress is visible in the UI. Upload execution remains open. |
 | Phase 7: Overlay/modules | Early scaffold | Module tables/endpoints exist. Overlay editor, processor, built-in modules, safe module execution are open. |
 | Phase 8: Installer/systemd/support/docs | Partial | Scripts and units exist. Shellcheck CI, installer dry-run/idempotency tests, service-control sudoers generation, interactive first-setup prompts, ZWO `libasi`/SDK provisioning hooks, real Pi install, repeat install, service restart, and reboot verification exist. Nginx option and broader Pi camera verification are open. |
 | Phase 9: Allsky migration/remote upload | Early scaffold | Detection and dry-run count preview exist. Real import, rollback, unsupported-setting report, and remote upload execution are open. |
@@ -322,7 +322,7 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 ## Known Current Limitations
 
 - Capture daemon now performs day/night scheduled captures and consumes queued test-shot, single-capture, and sequence jobs. Restart-safe per-profile interval/save controls, next-capture due visibility, latest-only unsaved captures, end-of-night product queueing, graceful stop fallback, real-Pi validated rpicam hard-cancel, pause/resume/stop queue semantics, daemon activity visibility, Dashboard capture job progress, and interrupted job requeue on service start exist. Real outdoor overnight image quality and environmental stability still need field validation.
-- Worker now generates thumbnails, keograms, ffmpeg timelapses, mini timelapses, and startrails, but retention cleanup and upload execution are still open.
+- Worker now generates thumbnails, keograms, ffmpeg timelapses, mini timelapses, and startrails. Image retention cleanup exists; upload execution is still open.
 - Product endpoints queue jobs; keogram, timelapse, mini timelapse, and startrail currently produce downloadable night products.
 - Public page exists for latest-image display and honors the public-page enabled setting; richer public archives and branding controls are still open.
 - ZWO ASI support is adapter-backed with native-SDK fake tests, but it has not yet been validated with real ZWO hardware in this environment.
