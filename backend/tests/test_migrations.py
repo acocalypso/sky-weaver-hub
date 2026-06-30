@@ -64,3 +64,42 @@ def test_migration_upgrade_is_idempotent(tmp_path: Path):
     assert first["applied"]
     assert second["applied"] == []
     assert current["pending"] == []
+
+
+def test_migration_encrypts_legacy_remote_target_configs(tmp_path: Path, monkeypatch):
+    db_path = tmp_path / "legacy-remote.db"
+    monkeypatch.setenv("SKYWEAVER_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("SKYWEAVER_CONFIG_DIR", str(tmp_path / "config"))
+    monkeypatch.setenv("SKYWEAVER_LOG_DIR", str(tmp_path / "logs"))
+    monkeypatch.setenv("SKYWEAVER_DB", str(db_path))
+    monkeypatch.setenv("SKYWEAVER_SECRET_KEY", "test-secret-key-with-at-least-32-bytes")
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("CREATE TABLE capture_state (id INTEGER PRIMARY KEY CHECK (id = 1), status TEXT NOT NULL, current_mode TEXT NOT NULL, updated_at TEXT NOT NULL)")
+        conn.execute(
+            "CREATE TABLE capture_jobs (id TEXT PRIMARY KEY, type TEXT NOT NULL, status TEXT NOT NULL, request TEXT NOT NULL, created_at TEXT NOT NULL)"
+        )
+        conn.execute(
+            """CREATE TABLE remote_targets (
+               id TEXT PRIMARY KEY, name TEXT NOT NULL, type TEXT NOT NULL, config_encrypted TEXT NOT NULL,
+               enabled INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+            )"""
+        )
+        conn.execute(
+            "INSERT INTO remote_targets (id, name, type, config_encrypted, enabled, created_at, updated_at) VALUES ('target-1', 'FTP', 'ftp', ?, 1, 'now', 'now')",
+            ('{"host":"ftp.example","username":"skyweaver","password":"secret","remote_path":"/srv/allsky"}',),
+        )
+
+    from skyweaver.config import get_settings
+    from skyweaver.migrate import upgrade
+    from skyweaver.secrets import decrypt_config_envelope
+
+    get_settings.cache_clear()
+    upgrade(db_path)
+
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        stored = conn.execute("SELECT config_encrypted FROM remote_targets WHERE id='target-1'").fetchone()["config_encrypted"]
+
+    assert '"password":"secret"' not in stored
+    assert decrypt_config_envelope(stored)["password"] == "secret"
+    get_settings.cache_clear()

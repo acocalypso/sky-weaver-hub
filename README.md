@@ -19,9 +19,9 @@ This repository now contains a working local-first platform slice:
 - Public unauthenticated sky page at `/public`, backed by stable latest-image artifacts and public latest/product API endpoints that honor the public-page enabled setting, including latest-only captures that are not saved to the gallery.
 - System Health UI with service controls, per-service detail, recent journal output, diagnostics export, and queue/metric summaries.
 - Systemd units and installer scripts for Pi deployment, with first-setup prompts, constrained service-control permissions, and dry-run/idempotency tests.
-- Allsky migration detection, preview, worker-backed image/product/dark-frame import, selected settings and basic overlay text import, rollback, and Migration UI. Original Allsky files are copied, never deleted.
+- Allsky migration detection, preview, worker-backed image/product/dark-frame/overlay-asset import, selected settings/profile import, basic overlay text import, rollback, and Migration UI. Original Allsky files are copied, never deleted.
 
-Some Allsky parity items are intentionally scaffolded for later phases: overlay live previews/presets/assets, dark-frame median combine/subtraction, broader Allsky settings import, stronger encrypted secret storage for remote targets, and custom module sandboxing.
+Some Allsky parity items are intentionally scaffolded for later phases: overlay live previews/presets, dark-frame median combine/subtraction, full Allsky settings parity, and custom module sandboxing.
 
 ## Supported Targets
 
@@ -176,7 +176,7 @@ The migration command is idempotent and records applied versions in `schema_migr
 
 ## Allsky Migration
 
-Sky Weaver detects common Allsky directories such as `~/allsky`, `~/allsky-OLD`, `~/allsky-SAVED`, `/home/pi/allsky`, and `/var/www/html/allsky`. Current migration support provides detection, dry-run counts, unsupported-setting reporting, queued image/product/dark-frame import jobs, selected settings import, basic overlay text import, camera hints, and rollback of Sky Weaver-created rows/files plus restored settings snapshots. The scanner imports recognized capture/product/dark-frame paths and excludes Allsky web, documentation, config, and overlay asset trees from gallery imports. The original Allsky data is never deleted.
+Sky Weaver detects common Allsky directories such as `~/allsky`, `~/allsky-OLD`, `~/allsky-SAVED`, `/home/pi/allsky`, and `/var/www/html/allsky`. Current migration support provides detection, dry-run counts, unsupported-setting reporting, queued image/product/dark-frame/overlay-asset import jobs, selected settings/profile import, basic overlay text import, camera hints, and rollback of Sky Weaver-created rows/files plus restored settings snapshots. The scanner imports recognized capture/product/dark-frame paths and excludes Allsky web, documentation, config, and overlay asset trees from gallery imports; overlay image assets are preserved separately for future overlay tooling. The original Allsky data is never deleted.
 
 ## Documentation
 

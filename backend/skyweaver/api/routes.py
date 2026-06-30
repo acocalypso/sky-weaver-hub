@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 from ..camera.registry import adapters, get_adapter
 from ..config import get_settings
 from ..db import default_profile, event, json_dumps, json_loads, log, new_id, now_iso, row_to_dict, session
+from ..secrets import encrypt_config_envelope
 from ..rate_limit import InMemoryRateLimiter, RateLimitStatus
 from ..security import create_api_key, hash_password, make_token, verify_password
 from ..services.allsky_migration import preview_allsky_root, rollback_allsky_import
@@ -23,7 +24,7 @@ from ..services.capture import CaptureCommand, all_rows, cleanup_images_by_reten
 from ..services.modules import register_external_module, run_flow_preview, validate_module_order
 from ..services.processing import cleanup_products_by_retention, delete_product_files
 from ..services.schedule import active_window
-from ..services.uploads import queue_upload, remote_target_payload, retry_failed_uploads, test_target, validate_target_payload
+from ..services.uploads import queue_upload, remote_target_payload, retry_failed_uploads, target_config, test_target, validate_target_payload
 from .deps import current_principal, require_scope
 from .responses import ok
 
@@ -1638,7 +1639,7 @@ def create_remote_target(payload: dict[str, Any], _principal: Annotated[dict, De
     target_id = new_id()
     with session() as conn:
         conn.execute("INSERT INTO remote_targets (id, name, type, config_encrypted, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                     (target_id, name, target_type, json_dumps(config), int(enabled), now_iso(), now_iso()))
+                     (target_id, name, target_type, json_dumps(encrypt_config_envelope(config)), int(enabled), now_iso(), now_iso()))
         row = row_to_dict(conn.execute("SELECT * FROM remote_targets WHERE id=?", (target_id,)).fetchone())
         event(conn, "remote_target_created", {"target_id": target_id, "type": target_type, "enabled": enabled})
     return ok(remote_target_payload(row))
@@ -1650,9 +1651,7 @@ def patch_remote_target(target_id: str, payload: dict[str, Any], _principal: Ann
         existing = decode_row(row_to_dict(conn.execute("SELECT * FROM remote_targets WHERE id=?", (target_id,)).fetchone()))
         if not existing:
             raise HTTPException(404, "Remote target not found")
-        current_config = existing.get("config_encrypted")
-        if isinstance(current_config, str):
-            current_config = json_loads(current_config, {})
+        current_config = target_config(existing)
         next_config = payload.get("config", current_config if isinstance(current_config, dict) else {})
         if isinstance(next_config, dict) and isinstance(current_config, dict):
             if next_config.get("password") == "***" and current_config.get("password"):
@@ -1669,7 +1668,7 @@ def patch_remote_target(target_id: str, payload: dict[str, Any], _principal: Ann
             raise HTTPException(400, str(exc)) from exc
         conn.execute(
             "UPDATE remote_targets SET name=?, type=?, config_encrypted=?, enabled=?, updated_at=? WHERE id=?",
-            (name, target_type, json_dumps(config), int(enabled), now_iso(), target_id),
+            (name, target_type, json_dumps(encrypt_config_envelope(config)), int(enabled), now_iso(), target_id),
         )
         row = row_to_dict(conn.execute("SELECT * FROM remote_targets WHERE id=?", (target_id,)).fetchone())
         event(conn, "remote_target_updated", {"target_id": target_id, "type": target_type, "enabled": enabled})

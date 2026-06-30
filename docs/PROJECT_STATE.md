@@ -8,7 +8,7 @@ This document tracks the current implementation state against the all-sky platfo
 
 Sky Weaver Hub has moved from a mock dashboard toward a local-first Raspberry Pi/Linux all-sky platform. The repository now has a FastAPI backend, SQLite persistence, a camera adapter interface, mock capture with real image artifacts, Raspberry Pi camera support, initial native ZWO ASI support, a daemon-owned scheduled capture loop, API-key authentication, systemd and installer support, and a React UI wired to the local API.
 
-The product is not yet Allsky feature-complete. The main missing areas are longer real outdoor overnight soak validation, richer image-product options, encrypted-at-rest remote upload secrets, broader Allsky settings import, overlay asset import, dark-frame processing, and broader validated camera adapter coverage beyond Raspberry Pi libcamera hardware.
+The product is not yet Allsky feature-complete. The main missing areas are longer real outdoor overnight soak validation, richer image-product options, full Allsky settings parity, overlay image rendering, dark-frame processing, and broader validated camera adapter coverage beyond Raspberry Pi libcamera hardware.
 
 ## Repo Map
 
@@ -22,7 +22,7 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 | Camera abstraction | `CameraAdapter` base class plus working `mock` adapter, initial `rpicam`/`libcamera` adapter, and initial ZWO ASI adapter using the native `libASICamera2` SDK library from Debian `libasi` or a vendor SDK install. Other adapters are placeholders with actionable errors. |
 | UI/API integration | Public Sky, Dashboard, Cameras, Schedule, Gallery, Night Products, Logs, Settings, API Keys, Modules, Remote Upload, Migration, and Developer API call the local backend. |
 | Deployment | `install.sh`, `upgrade.sh`, `uninstall.sh`, `support.sh`, and systemd units exist. Fresh interactive installs prompt for first-setup values. Installer/upgrade can provision Debian `libasi`, ZWO USB rules, and optional vendor SDK library support when ZWO is configured. |
-| Tests | Backend pytest coverage for health/status, login, auth audit logs, API keys, mock capture, image/product/dark-frame delete, retention cleanup, first-setup hardening, system service controls, scheduled daemon capture, day/night profile scheduling, latest-only unsaved captures, end-of-night product queuing, queued test/single/sequence capture execution, pause/resume/stop queue semantics, schedule preview, daemon heartbeat/activity, interrupted job recovery, mock overnight acceptance flow, night product generation, filesystem, rsync-over-SSH, SCP-over-SSH, SFTP-over-SSH, and FTPS upload execution/retry, Allsky migration preview/import/rollback/settings restore including dark frames, module/overlay flows, external module manifests, mock adapter, and fake-SDK ZWO adapter behavior. Frontend component tests cover Public Sky, Dashboard, Gallery, Health, Settings, API Keys, Modules, Remote Upload, Migration, and first setup. Shell tests cover installer dry-run, service-control sudoers generation, and repeat-install idempotency with mocked system commands. |
+| Tests | Backend pytest coverage for health/status, login, auth audit logs, API keys, mock capture, image/product/dark-frame delete, retention cleanup, first-setup hardening, system service controls, scheduled daemon capture, day/night profile scheduling, latest-only unsaved captures, end-of-night product queuing, queued test/single/sequence capture execution, pause/resume/stop queue semantics, schedule preview, daemon heartbeat/activity, interrupted job recovery, mock overnight acceptance flow, night product generation, filesystem, rsync-over-SSH, SCP-over-SSH, SFTP-over-SSH, FTP/FTPS upload execution/retry with encrypted target configs, Allsky migration preview/import/rollback/settings restore including dark frames, overlay assets, and camera profiles, module/overlay flows, external module manifests, mock adapter, and fake-SDK ZWO adapter behavior. Frontend component tests cover Public Sky, Dashboard, Gallery, Health, Settings, API Keys, Modules, Remote Upload, Migration, and first setup. Shell tests cover installer dry-run, service-control sudoers generation, and repeat-install idempotency with mocked system commands. |
 
 ## Implemented Capabilities
 
@@ -169,7 +169,7 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 | Phase 6: Processing worker/products/retention | Done | Worker claims jobs, thumbnail reprocess exists, keogram JPEG generation, ffmpeg timelapse/mini-timelapse generation, startrail generation, image/product retention cleanup, and product deletion exist, and product job progress is visible in the UI. Remote upload execution is intentionally tracked in Phase 9. |
 | Phase 7: Overlay/modules | Done | Trusted built-in overlay module seeding, API configuration, capture-time text rendering with variables, image metadata/flagging, expanded overlay editor, built-in post-capture module flow execution, external module manifest registration/listing/deletion, and Modules UI exist. Custom code upload/execution is intentionally disabled until a future sandbox/signing runtime is designed. |
 | Phase 8: Installer/systemd/support/docs | Partial | Scripts and units exist. Shellcheck CI, installer dry-run/idempotency tests, service-control sudoers generation, interactive first-setup prompts, ZWO `libasi`/SDK provisioning hooks, real Pi install, repeat install, service restart, and reboot verification exist. Nginx option and broader Pi camera verification are open. |
-| Phase 9: Allsky migration/remote upload | Partial | Allsky detection, dry-run count preview, compact unsupported-setting report, worker-backed recognized image/product/dark-frame import with progress/import-log output, selected settings/basic overlay text import with rollback restore, camera hint capture, rollback of Sky Weaver-created rows/files, Migration UI loading/job polling, and asset-tree exclusion for Allsky HTML/docs/config/overlay files exist. Filesystem, rsync-over-SSH, SCP-over-SSH, SFTP-over-SSH, FTP, and FTPS remote targets, upload queue/retry, worker-backed upload execution, upload job listing/detail views, credential redaction, and Remote Upload UI exist. Broader settings/overlay asset import and encrypted-at-rest remote target secrets are open. |
+| Phase 9: Allsky migration/remote upload | Done | Allsky detection, dry-run count preview, compact unsupported-setting report, worker-backed recognized image/product/dark-frame/overlay-asset import with progress/import-log output, selected observatory/schedule/public/storage/processing/profile settings import, basic overlay text import with rollback restore, camera hint capture, rollback of Sky Weaver-created rows/files/settings/profile changes, Migration UI loading/job polling, and asset-tree exclusion for Allsky HTML/docs/config/overlay files from gallery imports exist. Filesystem, rsync-over-SSH, SCP-over-SSH, SFTP-over-SSH, FTP, and FTPS remote targets, encrypted local target configs, upload queue/retry, worker-backed upload execution, upload job listing/detail views, credential redaction, and Remote Upload UI exist. Full Allsky setting parity and rendering imported overlay image assets remain future polish, not Phase 9 blockers. |
 | Phase 10: Polish/mobile/tests/hardening | Partial | Mobile API docs, latest/status/gallery endpoints, route bundle splitting, system health diagnostics/service detail UI with failure analysis and unit history, initial frontend component tests, and CI workflow exist. Broader tests, UX polish, performance, and security hardening remain. |
 
 ## Open Topics
@@ -234,7 +234,7 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 - Add dark frames page.
 - Add remote upload page.
 - Expand system health views with deeper unit history, failure classification, and recovery guidance after more real Pi failures are observed.
-- Allsky migration page exists; expand it with richer job history and per-file import details.
+- Allsky migration page exists with preview loading and job polling; richer historical job browsing remains future UI polish.
 - Add deployment/installer docs page.
 - Improve mobile layouts after real data flows are in place.
 - Route-level bundle splitting is enabled; keep watching bundle size as large pages and dependencies are added.
@@ -266,21 +266,19 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 
 ### Allsky Migration
 
-- Expand real import beyond the currently implemented images, timelapses, keograms, startrails, dark frames, selected observatory/schedule/public-page settings, basic overlay text settings, and camera hints:
-  - additional settings
-  - overlay assets where possible
+- Import supports recognized images, timelapses, keograms, startrails, dark frames, overlay assets, selected observatory/schedule/public-page/storage/processing/profile settings, basic overlay text settings, and camera hints.
 - Unsupported setting report exists for known Allsky config files and unmapped keys; expand it into richer setting-level translation diagnostics.
 - Import log and basic UI progress exist; expand with richer per-file failure details if future partial-import behavior is added.
-- Rollback of Sky Weaver-created rows/files exists for image/product imports; expand as more migration artifact types are added.
+- Rollback removes Sky Weaver-created rows/files and restores settings/profile snapshots for the migration job.
 - Keep original Allsky data untouched.
 
 ### Remote Upload
 
 - Filesystem, rsync-over-SSH, SCP-over-SSH, SFTP-over-SSH, FTP, and FTPS remote target config UI exists.
-- Expand local public website mode beyond latest-image display.
 - Upload retry queue exists for failed upload jobs.
 - Upload job list and detail views expose target metadata, attempts, timing, source, destination, and last error.
-- Redact credentials everywhere; encrypted-at-rest storage for remote target secrets is still planned.
+- Remote target configs are stored as a local Fernet encrypted envelope derived from `SKYWEAVER_SECRET_KEY`; keep that key stable across upgrades.
+- Redact credentials everywhere.
 
 ### Plugin/Module System
 
@@ -330,8 +328,8 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 - Public page exists for latest-image display with compact responsive metadata and honors the public-page enabled setting; richer public archives and branding controls are still open.
 - Phase 7 has a trusted built-in overlay module, module-flow execution, and external manifest registration. Arbitrary custom code execution is intentionally not enabled without sandboxing/signing.
 - ZWO ASI support is adapter-backed with native-SDK fake tests, but it has not yet been validated with real ZWO hardware in this environment.
-- Remote upload supports filesystem, rsync-over-SSH, SCP-over-SSH, SFTP-over-SSH, FTP, and FTPS targets. SSH-based targets use key/agent auth only. FTP/FTPS passwords are redacted from API responses but are still stored in the local database until encrypted secret handling is added.
-- Allsky migration imports images, dark frames, keograms, startrails, timelapses, selected settings, basic overlay text settings, and camera hints by copying files into Sky Weaver storage and applying a restorable settings snapshot. Broad settings translation and overlay assets are not imported yet.
+- Remote upload supports filesystem, rsync-over-SSH, SCP-over-SSH, SFTP-over-SSH, FTP, and FTPS targets. SSH-based targets use key/agent auth only. Remote target configs are encrypted locally and API responses redact secret fields.
+- Allsky migration imports images, dark frames, keograms, startrails, timelapses, overlay assets, selected settings, camera profile settings, basic overlay text settings, and camera hints by copying files into Sky Weaver storage and applying a restorable settings snapshot. Full Allsky setting parity and rendering imported overlay images remain future work.
 - API server no longer performs camera capture inline for test shots; test-shot requests enqueue daemon-owned `test` jobs so manual verification still works while automation is stopped.
 - Tailwind 4 is enabled through the official Vite plugin while preserving the existing theme config and shadcn animation utilities.
 - Lint passes with zero warnings in the current local validation.
@@ -341,11 +339,11 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 
 Most recent local checks on 2026-06-30:
 
-- `backend\\.venv\\Scripts\\python -m pytest -p no:cacheprovider --basetemp .tmp\\pytest-all backend\\tests`: passed with 75 tests.
+- `backend\\.venv\\Scripts\\python -m pytest -p no:cacheprovider --basetemp .tmp\\pytest-all backend\\tests`: passed with 80 tests.
 - `npm run lint`: passed with zero warnings.
 - `npm test`: passed with 15 tests.
 - `npm run build`: passed.
-- `git diff --check`: passed for the current Phase 9 remote upload changes.
+- `git diff --check`: passed for the current Phase 9 changes.
 - `shellcheck install.sh scripts/test_install.sh upgrade.sh uninstall.sh support.sh`: not run locally because ShellCheck is not installed on this Windows host; CI installs ShellCheck on Ubuntu.
 
 Raspberry Pi acceptance on 2026-06-23:
@@ -392,4 +390,4 @@ Suggested next tasks:
 1. Add worker heartbeat/activity reporting and reflect it in System Health.
 2. Run real outdoor overnight field validation once the Pi/camera can be placed outside.
 3. Expand API-key scope tests for every protected endpoint group.
-4. Start Phase 9 remote upload execution or real Allsky import when operational hardening is stable.
+4. Add browser smoke coverage for migration and remote-upload forms with real API fixtures.

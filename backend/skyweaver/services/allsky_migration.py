@@ -8,7 +8,7 @@ from typing import Any
 from PIL import Image
 
 from ..config import get_settings
-from ..db import event, json_dumps, json_loads, new_id, now_iso, row_to_dict, session
+from ..db import default_profile, event, json_dumps, json_loads, new_id, now_iso, row_to_dict, session
 from .capture import analyze_image, decode_row, delete_image_files, delete_storage_paths, extract_image_metadata, make_thumbnail
 from .overlay import OVERLAY_MODULE_ID, merge_overlay_settings
 
@@ -76,6 +76,35 @@ TRANSLATABLE_KEYS = {
     "backgroundcolor",
     "fontsize",
     "font",
+    "retention",
+    "retentiondays",
+    "daystokeep",
+    "keepdays",
+    "publicdays",
+    "productdays",
+    "generatethumbnails",
+    "thumbnails",
+    "keogram",
+    "startrails",
+    "startrail",
+    "timelapse",
+    "minitimelapse",
+    "dayexposure",
+    "nightexposure",
+    "daygain",
+    "nightgain",
+    "dayinterval",
+    "nightinterval",
+    "saveday",
+    "savenight",
+    "captureday",
+    "capturenight",
+    "daycapture",
+    "nightcapture",
+    "endofnightkeogram",
+    "endofnightstartrail",
+    "endofnighttimelapse",
+    "endofnightminitimelapse",
 }
 
 
@@ -91,6 +120,7 @@ def preview_allsky_root(root: Path) -> dict[str, Any]:
             "keograms": len(files["keograms"]),
             "startrails": len(files["startrails"]),
             "dark_frames": len(files["dark_frames"]),
+            "overlay_assets": len(scan_overlay_assets(root)),
         },
         "unsupported_settings": settings_preview["unsupported_settings"],
         "settings": settings_preview["settings"],
@@ -160,12 +190,14 @@ def execute_allsky_import(job: dict[str, Any]) -> dict[str, Any]:
     if not root.exists() or not root.is_dir():
         raise FileNotFoundError(root)
     files = scan_allsky_files(root)
-    total_steps = max(1, len(files["images"]) + len(files["dark_frames"]) + len(files["keograms"]) + len(files["startrails"]) + len(files["timelapses"]) + 1)
+    overlay_assets = scan_overlay_assets(root)
+    total_steps = max(1, len(files["images"]) + len(files["dark_frames"]) + len(files["keograms"]) + len(files["startrails"]) + len(files["timelapses"]) + len(overlay_assets) + 1)
     completed_steps = 0
     import_log: list[dict[str, Any]] = []
     imported_images: list[str] = []
     imported_dark_frames: list[str] = []
     imported_products: list[str] = []
+    imported_overlay_assets: list[str] = []
 
     for path in files["images"]:
         image_id = import_image(path, job["id"])
@@ -187,6 +219,14 @@ def execute_allsky_import(job: dict[str, Any]) -> dict[str, Any]:
             completed_steps += 1
             update_allsky_import_progress(job["id"], completed_steps, total_steps)
     settings_result = apply_allsky_settings(root, job["id"])
+    for path in overlay_assets:
+        asset_path = import_overlay_asset(root, path, job["id"])
+        imported_overlay_assets.append(asset_path)
+        import_log.append({"kind": "overlay_asset", "id": Path(asset_path).name, "original_path": str(path), "path": asset_path})
+        completed_steps += 1
+        update_allsky_import_progress(job["id"], completed_steps, total_steps)
+    if imported_overlay_assets:
+        store_overlay_asset_manifest(job["id"], imported_overlay_assets)
     completed_steps += 1
     update_allsky_import_progress(job["id"], completed_steps, total_steps)
     with session() as conn:
@@ -196,9 +236,11 @@ def execute_allsky_import(job: dict[str, Any]) -> dict[str, Any]:
         "imported_images": len(imported_images),
         "imported_dark_frames": len(imported_dark_frames),
         "imported_products": len(imported_products),
+        "imported_overlay_assets": len(imported_overlay_assets),
         "image_ids": imported_images,
         "dark_frame_ids": imported_dark_frames,
         "product_ids": imported_products,
+        "overlay_asset_paths": imported_overlay_assets,
         "import_log": import_log,
         "settings": settings_result,
         "unsupported_settings": preview_settings(root)["unsupported_settings"],
@@ -338,6 +380,24 @@ def import_dark_frame(source: Path, job_id: str) -> str:
     return frame_id
 
 
+def import_overlay_asset(root: Path, source: Path, job_id: str) -> str:
+    settings = get_settings()
+    relative = safe_relative_path(root, source)
+    target = settings.data_dir / "migration" / "allsky-overlay-assets" / job_id / relative
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, target)
+    return str(target)
+
+
+def store_overlay_asset_manifest(job_id: str, paths: list[str]) -> None:
+    with session() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO system_settings (key, value, updated_at) VALUES ('allsky_overlay_assets', ?, ?)",
+            (json_dumps({"job_id": job_id, "paths": paths}), now_iso()),
+        )
+        event(conn, "allsky_overlay_assets_imported", {"job_id": job_id, "assets": len(paths)})
+
+
 def rollback_allsky_import(job_id: str) -> dict[str, Any]:
     with session() as conn:
         job = decode_row(row_to_dict(conn.execute("SELECT output FROM processing_jobs WHERE id=?", (job_id,)).fetchone()))
@@ -357,6 +417,8 @@ def rollback_allsky_import(job_id: str) -> dict[str, Any]:
         images = [image for image in images if migration_job_id(image) == job_id]
         products = [product for product in products if migration_job_id(product) == job_id]
         dark_frames = [frame for frame in dark_frames if migration_job_id(frame) == job_id]
+        output = job.get("output") if isinstance(job, dict) else {}
+        overlay_asset_paths = [Path(str(path)) for path in output.get("overlay_asset_paths", [])] if isinstance(output, dict) and isinstance(output.get("overlay_asset_paths"), list) else []
         deleted_files: list[str] = []
         missing_files: list[str] = []
         skipped_files: list[dict[str, Any]] = []
@@ -381,6 +443,11 @@ def rollback_allsky_import(job_id: str) -> dict[str, Any]:
             result = delete_storage_paths(dark_frame_storage_artifacts(frame))
             conn.execute("DELETE FROM dark_frames WHERE id=?", (frame["id"],))
             dark_frame_ids.append(frame["id"])
+            deleted_files.extend(result["deleted_files"])
+            missing_files.extend(result["missing_files"])
+            skipped_files.extend(result["skipped_files"])
+        if overlay_asset_paths:
+            result = delete_storage_paths(overlay_asset_paths)
             deleted_files.extend(result["deleted_files"])
             missing_files.extend(result["missing_files"])
             skipped_files.extend(result["skipped_files"])
@@ -468,6 +535,13 @@ def map_allsky_settings(parsed: dict[str, dict[str, Any]]) -> dict[str, Any]:
     overlay_font_size = first_float(lookup, ("font_size", "fontsize", "font"))
     overlay_text_color = first_text(lookup, ("text_color", "textcolor", "font_color", "fontcolor"))
     overlay_background_color = first_text(lookup, ("background_color", "backgroundcolor"))
+    retention = first_float(lookup, ("retention", "retention_days", "retentiondays", "days_to_keep", "daystokeep", "keepdays"))
+    public_product_days = first_float(lookup, ("public_days", "publicdays", "product_days", "productdays"))
+    thumbnails_enabled = first_bool(lookup, ("generate_thumbnails", "generatethumbnails", "thumbnails"))
+    keogram_enabled = first_bool(lookup, ("keogram",))
+    startrail_enabled = first_bool(lookup, ("startrails", "startrail"))
+    timelapse_enabled = first_bool(lookup, ("timelapse",))
+    mini_timelapse_enabled = first_bool(lookup, ("mini_timelapse", "minitimelapse"))
     observatory: dict[str, Any] = {}
     if latitude is not None and -90 <= latitude <= 90:
         observatory["latitude"] = latitude
@@ -483,6 +557,26 @@ def map_allsky_settings(parsed: dict[str, dict[str, Any]]) -> dict[str, Any]:
         mapped["schedule"] = {"sun_angle": angle, "start_sun_angle": angle, "end_sun_angle": angle}
     if public_enabled is not None:
         mapped["public_page"] = {"enabled": public_enabled}
+    if public_product_days is not None and 1 <= public_product_days <= 3650:
+        mapped.setdefault("public_page", {})["product_days"] = int(public_product_days)
+    if retention is not None and 0 <= retention <= 36500:
+        mapped["storage"] = {"retention_days": int(retention)}
+    processing: dict[str, bool] = {}
+    if thumbnails_enabled is not None:
+        processing["thumbnails"] = thumbnails_enabled
+    if keogram_enabled is not None:
+        processing["keogram"] = keogram_enabled
+    if startrail_enabled is not None:
+        processing["startrails"] = startrail_enabled
+    if timelapse_enabled is not None:
+        processing["timelapse"] = timelapse_enabled
+    if mini_timelapse_enabled is not None:
+        processing["mini_timelapse"] = mini_timelapse_enabled
+    if processing:
+        mapped["processing"] = processing
+    profiles = profile_settings(lookup)
+    if profiles:
+        mapped["camera_profiles"] = profiles
     if camera_hint:
         mapped["camera_hints"] = {"source": "allsky", "hint": camera_hint}
     overlay: dict[str, Any] = {}
@@ -505,11 +599,12 @@ def apply_allsky_settings(root: Path, job_id: str) -> dict[str, Any]:
     mapped = map_allsky_settings(read_allsky_settings(root))
     backup: dict[str, Any] = {}
     with session() as conn:
-        for key in ("observatory", "public_page", "allsky_camera_hints"):
+        for key in ("observatory", "public_page", "storage", "processing", "allsky_camera_hints", "allsky_overlay_assets"):
             row = conn.execute("SELECT value FROM system_settings WHERE key=?", (key,)).fetchone()
             backup[key] = json_loads(row["value"], None) if row else None
         schedule_row = row_to_dict(conn.execute("SELECT * FROM capture_schedule LIMIT 1").fetchone())
         backup["capture_schedule"] = schedule_row
+        backup["camera_profiles"] = [decode_row(row_to_dict(row)) for row in conn.execute("SELECT * FROM camera_profiles ORDER BY id").fetchall()]
         overlay_row = row_to_dict(conn.execute("SELECT * FROM plugin_modules WHERE id=?", (OVERLAY_MODULE_ID,)).fetchone())
         backup["overlay_module"] = decode_row(overlay_row) if overlay_row else None
 
@@ -524,6 +619,11 @@ def apply_allsky_settings(root: Path, job_id: str) -> dict[str, Any]:
         if "camera_hints" in mapped:
             value = {**mapped["camera_hints"], "job_id": job_id}
             conn.execute("INSERT OR REPLACE INTO system_settings (key, value, updated_at) VALUES ('allsky_camera_hints', ?, ?)", (json_dumps(value), now_iso()))
+        for key in ("storage", "processing"):
+            if key in mapped:
+                current = backup.get(key) if isinstance(backup.get(key), dict) else {}
+                value = {**current, **mapped[key]}
+                conn.execute("INSERT OR REPLACE INTO system_settings (key, value, updated_at) VALUES (?, ?, ?)", (key, json_dumps(value), now_iso()))
         if "schedule" in mapped:
             if schedule_row:
                 patch = mapped["schedule"]
@@ -544,6 +644,8 @@ def apply_allsky_settings(root: Path, job_id: str) -> dict[str, Any]:
                 "UPDATE plugin_modules SET enabled=?, settings=?, updated_at=? WHERE id=?",
                 (next_enabled, json_dumps(next_settings), now_iso(), OVERLAY_MODULE_ID),
             )
+        if "camera_profiles" in mapped:
+            apply_profile_settings(conn, mapped["camera_profiles"])
         if mapped:
             event(conn, "allsky_settings_imported", {"job_id": job_id, "settings_keys": sorted(mapped.keys())})
     return {"applied": mapped, "backup": backup}
@@ -560,13 +662,22 @@ def restore_settings_from_job_output(conn, job: dict[str, Any] | None) -> dict[s
     if not isinstance(backup, dict):
         return {"restored": False, "reason": "missing_settings_backup"}
     restored: list[str] = []
-    for key in ("observatory", "public_page", "allsky_camera_hints"):
+    for key in ("observatory", "public_page", "storage", "processing", "allsky_camera_hints", "allsky_overlay_assets"):
         value = backup.get(key)
         if value is None:
             conn.execute("DELETE FROM system_settings WHERE key=?", (key,))
         else:
             conn.execute("INSERT OR REPLACE INTO system_settings (key, value, updated_at) VALUES (?, ?, ?)", (key, json_dumps(value), now_iso()))
         restored.append(key)
+    profiles = backup.get("camera_profiles")
+    if isinstance(profiles, list):
+        for profile in profiles:
+            if isinstance(profile, dict) and profile.get("id"):
+                conn.execute(
+                    "UPDATE camera_profiles SET settings=?, updated_at=? WHERE id=?",
+                    (json_dumps(profile.get("settings") or {}), now_iso(), profile["id"]),
+                )
+        restored.append("camera_profiles")
     overlay_module = backup.get("overlay_module")
     if isinstance(overlay_module, dict) and overlay_module.get("id"):
         conn.execute(
@@ -638,6 +749,32 @@ def is_excluded_import_path(root: Path, path: Path) -> bool:
         relative = path
     parts = normalized_parts(relative)
     return bool(parts & EXCLUDED_IMPORT_PARTS)
+
+
+def scan_overlay_assets(root: Path) -> list[Path]:
+    if not root.exists() or not root.is_dir():
+        return []
+    assets: list[Path] = []
+    for path in sorted(root.rglob("*")):
+        if not path.is_file() or path.suffix.lower() not in IMAGE_SUFFIXES:
+            continue
+        try:
+            relative = path.relative_to(root)
+        except ValueError:
+            relative = path
+        parts = normalized_parts(relative)
+        if "overlay" in parts and ("images" in parts or "assets" in parts) and "imagethumbnails" not in parts:
+            assets.append(path)
+    return assets
+
+
+def safe_relative_path(root: Path, path: Path) -> Path:
+    try:
+        relative = path.relative_to(root)
+    except ValueError:
+        relative = Path(path.name)
+    safe_parts = [re.sub(r"[^A-Za-z0-9._-]", "_", part) for part in relative.parts if part not in {"..", ".", ""}]
+    return Path(*safe_parts) if safe_parts else Path(path.name)
 
 
 def is_allsky_capture_path(path: Path) -> bool:
@@ -720,6 +857,59 @@ def first_bool(values: dict[str, Any], keys: tuple[str, ...]) -> bool | None:
     if lowered in {"0", "false", "no", "n", "off", "disabled", "disable"}:
         return False
     return None
+
+
+def profile_settings(values: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    profiles: dict[str, dict[str, Any]] = {}
+    for mode, prefix in (("daytime", "day"), ("nighttime", "night")):
+        patch: dict[str, Any] = {}
+        exposure = first_float(values, (f"{prefix}_exposure", f"{prefix}exposure", f"{prefix}_exposure_ms", f"{prefix}exposurems"))
+        gain = first_float(values, (f"{prefix}_gain", f"{prefix}gain"))
+        interval = first_float(values, (f"{prefix}_interval", f"{prefix}interval", f"{prefix}_delay", f"{prefix}delay"))
+        save = first_bool(values, (f"save_{prefix}", f"save{prefix}", f"{prefix}_save", f"{prefix}save"))
+        capture = first_bool(values, (f"capture_{prefix}", f"capture{prefix}", f"{prefix}_capture", f"{prefix}capture"))
+        if exposure is not None and 0 <= exposure <= 600000:
+            patch["manual_exposure_ms"] = int(exposure)
+            patch["auto_exposure"] = False
+        if gain is not None and 0 <= gain <= 1000:
+            patch["gain"] = gain
+            patch["auto_gain"] = False
+        if interval is not None and 1 <= interval <= 86400:
+            patch["interval_seconds"] = int(interval)
+        if save is not None:
+            patch["save_enabled"] = save
+        if capture is not None:
+            patch["capture_enabled"] = capture
+        if mode == "nighttime":
+            for key, aliases in {
+                "end_of_night_keogram": ("end_of_night_keogram", "endofnightkeogram"),
+                "end_of_night_startrail": ("end_of_night_startrail", "endofnightstartrail"),
+                "end_of_night_timelapse": ("end_of_night_timelapse", "endofnighttimelapse"),
+                "end_of_night_mini_timelapse": ("end_of_night_mini_timelapse", "endofnightminitimelapse"),
+            }.items():
+                value = first_bool(values, aliases)
+                if value is not None:
+                    patch[key] = value
+        if patch:
+            profiles[mode] = patch
+    return profiles
+
+
+def apply_profile_settings(conn, profiles: dict[str, dict[str, Any]]) -> None:
+    rows = conn.execute(
+        """SELECT camera_profiles.* FROM camera_profiles
+           JOIN cameras ON cameras.id = camera_profiles.camera_id
+           WHERE cameras.is_primary=1 AND camera_profiles.mode IN ('daytime', 'nighttime')"""
+    ).fetchall()
+    by_mode = {row["mode"]: decode_row(row_to_dict(row)) for row in rows}
+    ts = now_iso()
+    for mode, patch in profiles.items():
+        profile = by_mode.get(mode)
+        if not profile:
+            continue
+        current = profile.get("settings") if isinstance(profile.get("settings"), dict) else default_profile(mode)
+        merged = {**default_profile(mode), **current, **patch}
+        conn.execute("UPDATE camera_profiles SET settings=?, updated_at=? WHERE id=?", (json_dumps(merged), ts, profile["id"]))
 
 
 def overlay_text_lines(values: dict[str, Any]) -> list[dict[str, str]]:

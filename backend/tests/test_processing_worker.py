@@ -524,6 +524,15 @@ def test_worker_uploads_latest_image_to_ftps_target(tmp_path: Path, monkeypatch)
     assert target_res.status_code == 200, target_res.text
     target = target_res.json()["data"]
     assert target["config"]["password"] == "***"
+    from skyweaver.db import json_loads, session
+    from skyweaver.secrets import decrypt_config_envelope
+
+    with session() as conn:
+        stored = conn.execute("SELECT config_encrypted FROM remote_targets WHERE id=?", (target["id"],)).fetchone()["config_encrypted"]
+    stored_config = json_loads(stored, {})
+    assert stored_config["_skyweaver_secret"] == "fernet.v1"
+    assert '"password":"secret"' not in stored
+    assert decrypt_config_envelope(stored_config)["password"] == "secret"
 
     test_res = client.post(f"/api/v1/remote-targets/{target['id']}/test", headers=headers)
     assert test_res.status_code == 200, test_res.text
@@ -701,6 +710,25 @@ def test_worker_imports_and_rolls_back_allsky_files(tmp_path: Path):
             "TEXTLINE1='Garden {captured_time}'",
             "TEXT_COLOR=#ffcc00",
             "FONT_SIZE=18",
+            "RETENTION_DAYS=14",
+            "PUBLIC_DAYS=5",
+            "GENERATE_THUMBNAILS=true",
+            "KEOGRAM=true",
+            "STARTRAIL=true",
+            "TIMELAPSE=true",
+            "DAY_EXPOSURE=20",
+            "DAY_GAIN=2",
+            "DAY_INTERVAL=45",
+            "SAVE_DAY=false",
+            "CAPTURE_DAY=true",
+            "NIGHT_EXPOSURE=12000",
+            "NIGHT_GAIN=5",
+            "NIGHT_INTERVAL=35",
+            "SAVE_NIGHT=true",
+            "CAPTURE_NIGHT=true",
+            "END_OF_NIGHT_KEOGRAM=true",
+            "END_OF_NIGHT_STARTRAIL=true",
+            "END_OF_NIGHT_TIMELAPSE=true",
             "UNSUPPORTED_FOO=bar",
         ]),
         encoding="utf-8",
@@ -709,11 +737,18 @@ def test_worker_imports_and_rolls_back_allsky_files(tmp_path: Path):
     preview = client.post("/api/v1/migration/allsky/preview", headers=headers, json={"path": str(allsky)})
     assert preview.status_code == 200, preview.text
     preview_data = preview.json()["data"]
-    assert preview_data["counts"] == {"images": 1, "timelapses": 1, "keograms": 1, "startrails": 0, "dark_frames": 1}
+    assert preview_data["counts"] == {"images": 1, "timelapses": 1, "keograms": 1, "startrails": 0, "dark_frames": 1, "overlay_assets": 1}
     assert preview_data["unsupported_settings"][0]["path"] == str(config_source)
     assert preview_data["settings"]["observatory"]["name"] == "Garden Allsky"
     assert preview_data["settings"]["observatory"]["latitude"] == 49.1
     assert preview_data["settings"]["schedule"]["sun_angle"] == -12
+    assert preview_data["settings"]["storage"]["retention_days"] == 14
+    assert preview_data["settings"]["public_page"]["product_days"] == 5
+    assert preview_data["settings"]["processing"]["keogram"] is True
+    assert preview_data["settings"]["camera_profiles"]["daytime"]["interval_seconds"] == 45
+    assert preview_data["settings"]["camera_profiles"]["daytime"]["save_enabled"] is False
+    assert preview_data["settings"]["camera_profiles"]["nighttime"]["manual_exposure_ms"] == 12000
+    assert preview_data["settings"]["camera_profiles"]["nighttime"]["end_of_night_timelapse"] is True
     assert preview_data["settings"]["overlay"]["enabled"] is True
     assert preview_data["settings"]["overlay"]["settings"]["lines"][0]["text"] == "Garden {captured_time}"
     assert any("UNSUPPORTED_FOO" in item.get("keys", []) for item in preview_data["unsupported_settings"])
@@ -731,7 +766,8 @@ def test_worker_imports_and_rolls_back_allsky_files(tmp_path: Path):
     assert completed["output"]["imported_images"] == 1
     assert completed["output"]["imported_dark_frames"] == 1
     assert completed["output"]["imported_products"] == 2
-    assert {item["kind"] for item in completed["output"]["import_log"]} == {"image", "dark_frame", "keogram", "timelapse"}
+    assert completed["output"]["imported_overlay_assets"] == 1
+    assert {item["kind"] for item in completed["output"]["import_log"]} == {"image", "dark_frame", "keogram", "timelapse", "overlay_asset"}
     assert completed["output"]["settings"]["applied"]["camera_hints"]["hint"] == "IMX290"
     assert completed["output"]["settings"]["applied"]["overlay"]["settings"]["font_size"] == 18
     assert image_source.exists()
@@ -750,12 +786,27 @@ def test_worker_imports_and_rolls_back_allsky_files(tmp_path: Path):
     imported_dark = next(item for item in dark_frames if item["metadata"]["migration"]["job_id"] == job_id)
     assert imported_dark["metadata"]["migration"]["original_path"] == str(dark_source)
     copied_paths = [Path(imported_image["file_path"]), Path(imported_dark["file_path"]), *(Path(item["file_path"]) for item in imported_products)]
+    overlay_asset_paths = [Path(path) for path in completed["output"]["overlay_asset_paths"]]
     assert all(path.exists() for path in copied_paths)
+    assert len(overlay_asset_paths) == 1
+    assert overlay_asset_paths[0].exists()
     settings_after_import = client.get("/api/v1/settings", headers=headers).json()["data"]
     assert settings_after_import["observatory"]["name"] == "Garden Allsky"
     assert settings_after_import["observatory"]["latitude"] == 49.1
     assert settings_after_import["observatory"]["longitude"] == 10.12
     assert settings_after_import["allsky_camera_hints"]["hint"] == "IMX290"
+    assert settings_after_import["storage"]["retention_days"] == 14
+    assert settings_after_import["public_page"]["product_days"] == 5
+    assert settings_after_import["processing"]["startrails"] is True
+    assert settings_after_import["allsky_overlay_assets"]["paths"] == [str(overlay_asset_paths[0])]
+    profiles_after_import = client.get("/api/v1/camera-profiles", headers=headers).json()["data"]
+    day_profile = next(item for item in profiles_after_import if item["mode"] == "daytime")
+    night_profile = next(item for item in profiles_after_import if item["mode"] == "nighttime")
+    assert day_profile["settings"]["interval_seconds"] == 45
+    assert day_profile["settings"]["save_enabled"] is False
+    assert night_profile["settings"]["manual_exposure_ms"] == 12000
+    assert night_profile["settings"]["gain"] == 5
+    assert night_profile["settings"]["end_of_night_startrail"] is True
     schedule_after_import = client.get("/api/v1/schedule", headers=headers).json()["data"]
     assert schedule_after_import["sun_angle"] == -12
     modules_after_import = client.get("/api/v1/modules", headers=headers).json()["data"]
@@ -772,6 +823,7 @@ def test_worker_imports_and_rolls_back_allsky_files(tmp_path: Path):
     assert rollback_data["deleted_products"] == 2
     assert rollback_data["settings_restored"]["restored"] is True
     assert all(not path.exists() for path in copied_paths)
+    assert all(not path.exists() for path in overlay_asset_paths)
     assert image_source.exists()
     assert dark_source.exists()
     assert keogram_source.exists()
@@ -779,6 +831,11 @@ def test_worker_imports_and_rolls_back_allsky_files(tmp_path: Path):
     settings_after_rollback = client.get("/api/v1/settings", headers=headers).json()["data"]
     assert settings_after_rollback["observatory"]["name"] == "Sky Weaver Observatory"
     assert "allsky_camera_hints" not in settings_after_rollback
+    assert "allsky_overlay_assets" not in settings_after_rollback
+    assert settings_after_rollback["storage"]["retention_days"] == 30
+    profiles_after_rollback = client.get("/api/v1/camera-profiles", headers=headers).json()["data"]
+    day_after_rollback = next(item for item in profiles_after_rollback if item["mode"] == "daytime")
+    assert day_after_rollback["settings"]["interval_seconds"] == 300
     schedule_after_rollback = client.get("/api/v1/schedule", headers=headers).json()["data"]
     assert schedule_after_rollback["sun_angle"] == -6
     modules_after_rollback = client.get("/api/v1/modules", headers=headers).json()["data"]

@@ -177,6 +177,7 @@ export default function Migration() {
               <Stat label="images" value={String(job.output.imported_images ?? 0)} />
               <Stat label="dark frames" value={String(job.output.imported_dark_frames ?? 0)} />
               <Stat label="products" value={String(job.output.imported_products ?? 0)} />
+              <Stat label="overlay assets" value={String(job.output.imported_overlay_assets ?? 0)} />
               <Stat label="settings" value={String(Object.keys(job.output.settings?.applied ?? {}).length)} />
             </div>
           )}

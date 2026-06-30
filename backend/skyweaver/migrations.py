@@ -1,7 +1,14 @@
 import sqlite3
+import base64
+import hashlib
+import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Callable
+
+from cryptography.fernet import Fernet
+
+from .config import get_settings
 
 
 MigrationFunc = Callable[[sqlite3.Connection], None]
@@ -151,10 +158,31 @@ def _dark_frames(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_dark_frames_day ON dark_frames (day_key, captured_at DESC)")
 
 
+def _encrypt_remote_target_configs(conn: sqlite3.Connection) -> None:
+    table = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='remote_targets'").fetchone()
+    if not table:
+        return
+    digest = hashlib.sha256(get_settings().secret_key.encode("utf-8")).digest()
+    fernet = Fernet(base64.urlsafe_b64encode(digest))
+    for row in conn.execute("SELECT id, config_encrypted FROM remote_targets").fetchall():
+        try:
+            config = json.loads(row["config_encrypted"] or "{}")
+        except json.JSONDecodeError:
+            config = {}
+        if isinstance(config, dict) and config.get("_skyweaver_secret") == "fernet.v1":
+            continue
+        if not isinstance(config, dict):
+            config = {}
+        payload = json.dumps(config, separators=(",", ":"), sort_keys=True).encode("utf-8")
+        envelope = {"_skyweaver_secret": "fernet.v1", "token": fernet.encrypt(payload).decode("ascii")}
+        conn.execute("UPDATE remote_targets SET config_encrypted=? WHERE id=?", (json.dumps(envelope, separators=(",", ":"), sort_keys=True), row["id"]))
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(1, "capture_daemon_job_columns", _capture_daemon_columns),
     Migration(2, "core_query_indexes", _core_indexes),
     Migration(3, "schedule_split_sun_angles", _schedule_split_sun_angles),
     Migration(4, "upload_jobs", _upload_jobs),
     Migration(5, "dark_frames", _dark_frames),
+    Migration(6, "encrypt_remote_target_configs", _encrypt_remote_target_configs),
 )

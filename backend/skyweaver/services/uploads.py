@@ -4,7 +4,8 @@ from ftplib import FTP, FTP_TLS
 from pathlib import Path
 from typing import Any
 
-from ..db import event, json_dumps, json_loads, log, new_id, now_iso, row_to_dict, session
+from ..db import event, json_dumps, log, new_id, now_iso, row_to_dict, session
+from ..secrets import decrypt_config_envelope
 from .capture import decode_row
 
 SUPPORTED_TARGET_TYPES = {"filesystem", "rsync_ssh", "scp_ssh", "sftp_ssh", "ftp", "ftps"}
@@ -29,11 +30,7 @@ def safe_target_config(config: dict[str, Any]) -> dict[str, Any]:
 
 
 def remote_target_payload(row: dict[str, Any]) -> dict[str, Any]:
-    config = row.get("config_encrypted")
-    if isinstance(config, str):
-        config = json_loads(config, {})
-    if not isinstance(config, dict):
-        config = {}
+    config = target_config(row)
     return {
         "id": row["id"],
         "name": row["name"],
@@ -262,12 +259,7 @@ def copy_to_target(upload: dict[str, Any], target: dict[str, Any]) -> str:
 
 
 def target_config(target: dict[str, Any]) -> dict[str, Any]:
-    config = target.get("config_encrypted")
-    if isinstance(config, str):
-        config = json_loads(config, {})
-    if not isinstance(config, dict):
-        config = {}
-    return config
+    return decrypt_config_envelope(target.get("config_encrypted"))
 
 
 def copy_to_filesystem_target(upload: dict[str, Any], target: dict[str, Any]) -> Path:

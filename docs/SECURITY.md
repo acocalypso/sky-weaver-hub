@@ -7,6 +7,7 @@
 - Successful privileged changes are logged to the local `security` log source, including setup completion, password changes, user lifecycle, API-key lifecycle, settings, schedule, camera, and camera-profile changes.
 - Security audit contexts record actor metadata, client host/user agent, target identifiers, scopes, and changed field/key names. They must not store submitted passwords, raw API keys, key hashes, or secret setting values.
 - API keys are hashed and only shown once.
+- Remote target configs are stored locally as a Fernet encrypted envelope derived from `SKYWEAVER_SECRET_KEY`; keep that key stable and protected or existing encrypted upload targets cannot be decrypted.
 - Public pages must not expose admin controls.
 - Camera adapters use subprocess argv lists.
 - Custom command execution remains disabled until sandboxing is configured.
