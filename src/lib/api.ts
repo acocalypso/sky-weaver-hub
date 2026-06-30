@@ -85,6 +85,10 @@ export const SkyApi = {
   patchApiKey: (id: string, body: { enabled?: boolean }) => api<any>(`/api/v1/api-keys/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   deleteApiKey: (id: string) => api<{ deleted: string }>(`/api/v1/api-keys/${id}`, { method: "DELETE" }),
   migrationDetect: () => api<any[]>("/api/v1/migration/allsky/detect"),
+  migrationPreview: (body: { path: string }) => api<AllskyPreview>("/api/v1/migration/allsky/preview", { method: "POST", body: JSON.stringify(body) }),
+  migrationImport: (body: { path: string }) => api<ProcessingJob>("/api/v1/migration/allsky/import", { method: "POST", body: JSON.stringify(body) }),
+  migrationJob: (id: string) => api<ProcessingJob>(`/api/v1/migration/jobs/${id}`),
+  rollbackMigrationJob: (id: string) => api<AllskyRollbackResult>(`/api/v1/migration/jobs/${id}/rollback`, { method: "POST" }),
 };
 
 export interface SkyUser { id: string; username: string; role: string; }
@@ -146,6 +150,8 @@ export interface UploadJob { id: string; target_id: string; source_type: string;
 export interface UploadQueuePayload { source_type: "latest" | "image" | "product"; source_id?: string; target_id?: string; }
 export interface UploadQueueResult { id: string; status: string; upload_job_ids: string[]; }
 export interface UploadRetryResult { status: string; processing_job_id: string | null; upload_job_ids: string[]; }
+export interface AllskyPreview { path: string; exists: boolean; counts: Record<string, number>; unsupported_settings: { path: string; reason: string }[]; will_delete_original: boolean; import_plan: Record<string, any>; }
+export interface AllskyRollbackResult { migration_job_id: string; deleted_images: number; deleted_products: number; deleted_image_ids: string[]; deleted_product_ids: string[]; deleted_files: string[]; missing_files: string[]; skipped_files: ImageSkippedFile[]; }
 export interface ProcessingJob { id: string; type: string; status: string; input: any; output?: any; error?: string | null; progress: number; created_at: string; started_at?: string | null; completed_at?: string | null; }
 export interface CaptureJob { id: string; type: string; status: string; request: any; result?: any; error?: string | null; progress: number; created_at: string; started_at?: string | null; completed_at?: string | null; }
 export interface LogRow { id: string; level: string; source: string; message: string; context: any; created_at: string; }

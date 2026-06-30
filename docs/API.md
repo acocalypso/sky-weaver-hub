@@ -56,6 +56,14 @@ Remote upload endpoints require authenticated admin or processing scopes. The fi
 - `POST /api/v1/uploads/queue` queues latest, image, or product upload work for enabled targets.
 - `POST /api/v1/uploads/retry` requeues failed upload jobs.
 
+Allsky migration endpoints require admin scope. Detection and preview do not modify source data. Import runs through the processing worker, copies recognized files into Sky Weaver-owned storage, and records provenance under `metadata.migration`. Rollback only removes Sky Weaver-created rows/files for the selected import job:
+
+- `GET /api/v1/migration/allsky/detect`
+- `POST /api/v1/migration/allsky/preview`
+- `POST /api/v1/migration/allsky/import`
+- `GET /api/v1/migration/jobs/{job_id}`
+- `POST /api/v1/migration/jobs/{job_id}/rollback`
+
 `GET /api/v1/system/services/{name}` returns per-service `systemctl show` properties, recent `journalctl` output, a `failure_analysis` summary, and `unit_history` timestamps/restart metadata when systemd tooling is available. These fields are read-only diagnostics for operators and mobile clients; service actions remain separate admin-scoped `POST /api/v1/system/services/{name}/{action}` calls.
 
 `POST /api/v1/capture/stop` cancels pending/claimed capture jobs immediately and reports any already-running exposure in `in_progress_jobs`/`in_progress_job_ids`. It also records best-effort cancel intent in `cancel_requested_jobs`/`cancel_requested_job_ids`; adapters with safe hard-cancel support, currently the rpicam/libcamera adapter, may interrupt the exposure in the capture daemon process and mark the job `canceled` with `stop_mode: hard_cancel`. Unsupported adapters finish gracefully and are marked `stopped` with `completed_after_stop` and `stop_mode: graceful`.

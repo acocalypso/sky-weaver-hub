@@ -18,7 +18,8 @@ from ..config import get_settings
 from ..db import default_profile, event, json_dumps, json_loads, log, new_id, now_iso, row_to_dict, session
 from ..rate_limit import InMemoryRateLimiter, RateLimitStatus
 from ..security import create_api_key, hash_password, make_token, verify_password
-from ..services.capture import CaptureCommand, all_rows, cleanup_images_by_retention, configured_image_retention_days, count_files, create_capture_job, current_schedule, decode_row, delete_image_files, enqueue_capture, get_primary_camera, public_latest_payload, publish_latest_image, read_latest_payload, scheduled_capture_timing, system_metrics
+from ..services.allsky_migration import preview_allsky_root, rollback_allsky_import
+from ..services.capture import CaptureCommand, all_rows, cleanup_images_by_retention, configured_image_retention_days, create_capture_job, current_schedule, decode_row, delete_image_files, enqueue_capture, get_primary_camera, public_latest_payload, publish_latest_image, read_latest_payload, scheduled_capture_timing, system_metrics
 from ..services.modules import register_external_module, run_flow_preview, validate_module_order
 from ..services.processing import cleanup_products_by_retention, delete_product_files
 from ..services.schedule import active_window
@@ -1723,17 +1724,14 @@ def detect_allsky(_principal: Annotated[dict, Depends(require_scope("admin"))]):
 @router.post("/migration/allsky/preview")
 def preview_allsky(payload: dict[str, Any], _principal: Annotated[dict, Depends(require_scope("admin"))]):
     root = Path(payload.get("path", ""))
-    counts = {
-        "images": count_files(root, ["*.jpg", "*.jpeg", "*.png"]),
-        "timelapses": count_files(root, ["*.mp4", "*.webm"]),
-        "keograms": count_files(root, ["*keogram*.jpg", "*keogram*.png"]),
-        "startrails": count_files(root, ["*startrail*.jpg", "*startrail*.png"]),
-    }
-    return ok({"path": str(root), "exists": root.exists(), "counts": counts, "will_delete_original": False})
+    return ok(preview_allsky_root(root))
 
 
 @router.post("/migration/allsky/import")
 def import_allsky(payload: dict[str, Any], _principal: Annotated[dict, Depends(require_scope("admin"))]):
+    root = Path(str(payload.get("path", ""))).expanduser()
+    if not root.exists() or not root.is_dir():
+        raise HTTPException(400, "Allsky path does not exist or is not a directory")
     with session() as conn:
         job_id = new_id()
         conn.execute("INSERT INTO processing_jobs (id, type, status, input, created_at) VALUES (?, 'allsky_import', 'pending', ?, ?)", (job_id, json_dumps(payload), now_iso()))
@@ -1747,6 +1745,15 @@ def migration_job(job_id: str, _principal: Annotated[dict, Depends(require_scope
     if not row:
         raise HTTPException(404, "Migration job not found")
     return ok(row)
+
+
+@router.post("/migration/jobs/{job_id}/rollback")
+def rollback_migration_job(job_id: str, _principal: Annotated[dict, Depends(require_scope("admin"))]):
+    with session() as conn:
+        row = conn.execute("SELECT type FROM processing_jobs WHERE id=?", (job_id,)).fetchone()
+    if not row or row["type"] != "allsky_import":
+        raise HTTPException(404, "Migration job not found")
+    return ok(rollback_allsky_import(job_id))
 
 
 @router.get("/events/stream")

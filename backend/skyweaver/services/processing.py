@@ -8,11 +8,12 @@ from PIL import Image, ImageChops
 
 from ..config import get_settings
 from ..db import event, json_dumps, log, now_iso, row_to_dict, session
+from .allsky_migration import execute_allsky_import
 from .capture import decode_row, delete_storage_paths, make_thumbnail
 from .uploads import execute_upload_processing_job
 
 
-def claim_next_processing_job(job_types: tuple[str, ...] = ("thumbnail", "keogram", "timelapse", "mini_timelapse", "startrail", "upload")) -> dict[str, Any] | None:
+def claim_next_processing_job(job_types: tuple[str, ...] = ("thumbnail", "keogram", "timelapse", "mini_timelapse", "startrail", "upload", "allsky_import")) -> dict[str, Any] | None:
     placeholders = ",".join("?" for _ in job_types)
     with session() as conn:
         conn.execute("BEGIN IMMEDIATE")
@@ -41,6 +42,8 @@ async def execute_processing_job(job: dict[str, Any]) -> dict[str, Any]:
             result = generate_startrail(job)
         elif job["type"] == "upload":
             result = execute_upload_processing_job(job)
+        elif job["type"] == "allsky_import":
+            result = execute_allsky_import(job)
         else:
             raise ValueError(f"Unsupported processing job type: {job['type']}")
 

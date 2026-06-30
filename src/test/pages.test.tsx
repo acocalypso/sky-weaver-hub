@@ -11,6 +11,7 @@ import Health from "@/pages/Health";
 import PublicSky from "@/pages/PublicSky";
 import Modules from "@/pages/Modules";
 import RemoteUpload from "@/pages/RemoteUpload";
+import Migration from "@/pages/Migration";
 import { SkyApi } from "@/lib/api";
 
 vi.mock("sonner", () => ({
@@ -61,6 +62,11 @@ vi.mock("@/lib/api", async () => {
       uploadJobs: vi.fn(),
       queueUpload: vi.fn(),
       retryUploads: vi.fn(),
+      migrationDetect: vi.fn(),
+      migrationPreview: vi.fn(),
+      migrationImport: vi.fn(),
+      migrationJob: vi.fn(),
+      rollbackMigrationJob: vi.fn(),
     },
   };
 });
@@ -339,6 +345,42 @@ beforeEach(() => {
   vi.mocked(SkyApi.testRemoteTarget).mockResolvedValue({ id: "target-1", status: "ready", type: "filesystem", destination_path: "/tmp/skyweaver-upload" });
   vi.mocked(SkyApi.queueUpload).mockResolvedValue({ id: "processing-1", status: "pending", upload_job_ids: ["upload-2"] });
   vi.mocked(SkyApi.retryUploads).mockResolvedValue({ status: "idle", processing_job_id: null, upload_job_ids: [] });
+  vi.mocked(SkyApi.migrationDetect).mockResolvedValue([{ path: "/home/pi/allsky", exists: true }]);
+  vi.mocked(SkyApi.migrationPreview).mockResolvedValue({
+    path: "/home/pi/allsky",
+    exists: true,
+    counts: { images: 3, timelapses: 1, keograms: 1, startrails: 1 },
+    unsupported_settings: [{ path: "/home/pi/allsky/config.sh", reason: "settings_translation_not_implemented" }],
+    will_delete_original: false,
+    import_plan: { copy_files: true, preserve_originals: true, rollback_supported: true },
+  });
+  vi.mocked(SkyApi.migrationImport).mockResolvedValue({
+    id: "migration-job-1",
+    type: "allsky_import",
+    status: "pending",
+    input: { path: "/home/pi/allsky" },
+    progress: 0,
+    created_at: "2026-06-23T12:00:00+00:00",
+  });
+  vi.mocked(SkyApi.migrationJob).mockResolvedValue({
+    id: "migration-job-1",
+    type: "allsky_import",
+    status: "completed",
+    input: { path: "/home/pi/allsky" },
+    output: { imported_images: 3, imported_products: 3 },
+    progress: 1,
+    created_at: "2026-06-23T12:00:00+00:00",
+  });
+  vi.mocked(SkyApi.rollbackMigrationJob).mockResolvedValue({
+    migration_job_id: "migration-job-1",
+    deleted_images: 3,
+    deleted_products: 3,
+    deleted_image_ids: [],
+    deleted_product_ids: [],
+    deleted_files: [],
+    missing_files: [],
+    skipped_files: [],
+  });
 });
 
 describe("main pages", () => {
@@ -426,6 +468,18 @@ describe("main pages", () => {
     expect(screen.getByText("image img-1")).toBeInTheDocument();
     fireEvent.click(screen.getAllByRole("button", { name: /queue latest/i })[0]);
     await waitFor(() => expect(SkyApi.queueUpload).toHaveBeenCalledWith({ source_type: "latest", target_id: undefined }));
+  });
+
+  it("renders Allsky migration preview and queues import", async () => {
+    render(<Migration />);
+
+    expect(await screen.findByRole("heading", { name: /allsky migration/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /preview/i }));
+    expect(await screen.findByText("Unsupported settings")).toBeInTheDocument();
+    expect(screen.getByText("3")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /queue import/i }));
+    await waitFor(() => expect(SkyApi.migrationImport).toHaveBeenCalledWith({ path: "/home/pi/allsky" }));
+    expect(await screen.findByText("migration-job-1")).toBeInTheDocument();
   });
 
   it("runs service controls from health", async () => {

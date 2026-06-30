@@ -2,6 +2,8 @@ import asyncio
 import shutil
 from pathlib import Path
 
+from PIL import Image
+
 from test_api import login, make_client, run_queued_test_capture
 
 
@@ -306,3 +308,62 @@ def test_upload_retry_requeues_failed_uploads(tmp_path: Path):
     retried = next(item for item in jobs if item["id"] == upload_id)
     assert retried["status"] == "pending"
     assert retried["last_error"] is None
+
+
+def test_worker_imports_and_rolls_back_allsky_files(tmp_path: Path):
+    client = make_client(tmp_path)
+    token = login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+    allsky = tmp_path / "allsky"
+    image_source = allsky / "images" / "2026-06-30" / "capture_20260630_010203.jpg"
+    keogram_source = allsky / "images" / "2026-06-30" / "keogram_20260630.jpg"
+    timelapse_source = allsky / "videos" / "timelapse_20260630.mp4"
+    config_source = allsky / "config.sh"
+    image_source.parent.mkdir(parents=True)
+    timelapse_source.parent.mkdir(parents=True)
+    Image.new("RGB", (64, 48), "navy").save(image_source)
+    Image.new("RGB", (64, 12), "white").save(keogram_source)
+    timelapse_source.write_bytes(b"fake-mp4")
+    config_source.write_text("LATITUDE=49.1\n", encoding="utf-8")
+
+    preview = client.post("/api/v1/migration/allsky/preview", headers=headers, json={"path": str(allsky)})
+    assert preview.status_code == 200, preview.text
+    preview_data = preview.json()["data"]
+    assert preview_data["counts"] == {"images": 1, "timelapses": 1, "keograms": 1, "startrails": 0}
+    assert preview_data["unsupported_settings"][0]["path"] == str(config_source)
+    assert preview_data["will_delete_original"] is False
+
+    queued = client.post("/api/v1/migration/allsky/import", headers=headers, json={"path": str(allsky)})
+    assert queued.status_code == 200, queued.text
+    job_id = queued.json()["data"]["id"]
+
+    from skyweaver.services.processing import run_once
+
+    assert asyncio.run(run_once()) is True
+    completed = client.get(f"/api/v1/migration/jobs/{job_id}", headers=headers).json()["data"]
+    assert completed["status"] == "completed"
+    assert completed["output"]["imported_images"] == 1
+    assert completed["output"]["imported_products"] == 2
+    assert image_source.exists()
+    assert keogram_source.exists()
+    assert timelapse_source.exists()
+
+    images = client.get("/api/v1/images", headers=headers).json()["data"]
+    imported_image = next(item for item in images if item["metadata"]["migration"]["job_id"] == job_id)
+    assert Path(imported_image["file_path"]).exists()
+    assert imported_image["metadata"]["migration"]["original_path"] == str(image_source)
+    products = client.get("/api/v1/products", headers=headers).json()["data"]
+    imported_products = [item for item in products if item["metadata"]["migration"]["job_id"] == job_id]
+    assert {item["type"] for item in imported_products} == {"keogram", "timelapse"}
+    copied_paths = [Path(imported_image["file_path"]), *(Path(item["file_path"]) for item in imported_products)]
+    assert all(path.exists() for path in copied_paths)
+
+    rollback = client.post(f"/api/v1/migration/jobs/{job_id}/rollback", headers=headers)
+    assert rollback.status_code == 200, rollback.text
+    rollback_data = rollback.json()["data"]
+    assert rollback_data["deleted_images"] == 1
+    assert rollback_data["deleted_products"] == 2
+    assert all(not path.exists() for path in copied_paths)
+    assert image_source.exists()
+    assert keogram_source.exists()
+    assert timelapse_source.exists()
