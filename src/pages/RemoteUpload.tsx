@@ -13,7 +13,13 @@ export default function RemoteUpload() {
   const [targets, setTargets] = useState<RemoteTarget[]>([]);
   const [jobs, setJobs] = useState<UploadJob[]>([]);
   const [name, setName] = useState("Local mirror");
+  const [targetType, setTargetType] = useState<"filesystem" | "rsync_ssh">("filesystem");
   const [destination, setDestination] = useState("");
+  const [host, setHost] = useState("");
+  const [username, setUsername] = useState("pi");
+  const [remotePath, setRemotePath] = useState("/var/www/html/allsky");
+  const [port, setPort] = useState("22");
+  const [sshKeyPath, setSshKeyPath] = useState("");
   const [enabled, setEnabled] = useState(true);
   const [loading, setLoading] = useState(false);
 
@@ -37,7 +43,10 @@ export default function RemoteUpload() {
 
   async function addTarget() {
     try {
-      const target = await SkyApi.createRemoteTarget({ name, type: "filesystem", enabled, config: { destination_path: destination } });
+      const config = targetType === "filesystem"
+        ? { destination_path: destination }
+        : { host, username, remote_path: remotePath, port: Number(port || 22), ssh_key_path: sshKeyPath || undefined };
+      const target = await SkyApi.createRemoteTarget({ name, type: targetType, enabled, config });
       setTargets([target, ...targets]);
       toast.success("Remote target saved");
     } catch (e: any) {
@@ -47,7 +56,7 @@ export default function RemoteUpload() {
 
   async function toggleTarget(target: RemoteTarget, nextEnabled: boolean) {
     try {
-      const updated = await SkyApi.patchRemoteTarget(target.id, { name: target.name, type: "filesystem", enabled: nextEnabled, config: { destination_path: target.config.destination_path } });
+      const updated = await SkyApi.patchRemoteTarget(target.id, { name: target.name, type: target.type as "filesystem" | "rsync_ssh", enabled: nextEnabled, config: target.config });
       setTargets(targets.map((item) => (item.id === target.id ? updated : item)));
     } catch (e: any) {
       toast.error(e.message ?? "Update target failed");
@@ -100,15 +109,32 @@ export default function RemoteUpload() {
       </div>
 
       <Card className="telemetry-card space-y-4">
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Filesystem target</h2>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-[1fr_2fr_auto] md:items-end">
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Upload target</h2>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-[1fr_1fr_auto] md:items-end">
           <Field label="Name" value={name} onChange={setName} />
-          <Field label="Destination path" value={destination} onChange={setDestination} placeholder="/mnt/allsky-upload" />
+          <div className="space-y-2">
+            <Label>Type</Label>
+            <select className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={targetType} onChange={(event) => setTargetType(event.target.value as "filesystem" | "rsync_ssh")}>
+              <option value="filesystem">Filesystem</option>
+              <option value="rsync_ssh">Rsync over SSH</option>
+            </select>
+          </div>
           <div className="flex items-center gap-3 pb-2">
             <Switch checked={enabled} onCheckedChange={setEnabled} />
             <span className="text-sm text-muted-foreground">Enabled</span>
           </div>
         </div>
+        {targetType === "filesystem" ? (
+          <Field label="Destination path" value={destination} onChange={setDestination} placeholder="/mnt/allsky-upload" />
+        ) : (
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
+            <Field label="Host" value={host} onChange={setHost} placeholder="example.local" />
+            <Field label="Username" value={username} onChange={setUsername} />
+            <Field label="Remote path" value={remotePath} onChange={setRemotePath} />
+            <Field label="Port" value={port} onChange={setPort} type="number" min={1} max={65535} />
+            <Field label="SSH key path" value={sshKeyPath} onChange={setSshKeyPath} placeholder="/home/skyweaver/.ssh/id_ed25519" />
+          </div>
+        )}
         <Button onClick={addTarget}>Add target</Button>
       </Card>
 
@@ -121,7 +147,7 @@ export default function RemoteUpload() {
                 <p className="font-medium truncate">{target.name}</p>
                 <StatusBadge variant={target.enabled ? "ok" : "idle"}>{target.enabled ? "enabled" : "disabled"}</StatusBadge>
               </div>
-              <p className="mt-1 font-mono-data text-xs text-muted-foreground truncate">{target.type} - {target.config.destination_path}</p>
+              <p className="mt-1 font-mono-data text-xs text-muted-foreground truncate">{target.type} - {formatTargetDestination(target)}</p>
             </div>
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" size="sm" onClick={() => testTarget(target)}><TestTube2 className="h-4 w-4 mr-2" />Test</Button>
@@ -149,6 +175,13 @@ export default function RemoteUpload() {
       </Card>
     </div>
   );
+}
+
+function formatTargetDestination(target: RemoteTarget) {
+  if (target.type === "rsync_ssh") {
+    return `${target.config.username}@${target.config.host}:${target.config.remote_path}`;
+  }
+  return target.config.destination_path ?? "-";
 }
 
 function Field({ label, value, onChange, ...rest }: { label: string; value: string; onChange: (value: string) => void } & React.InputHTMLAttributes<HTMLInputElement>) {

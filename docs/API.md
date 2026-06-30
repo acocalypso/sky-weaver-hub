@@ -45,10 +45,10 @@ Public endpoints are intentionally unauthenticated for kiosk/public-page/mobile 
 
 `GET /api/v1/public/products` returns completed keogram, startrail, timelapse, and mini-timelapse products newer than the configured `public_page.product_days` setting. The response is wrapped in the standard success envelope and includes `days`, `configured_days`, and `products`. Public product entries include safe metadata plus public download/thumbnail URLs; local `file_path` and `thumbnail_path` values are never exposed.
 
-Remote upload endpoints require authenticated admin or processing scopes. The first implemented target type is `filesystem`; network upload protocols are still intentionally unsupported until credential handling and protocol-specific failure behavior are designed.
+Remote upload endpoints require authenticated admin or processing scopes. Implemented target types are `filesystem` and `rsync_ssh`. The rsync target uses key/agent-based SSH only and stores no password. Other network upload protocols are still intentionally unsupported until credential handling and protocol-specific failure behavior are designed.
 
 - `GET /api/v1/remote-targets` lists configured targets with redacted config values.
-- `POST /api/v1/remote-targets` creates a filesystem target with `config.destination_path`.
+- `POST /api/v1/remote-targets` creates a filesystem target with `config.destination_path` or an rsync-over-SSH target with `config.host`, `config.username`, `config.remote_path`, optional `config.port`, and optional `config.ssh_key_path`.
 - `PATCH /api/v1/remote-targets/{target_id}` updates name, enabled state, type, or config.
 - `DELETE /api/v1/remote-targets/{target_id}` removes a target.
 - `POST /api/v1/remote-targets/{target_id}/test` creates/validates the destination directory.

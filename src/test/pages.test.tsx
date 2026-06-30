@@ -310,6 +310,15 @@ beforeEach(() => {
       created_at: "2026-06-23T12:00:00+00:00",
       updated_at: "2026-06-23T12:00:00+00:00",
     },
+    {
+      id: "target-rsync",
+      name: "Website rsync",
+      type: "rsync_ssh",
+      enabled: true,
+      config: { host: "allsky.example", username: "skyweaver", remote_path: "/srv/allsky", port: 22 },
+      created_at: "2026-06-23T12:00:00+00:00",
+      updated_at: "2026-06-23T12:00:00+00:00",
+    },
   ]);
   vi.mocked(SkyApi.uploadJobs).mockResolvedValue([
     {
@@ -336,7 +345,7 @@ beforeEach(() => {
   vi.mocked(SkyApi.patchRemoteTarget).mockImplementation(async (_id, body) => ({
     id: "target-1",
     name: body.name ?? "Local mirror",
-    type: "filesystem",
+    type: body.type ?? "filesystem",
     enabled: Boolean(body.enabled),
     config: body.config ?? { destination_path: "/tmp/skyweaver-upload" },
     created_at: "2026-06-23T12:00:00+00:00",
@@ -466,6 +475,7 @@ describe("main pages", () => {
     expect(await screen.findByRole("heading", { name: /remote upload/i })).toBeInTheDocument();
     expect(screen.getByText("Local mirror")).toBeInTheDocument();
     expect(screen.getAllByText(/\/tmp\/skyweaver-upload/).length).toBeGreaterThan(0);
+    expect(screen.getByText(/skyweaver@allsky.example:\/srv\/allsky/)).toBeInTheDocument();
     expect(screen.getByText("image img-1")).toBeInTheDocument();
     fireEvent.click(screen.getAllByRole("button", { name: /queue latest/i })[0]);
     await waitFor(() => expect(SkyApi.queueUpload).toHaveBeenCalledWith({ source_type: "latest", target_id: undefined }));

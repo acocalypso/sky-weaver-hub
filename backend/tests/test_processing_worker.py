@@ -277,6 +277,66 @@ def test_worker_uploads_latest_image_to_filesystem_target(tmp_path: Path):
     assert copied.parent == destination / "image" / image["id"]
 
 
+def test_worker_uploads_latest_image_to_rsync_ssh_target(tmp_path: Path, monkeypatch):
+    client = make_client(tmp_path)
+    token = login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+    _queued, _job, image = run_queued_test_capture(client, headers, {"exposure_ms": 250, "gain": 1, "format": "jpg", "mode": "night"})
+    commands: list[list[str]] = []
+
+    from skyweaver.services import uploads
+
+    monkeypatch.setattr(uploads.shutil, "which", lambda name: f"/usr/bin/{name}" if name in {"rsync", "ssh"} else None)
+
+    def fake_run(command, **kwargs):
+        commands.append(command)
+
+        class Result:
+            returncode = 0
+            stdout = ""
+            stderr = ""
+
+        return Result()
+
+    monkeypatch.setattr(uploads.subprocess, "run", fake_run)
+
+    target_res = client.post(
+        "/api/v1/remote-targets",
+        headers=headers,
+        json={
+            "name": "Website rsync",
+            "type": "rsync_ssh",
+            "enabled": True,
+            "config": {"host": "allsky.example", "username": "skyweaver", "remote_path": "/srv/allsky", "port": 2222, "ssh_key_path": "/home/skyweaver/.ssh/id_ed25519"},
+        },
+    )
+    assert target_res.status_code == 200, target_res.text
+    target = target_res.json()["data"]
+    assert target["config"]["ssh_key_path"] == "/home/skyweaver/.ssh/id_ed25519"
+
+    test_res = client.post(f"/api/v1/remote-targets/{target['id']}/test", headers=headers)
+    assert test_res.status_code == 200, test_res.text
+    assert test_res.json()["data"]["status"] == "configured"
+
+    queue_res = client.post("/api/v1/uploads/queue", headers=headers, json={"source_type": "latest", "target_id": target["id"]})
+    assert queue_res.status_code == 200, queue_res.text
+    queued_upload = queue_res.json()["data"]
+
+    from skyweaver.services.processing import run_once
+
+    assert asyncio.run(run_once()) is True
+    assert commands
+    command = commands[0]
+    assert command[:4] == ["rsync", "-az", "--mkpath", "-e"]
+    assert str(Path(image["file_path"])) in command
+    assert command[-1].endswith(f"/image/{image['id']}/{Path(image['file_path']).name}")
+
+    upload_jobs = client.get("/api/v1/uploads/jobs", headers=headers).json()["data"]
+    upload = next(item for item in upload_jobs if item["id"] == queued_upload["upload_job_ids"][0])
+    assert upload["status"] == "completed"
+    assert upload["destination_path"].startswith("rsync://skyweaver@allsky.example:/srv/allsky/")
+
+
 def test_upload_retry_requeues_failed_uploads(tmp_path: Path):
     client = make_client(tmp_path)
     token = login(client)

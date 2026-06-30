@@ -23,7 +23,7 @@ from ..services.capture import CaptureCommand, all_rows, cleanup_images_by_reten
 from ..services.modules import register_external_module, run_flow_preview, validate_module_order
 from ..services.processing import cleanup_products_by_retention, delete_product_files
 from ..services.schedule import active_window
-from ..services.uploads import queue_upload, remote_target_payload, retry_failed_uploads, validate_target_payload
+from ..services.uploads import queue_upload, remote_target_payload, retry_failed_uploads, test_target, validate_target_payload
 from .deps import current_principal, require_scope
 from .responses import ok
 
@@ -1679,15 +1679,11 @@ def test_remote_target(target_id: str, _principal: Annotated[dict, Depends(requi
         row = decode_row(row_to_dict(conn.execute("SELECT * FROM remote_targets WHERE id=?", (target_id,)).fetchone()))
     if not row:
         raise HTTPException(404, "Remote target not found")
-    config = row.get("config_encrypted")
-    if isinstance(config, str):
-        config = json_loads(config, {})
-    destination = Path(str((config or {}).get("destination_path", ""))).expanduser()
     try:
-        destination.mkdir(parents=True, exist_ok=True)
-    except OSError as exc:
-        raise HTTPException(400, f"Target path is not writable: {exc}") from exc
-    return ok({"id": target_id, "status": "ready", "type": row["type"], "destination_path": str(destination)})
+        result = test_target(row)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return ok(result)
 
 
 @router.get("/uploads/jobs")

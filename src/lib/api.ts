@@ -144,7 +144,7 @@ export interface ModuleManifest { id: string; name: string; description?: string
 export interface ModuleFlowRow { id: string; name: string; trigger: string; enabled: boolean; module_order: string[]; created_at: string; updated_at: string; }
 export interface ModuleFlowRunResult { id: string; trigger: string; status: string; enabled: boolean; modules: { id: string; name: string; enabled: boolean; trusted: boolean; status: string }[]; }
 export interface RemoteTarget { id: string; name: string; type: string; enabled: boolean; config: Record<string, any>; created_at: string; updated_at: string; }
-export interface RemoteTargetPayload { name: string; type: "filesystem"; enabled: boolean; config: { destination_path: string }; }
+export interface RemoteTargetPayload { name: string; type: "filesystem" | "rsync_ssh"; enabled: boolean; config: Record<string, any>; }
 export interface RemoteTargetTestResult { id: string; status: string; type: string; destination_path: string; }
 export interface UploadJob { id: string; target_id: string; source_type: string; source_id: string; source_path: string; destination_path?: string | null; status: string; attempts: number; last_error?: string | null; processing_job_id?: string | null; created_at: string; started_at?: string | null; completed_at?: string | null; }
 export interface UploadQueuePayload { source_type: "latest" | "image" | "product"; source_id?: string; target_id?: string; }
