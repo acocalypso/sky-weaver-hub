@@ -14,6 +14,20 @@ from .overlay import OVERLAY_MODULE_ID, merge_overlay_settings
 
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png"}
 VIDEO_SUFFIXES = {".mp4", ".webm"}
+CAPTURE_DIR_PARTS = {"images", "image", "captures", "photos"}
+PRODUCT_DIR_PARTS = {"videos", "video", "timelapse", "timelapses", "keogram", "keograms", "startrail", "startrails"}
+EXCLUDED_IMPORT_PARTS = {
+    "assets",
+    "bower_components",
+    "config",
+    "config_repo",
+    "documentation",
+    "html",
+    "imagethumbnails",
+    "node_modules",
+    "overlay",
+    "www",
+}
 DATE_PATTERNS = (
     re.compile(r"(20\d{2})[-_]?([01]\d)[-_]?([0-3]\d)"),
     re.compile(r"([01]\d)[-_]?([0-3]\d)[-_]?(20\d{2})"),
@@ -98,15 +112,17 @@ def scan_allsky_files(root: Path) -> dict[str, list[Path]]:
             continue
         name = path.name.lower()
         suffix = path.suffix.lower()
-        if suffix in VIDEO_SUFFIXES:
+        if is_excluded_import_path(root, path):
+            continue
+        if suffix in VIDEO_SUFFIXES and is_allsky_product_path(path, "timelapse"):
             buckets["timelapses"].append(path)
         elif suffix in IMAGE_SUFFIXES and is_dark_frame_path(path):
             buckets["dark_frames"].append(path)
-        elif suffix in IMAGE_SUFFIXES and "keogram" in name:
+        elif suffix in IMAGE_SUFFIXES and "keogram" in name and is_allsky_product_path(path, "keogram"):
             buckets["keograms"].append(path)
-        elif suffix in IMAGE_SUFFIXES and "startrail" in name:
+        elif suffix in IMAGE_SUFFIXES and "startrail" in name and is_allsky_product_path(path, "startrail"):
             buckets["startrails"].append(path)
-        elif suffix in IMAGE_SUFFIXES:
+        elif suffix in IMAGE_SUFFIXES and is_allsky_capture_path(path):
             buckets["images"].append(path)
     return buckets
 
@@ -127,12 +143,15 @@ def unsupported_settings(root: Path) -> list[dict[str, str]]:
 def preview_settings(root: Path) -> dict[str, Any]:
     parsed = read_allsky_settings(root)
     mapped = map_allsky_settings(parsed)
-    unsupported = []
+    unsupported: list[dict[str, Any]] = []
     for item in unsupported_settings(root):
         unsupported.append(item)
+    unmapped_by_path: dict[str, list[str]] = {}
     for key, value in parsed.items():
         if normalize_key(key) not in TRANSLATABLE_KEYS:
-            unsupported.append({"path": value["path"], "key": key, "reason": "setting_not_mapped"})
+            unmapped_by_path.setdefault(value["path"], []).append(key)
+    for path, keys in sorted(unmapped_by_path.items()):
+        unsupported.append({"path": path, "reason": "settings_not_mapped", "keys": sorted(keys), "count": len(keys)})
     return {"settings": mapped, "unsupported_settings": unsupported}
 
 
@@ -606,6 +625,37 @@ def is_dark_frame_path(path: Path) -> bool:
         or "darkframe" in name
         or "dark_frame" in name
     )
+
+
+def normalized_parts(path: Path) -> set[str]:
+    return {part.lower().replace("-", "_") for part in path.parts}
+
+
+def is_excluded_import_path(root: Path, path: Path) -> bool:
+    try:
+        relative = path.relative_to(root)
+    except ValueError:
+        relative = path
+    parts = normalized_parts(relative)
+    return bool(parts & EXCLUDED_IMPORT_PARTS)
+
+
+def is_allsky_capture_path(path: Path) -> bool:
+    parts = normalized_parts(path)
+    name = path.name.lower()
+    if not (parts & CAPTURE_DIR_PARTS):
+        return False
+    if any(token in name for token in ("keogram", "startrail", "dark", "thumbnail", "loading", "logo", "favicon")):
+        return False
+    return True
+
+
+def is_allsky_product_path(path: Path, product_type: str) -> bool:
+    parts = normalized_parts(path)
+    name = path.name.lower()
+    if product_type == "timelapse":
+        return bool(parts & PRODUCT_DIR_PARTS) and "timelapse" in " ".join((*parts, name))
+    return bool(parts & PRODUCT_DIR_PARTS) or product_type in name
 
 
 def infer_day_key(path: Path, fallback: datetime) -> str:

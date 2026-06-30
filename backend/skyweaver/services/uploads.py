@@ -1,16 +1,18 @@
 import shutil
 import subprocess
+from ftplib import FTP, FTP_TLS
 from pathlib import Path
 from typing import Any
 
 from ..db import event, json_dumps, json_loads, log, new_id, now_iso, row_to_dict, session
 from .capture import decode_row
 
-SUPPORTED_TARGET_TYPES = {"filesystem", "rsync_ssh", "scp_ssh"}
+SUPPORTED_TARGET_TYPES = {"filesystem", "rsync_ssh", "scp_ssh", "sftp_ssh", "ftp", "ftps"}
 SUPPORTED_SOURCE_TYPES = {"image", "product", "latest"}
 SAFE_REMOTE_CHARS = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-/")
 SAFE_HOST_CHARS = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-")
 SAFE_USER_CHARS = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-")
+FTP_TIMEOUT_SECONDS = 60
 
 
 def safe_target_config(config: dict[str, Any]) -> dict[str, Any]:
@@ -53,10 +55,14 @@ def validate_target_payload(payload: dict[str, Any]) -> tuple[str, str, dict[str
         target_type = "rsync_ssh"
     if target_type == "scp":
         target_type = "scp_ssh"
+    if target_type == "sftp":
+        target_type = "sftp_ssh"
     if target_type not in SUPPORTED_TARGET_TYPES:
         raise ValueError("Remote target type is not supported")
-    if target_type in {"rsync_ssh", "scp_ssh"}:
+    if target_type in {"rsync_ssh", "scp_ssh", "sftp_ssh"}:
         return name, target_type, validate_ssh_config(config, target_type), bool(payload.get("enabled", False))
+    if target_type in {"ftp", "ftps"}:
+        return name, target_type, validate_ftp_config(config, target_type), bool(payload.get("enabled", False))
     destination = str(config.get("destination_path") or config.get("path") or "").strip()
     if not destination:
         raise ValueError("Filesystem remote targets require config.destination_path")
@@ -93,6 +99,38 @@ def validate_ssh_config(config: dict[str, Any], target_type: str) -> dict[str, A
             raise ValueError(f"{target_type} ssh_key_path contains unsupported characters")
         normalized["ssh_key_path"] = ssh_key_path
     return normalized
+
+
+def validate_ftp_config(config: dict[str, Any], target_type: str) -> dict[str, Any]:
+    host = str(config.get("host") or "").strip()
+    username = str(config.get("username") or config.get("user") or "").strip()
+    password = str(config.get("password") or "").strip()
+    remote_path = str(config.get("remote_path") or config.get("path") or "").strip().rstrip("/")
+    try:
+        port = int(config.get("port") or (990 if target_type == "ftps" and config.get("implicit_tls") else 21))
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{target_type} target requires a numeric port") from exc
+    if not host or not username or not remote_path:
+        raise ValueError(f"{target_type} targets require config.host, config.username, and config.remote_path")
+    if not password:
+        raise ValueError(f"{target_type} targets require config.password")
+    if port < 1 or port > 65535:
+        raise ValueError(f"{target_type} port must be between 1 and 65535")
+    if not set(host) <= SAFE_HOST_CHARS or host.startswith("-"):
+        raise ValueError(f"{target_type} host contains unsupported characters")
+    if not set(username) <= SAFE_USER_CHARS or username.startswith("-"):
+        raise ValueError(f"{target_type} username contains unsupported characters")
+    if not set(remote_path) <= SAFE_REMOTE_CHARS or remote_path.startswith("-"):
+        raise ValueError(f"{target_type} remote_path contains unsupported characters")
+    return {
+        "host": host,
+        "username": username,
+        "password": password,
+        "remote_path": remote_path,
+        "port": port,
+        "passive": bool(config.get("passive", True)),
+        "implicit_tls": bool(config.get("implicit_tls", False)),
+    }
 
 
 def resolve_source(conn, source_type: str, source_id: str | None = None) -> dict[str, Any]:
@@ -216,6 +254,10 @@ def copy_to_target(upload: dict[str, Any], target: dict[str, Any]) -> str:
         return copy_to_rsync_ssh_target(upload, target)
     if target.get("type") == "scp_ssh":
         return copy_to_scp_ssh_target(upload, target)
+    if target.get("type") == "sftp_ssh":
+        return copy_to_sftp_ssh_target(upload, target)
+    if target.get("type") in {"ftp", "ftps"}:
+        return copy_to_ftp_target(upload, target)
     raise ValueError("Remote target type is not supported")
 
 
@@ -296,6 +338,84 @@ def copy_to_scp_ssh_target(upload: dict[str, Any], target: dict[str, Any]) -> st
     return f"scp://{config['username']}@{config['host']}:{destination_dir}/{source.name}"
 
 
+def copy_to_sftp_ssh_target(upload: dict[str, Any], target: dict[str, Any]) -> str:
+    config = validate_ssh_config(target_config(target), "sftp_ssh")
+    source = Path(upload["source_path"])
+    if not source.exists():
+        raise FileNotFoundError(source)
+    if shutil.which("ssh") is None:
+        raise RuntimeError("ssh is not installed")
+    if shutil.which("sftp") is None:
+        raise RuntimeError("sftp is not installed")
+    destination_dir = f"{config['remote_path']}/{upload['source_type']}/{upload['source_id']}"
+    ssh_command = ["ssh", "-p", str(config["port"]), "-o", "BatchMode=yes"]
+    sftp_command = ["sftp", "-P", str(config["port"]), "-o", "BatchMode=yes"]
+    if config.get("ssh_key_path"):
+        ssh_command.extend(["-i", str(config["ssh_key_path"])])
+        sftp_command.extend(["-i", str(config["ssh_key_path"])])
+    mkdir_result = subprocess.run(
+        [*ssh_command, f"{config['username']}@{config['host']}", "mkdir", "-p", destination_dir],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    if mkdir_result.returncode != 0:
+        stderr = (mkdir_result.stderr or mkdir_result.stdout or "").strip()
+        raise RuntimeError(f"sftp target directory creation failed with exit code {mkdir_result.returncode}: {stderr}")
+    batch = f"put {source.as_posix()} {destination_dir}/{source.name}\n"
+    result = subprocess.run(
+        [*sftp_command, f"{config['username']}@{config['host']}"],
+        input=batch,
+        capture_output=True,
+        text=True,
+        timeout=300,
+    )
+    if result.returncode != 0:
+        stderr = (result.stderr or result.stdout or "").strip()
+        raise RuntimeError(f"sftp upload failed with exit code {result.returncode}: {stderr}")
+    return f"sftp://{config['username']}@{config['host']}:{destination_dir}/{source.name}"
+
+
+def copy_to_ftp_target(upload: dict[str, Any], target: dict[str, Any]) -> str:
+    target_type = str(target.get("type"))
+    config = validate_ftp_config(target_config(target), target_type)
+    source = Path(upload["source_path"])
+    if not source.exists():
+        raise FileNotFoundError(source)
+    destination_dir = f"{config['remote_path']}/{upload['source_type']}/{upload['source_id']}"
+    ftp: FTP | FTP_TLS
+    ftp = FTP_TLS(timeout=FTP_TIMEOUT_SECONDS) if target_type == "ftps" else FTP(timeout=FTP_TIMEOUT_SECONDS)
+    try:
+        ftp.connect(config["host"], config["port"], timeout=FTP_TIMEOUT_SECONDS)
+        ftp.login(config["username"], config["password"])
+        if isinstance(ftp, FTP_TLS):
+            ftp.prot_p()
+        ftp.set_pasv(bool(config["passive"]))
+        ensure_ftp_directory(ftp, destination_dir)
+        with source.open("rb") as handle:
+            ftp.storbinary(f"STOR {source.name}", handle)
+        ftp.quit()
+    except Exception:
+        try:
+            ftp.close()
+        finally:
+            raise
+    return f"{target_type}://{config['username']}@{config['host']}:{destination_dir}/{source.name}"
+
+
+def ensure_ftp_directory(ftp: FTP, directory: str) -> None:
+    if directory.startswith("/"):
+        ftp.cwd("/")
+    for part in directory.strip("/").split("/"):
+        if not part:
+            continue
+        try:
+            ftp.cwd(part)
+        except Exception:
+            ftp.mkd(part)
+            ftp.cwd(part)
+
+
 def test_target(target: dict[str, Any]) -> dict[str, Any]:
     if target.get("type") == "filesystem":
         config = target_config(target)
@@ -305,9 +425,17 @@ def test_target(target: dict[str, Any]) -> dict[str, Any]:
         except OSError as exc:
             raise ValueError(f"Target path is not writable: {exc}") from exc
         return {"id": target["id"], "status": "ready", "type": target["type"], "destination_path": str(destination)}
-    if target.get("type") in {"rsync_ssh", "scp_ssh"}:
+    if target.get("type") in {"rsync_ssh", "scp_ssh", "sftp_ssh"}:
         config = validate_ssh_config(target_config(target), str(target.get("type")))
-        binaries = ("rsync", "ssh") if target.get("type") == "rsync_ssh" else ("scp", "ssh")
+        if target.get("type") == "rsync_ssh":
+            binaries = ("rsync", "ssh")
+            scheme = "rsync"
+        elif target.get("type") == "scp_ssh":
+            binaries = ("scp", "ssh")
+            scheme = "scp"
+        else:
+            binaries = ("sftp", "ssh")
+            scheme = "sftp"
         missing = [binary for binary in binaries if shutil.which(binary) is None]
         if missing:
             raise ValueError(f"Missing required command(s): {', '.join(missing)}")
@@ -315,7 +443,15 @@ def test_target(target: dict[str, Any]) -> dict[str, Any]:
             "id": target["id"],
             "status": "configured",
             "type": target["type"],
-            "destination_path": f"{'rsync' if target.get('type') == 'rsync_ssh' else 'scp'}://{config['username']}@{config['host']}:{config['remote_path']}",
+            "destination_path": f"{scheme}://{config['username']}@{config['host']}:{config['remote_path']}",
+        }
+    if target.get("type") in {"ftp", "ftps"}:
+        config = validate_ftp_config(target_config(target), str(target.get("type")))
+        return {
+            "id": target["id"],
+            "status": "configured",
+            "type": target["type"],
+            "destination_path": f"{target['type']}://{config['username']}@{config['host']}:{config['remote_path']}",
         }
     raise ValueError("Remote target type is not supported")
 

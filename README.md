@@ -15,13 +15,13 @@ This repository now contains a working local-first platform slice:
 - Daemon-owned scheduled capture loop with day/night profile selection, fixed/sun/twilight windows, restart-safe per-mode capture intervals, next-capture preview, latest-only unsaved captures, queued test/single/sequence captures, pause/resume/stop queue semantics, best-effort rpicam hard-cancel wiring, heartbeat reporting, interrupted job recovery, and stale daemon lock recovery.
 - Processing worker for thumbnail reprocess, keogram JPEGs, ffmpeg timelapses, mini timelapses, and startrail JPEGs, with end-of-night product jobs queued from the nighttime profile.
 - Built-in overlay module with editable lines, colors, placement controls, a trusted post-capture module flow, and external manifest registration; custom code uploads stay disabled until sandboxing/signing is implemented.
-- Remote upload page and worker-backed filesystem, rsync-over-SSH, and SCP-over-SSH target execution for latest images and generated products.
+- Remote upload page and worker-backed filesystem, rsync-over-SSH, SCP-over-SSH, SFTP-over-SSH, FTP, and FTPS target execution for latest images and generated products.
 - Public unauthenticated sky page at `/public`, backed by stable latest-image artifacts and public latest/product API endpoints that honor the public-page enabled setting, including latest-only captures that are not saved to the gallery.
 - System Health UI with service controls, per-service detail, recent journal output, diagnostics export, and queue/metric summaries.
 - Systemd units and installer scripts for Pi deployment, with first-setup prompts, constrained service-control permissions, and dry-run/idempotency tests.
 - Allsky migration detection, preview, worker-backed image/product/dark-frame import, selected settings and basic overlay text import, rollback, and Migration UI. Original Allsky files are copied, never deleted.
 
-Some Allsky parity items are intentionally scaffolded for later phases: SFTP/FTP upload targets, overlay live previews/presets/assets, dark-frame median combine/subtraction, broader Allsky settings import, and custom module sandboxing.
+Some Allsky parity items are intentionally scaffolded for later phases: overlay live previews/presets/assets, dark-frame median combine/subtraction, broader Allsky settings import, stronger encrypted secret storage for remote targets, and custom module sandboxing.
 
 ## Supported Targets
 
@@ -176,7 +176,7 @@ The migration command is idempotent and records applied versions in `schema_migr
 
 ## Allsky Migration
 
-Sky Weaver detects common Allsky directories such as `~/allsky`, `~/allsky-OLD`, `~/allsky-SAVED`, `/home/pi/allsky`, and `/var/www/html/allsky`. Current migration support provides detection, dry-run counts, unsupported-setting reporting, queued image/product/dark-frame import jobs, selected settings import, basic overlay text import, camera hints, and rollback of Sky Weaver-created rows/files plus restored settings snapshots. The original Allsky data is never deleted.
+Sky Weaver detects common Allsky directories such as `~/allsky`, `~/allsky-OLD`, `~/allsky-SAVED`, `/home/pi/allsky`, and `/var/www/html/allsky`. Current migration support provides detection, dry-run counts, unsupported-setting reporting, queued image/product/dark-frame import jobs, selected settings import, basic overlay text import, camera hints, and rollback of Sky Weaver-created rows/files plus restored settings snapshots. The scanner imports recognized capture/product/dark-frame paths and excludes Allsky web, documentation, config, and overlay asset trees from gallery imports. The original Allsky data is never deleted.
 
 ## Documentation
 

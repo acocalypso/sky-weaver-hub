@@ -148,13 +148,14 @@ export interface ModuleManifest { id: string; name: string; description?: string
 export interface ModuleFlowRow { id: string; name: string; trigger: string; enabled: boolean; module_order: string[]; created_at: string; updated_at: string; }
 export interface ModuleFlowRunResult { id: string; trigger: string; status: string; enabled: boolean; modules: { id: string; name: string; enabled: boolean; trusted: boolean; status: string }[]; }
 export interface RemoteTarget { id: string; name: string; type: string; enabled: boolean; config: Record<string, any>; created_at: string; updated_at: string; }
-export interface RemoteTargetPayload { name: string; type: "filesystem" | "rsync_ssh" | "scp_ssh"; enabled: boolean; config: Record<string, any>; }
+export type RemoteTargetType = "filesystem" | "rsync_ssh" | "scp_ssh" | "sftp_ssh" | "ftp" | "ftps";
+export interface RemoteTargetPayload { name: string; type: RemoteTargetType; enabled: boolean; config: Record<string, any>; }
 export interface RemoteTargetTestResult { id: string; status: string; type: string; destination_path: string; }
 export interface UploadJob { id: string; target_id: string; target_name?: string | null; target_type?: string | null; target_enabled?: boolean | number | null; source_type: string; source_id: string; source_path: string; destination_path?: string | null; status: string; attempts: number; last_error?: string | null; processing_job_id?: string | null; created_at: string; started_at?: string | null; completed_at?: string | null; }
 export interface UploadQueuePayload { source_type: "latest" | "image" | "product"; source_id?: string; target_id?: string; }
 export interface UploadQueueResult { id: string; status: string; upload_job_ids: string[]; }
 export interface UploadRetryResult { status: string; processing_job_id: string | null; upload_job_ids: string[]; }
-export interface AllskyPreview { path: string; exists: boolean; counts: Record<string, number>; settings: Record<string, any>; unsupported_settings: { path: string; key?: string; reason: string }[]; will_delete_original: boolean; import_plan: Record<string, any>; }
+export interface AllskyPreview { path: string; exists: boolean; counts: Record<string, number>; settings: Record<string, any>; unsupported_settings: { path: string; key?: string; keys?: string[]; count?: number; reason: string }[]; will_delete_original: boolean; import_plan: Record<string, any>; }
 export interface AllskyRollbackResult { migration_job_id: string; deleted_images: number; deleted_dark_frames: number; deleted_products: number; deleted_image_ids: string[]; deleted_dark_frame_ids: string[]; deleted_product_ids: string[]; deleted_files: string[]; missing_files: string[]; skipped_files: ImageSkippedFile[]; }
 export interface ProcessingJob { id: string; type: string; status: string; input: any; output?: any; error?: string | null; progress: number; created_at: string; started_at?: string | null; completed_at?: string | null; }
 export interface CaptureJob { id: string; type: string; status: string; request: any; result?: any; error?: string | null; progress: number; created_at: string; started_at?: string | null; completed_at?: string | null; }

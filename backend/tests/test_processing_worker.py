@@ -403,6 +403,201 @@ def test_worker_uploads_latest_image_to_scp_ssh_target(tmp_path: Path, monkeypat
     assert upload["destination_path"].startswith("scp://skyweaver@allsky.example:/srv/allsky/")
 
 
+def test_worker_uploads_latest_image_to_sftp_ssh_target(tmp_path: Path, monkeypatch):
+    client = make_client(tmp_path)
+    token = login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+    _queued, _job, image = run_queued_test_capture(client, headers, {"exposure_ms": 250, "gain": 1, "format": "jpg", "mode": "night"})
+    commands: list[list[str]] = []
+
+    from skyweaver.services import uploads
+
+    monkeypatch.setattr(uploads.shutil, "which", lambda name: f"/usr/bin/{name}" if name in {"sftp", "ssh"} else None)
+
+    def fake_run(command, **kwargs):
+        commands.append(command)
+        if command[0] == "sftp":
+            assert "input" in kwargs
+            assert f"put {Path(image['file_path']).as_posix()} /srv/allsky/image/{image['id']}/{Path(image['file_path']).name}" in kwargs["input"]
+
+        class Result:
+            returncode = 0
+            stdout = ""
+            stderr = ""
+
+        return Result()
+
+    monkeypatch.setattr(uploads.subprocess, "run", fake_run)
+
+    target_res = client.post(
+        "/api/v1/remote-targets",
+        headers=headers,
+        json={
+            "name": "Website sftp",
+            "type": "sftp_ssh",
+            "enabled": True,
+            "config": {"host": "allsky.example", "username": "skyweaver", "remote_path": "/srv/allsky", "port": 2222, "ssh_key_path": "/home/skyweaver/.ssh/id_ed25519"},
+        },
+    )
+    assert target_res.status_code == 200, target_res.text
+    target = target_res.json()["data"]
+
+    test_res = client.post(f"/api/v1/remote-targets/{target['id']}/test", headers=headers)
+    assert test_res.status_code == 200, test_res.text
+    assert test_res.json()["data"]["destination_path"].startswith("sftp://skyweaver@allsky.example:/srv/allsky")
+
+    queue_res = client.post("/api/v1/uploads/queue", headers=headers, json={"source_type": "latest", "target_id": target["id"]})
+    assert queue_res.status_code == 200, queue_res.text
+    queued_upload = queue_res.json()["data"]
+
+    from skyweaver.services.processing import run_once
+
+    assert asyncio.run(run_once()) is True
+    assert len(commands) == 2
+    assert commands[0][:5] == ["ssh", "-p", "2222", "-o", "BatchMode=yes"]
+    assert commands[1][:5] == ["sftp", "-P", "2222", "-o", "BatchMode=yes"]
+
+    upload_jobs = client.get("/api/v1/uploads/jobs", headers=headers).json()["data"]
+    upload = next(item for item in upload_jobs if item["id"] == queued_upload["upload_job_ids"][0])
+    assert upload["status"] == "completed"
+    assert upload["target_type"] == "sftp_ssh"
+    assert upload["destination_path"].startswith("sftp://skyweaver@allsky.example:/srv/allsky/")
+
+
+def test_worker_uploads_latest_image_to_ftps_target(tmp_path: Path, monkeypatch):
+    client = make_client(tmp_path)
+    token = login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+    _queued, _job, image = run_queued_test_capture(client, headers, {"exposure_ms": 250, "gain": 1, "format": "jpg", "mode": "night"})
+    operations: list[tuple[str, object]] = []
+
+    from skyweaver.services import uploads
+
+    class FakeFTPS:
+        directories = {"/", "srv", "allsky", "image"}
+
+        def __init__(self, **kwargs):
+            operations.append(("init", kwargs))
+
+        def connect(self, host, port, timeout=None):
+            operations.append(("connect", (host, port, timeout)))
+
+        def login(self, username, password):
+            operations.append(("login", (username, password)))
+
+        def prot_p(self):
+            operations.append(("prot_p", True))
+
+        def set_pasv(self, passive):
+            operations.append(("passive", passive))
+
+        def cwd(self, path):
+            operations.append(("cwd", path))
+            if path not in self.directories:
+                raise OSError(path)
+
+        def mkd(self, path):
+            self.directories.add(path)
+            operations.append(("mkd", path))
+
+        def storbinary(self, command, handle):
+            operations.append(("store", (command, handle.read())))
+
+        def quit(self):
+            operations.append(("quit", True))
+
+        def close(self):
+            operations.append(("close", True))
+
+    monkeypatch.setattr(uploads, "FTP_TLS", FakeFTPS)
+
+    target_res = client.post(
+        "/api/v1/remote-targets",
+        headers=headers,
+        json={
+            "name": "Website ftps",
+            "type": "ftps",
+            "enabled": True,
+            "config": {"host": "ftp.example", "username": "skyweaver", "password": "secret", "remote_path": "/srv/allsky", "port": 21, "passive": True},
+        },
+    )
+    assert target_res.status_code == 200, target_res.text
+    target = target_res.json()["data"]
+    assert target["config"]["password"] == "***"
+
+    test_res = client.post(f"/api/v1/remote-targets/{target['id']}/test", headers=headers)
+    assert test_res.status_code == 200, test_res.text
+
+    queue_res = client.post("/api/v1/uploads/queue", headers=headers, json={"source_type": "latest", "target_id": target["id"]})
+    assert queue_res.status_code == 200, queue_res.text
+    queued_upload = queue_res.json()["data"]
+
+    from skyweaver.services.processing import run_once
+
+    assert asyncio.run(run_once()) is True
+    assert ("login", ("skyweaver", "secret")) in operations
+    assert ("prot_p", True) in operations
+    assert any(item[0] == "store" and item[1][0] == f"STOR {Path(image['file_path']).name}" for item in operations)
+
+    upload_jobs = client.get("/api/v1/uploads/jobs", headers=headers).json()["data"]
+    upload = next(item for item in upload_jobs if item["id"] == queued_upload["upload_job_ids"][0])
+    assert upload["status"] == "completed"
+    assert upload["target_type"] == "ftps"
+    assert upload["destination_path"].startswith("ftps://skyweaver@ftp.example:/srv/allsky/")
+
+
+def test_copy_to_ftp_target_uses_plain_ftp_without_tls(tmp_path: Path, monkeypatch):
+    source = tmp_path / "capture.jpg"
+    source.write_bytes(b"capture")
+    operations: list[tuple[str, object]] = []
+
+    from skyweaver.services import uploads
+
+    class FakeFTP:
+        directories = {"/", "srv", "allsky", "image", "image-id"}
+
+        def __init__(self, **kwargs):
+            operations.append(("init", kwargs))
+
+        def connect(self, host, port, timeout=None):
+            operations.append(("connect", (host, port, timeout)))
+
+        def login(self, username, password):
+            operations.append(("login", (username, password)))
+
+        def set_pasv(self, passive):
+            operations.append(("passive", passive))
+
+        def cwd(self, path):
+            operations.append(("cwd", path))
+            if path not in self.directories:
+                raise OSError(path)
+
+        def mkd(self, path):
+            self.directories.add(path)
+            operations.append(("mkd", path))
+
+        def storbinary(self, command, handle):
+            operations.append(("store", (command, handle.read())))
+
+        def quit(self):
+            operations.append(("quit", True))
+
+        def close(self):
+            operations.append(("close", True))
+
+    monkeypatch.setattr(uploads, "FTP", FakeFTP)
+    destination = uploads.copy_to_ftp_target(
+        {"source_path": str(source), "source_type": "image", "source_id": "image-id"},
+        {"type": "ftp", "config_encrypted": {"host": "ftp.example", "username": "skyweaver", "password": "secret", "remote_path": "/srv/allsky", "port": 21}},
+    )
+
+    assert destination == "ftp://skyweaver@ftp.example:/srv/allsky/image/image-id/capture.jpg"
+    assert ("login", ("skyweaver", "secret")) in operations
+    assert not any(item[0] == "prot_p" for item in operations)
+    assert ("store", ("STOR capture.jpg", b"capture")) in operations
+
+
 def test_upload_retry_requeues_failed_uploads(tmp_path: Path):
     client = make_client(tmp_path)
     token = login(client)
@@ -476,14 +671,20 @@ def test_worker_imports_and_rolls_back_allsky_files(tmp_path: Path):
     headers = {"Authorization": f"Bearer {token}"}
     allsky = tmp_path / "allsky"
     image_source = allsky / "images" / "2026-06-30" / "capture_20260630_010203.jpg"
+    html_asset = allsky / "html" / "documentation" / "logo.jpg"
+    overlay_asset = allsky / "config" / "overlay" / "images" / "compass-blue.png"
     dark_source = allsky / "darks" / "2026-06-30" / "darkframe_20260630_000000.jpg"
     keogram_source = allsky / "images" / "2026-06-30" / "keogram_20260630.jpg"
     timelapse_source = allsky / "videos" / "timelapse_20260630.mp4"
     config_source = allsky / "config.sh"
     image_source.parent.mkdir(parents=True)
+    html_asset.parent.mkdir(parents=True)
+    overlay_asset.parent.mkdir(parents=True)
     dark_source.parent.mkdir(parents=True)
     timelapse_source.parent.mkdir(parents=True)
     Image.new("RGB", (64, 48), "navy").save(image_source)
+    Image.new("RGB", (64, 48), "red").save(html_asset)
+    Image.new("RGB", (64, 48), "blue").save(overlay_asset)
     Image.new("RGB", (64, 48), "black").save(dark_source)
     Image.new("RGB", (64, 12), "white").save(keogram_source)
     timelapse_source.write_bytes(b"fake-mp4")
@@ -515,7 +716,7 @@ def test_worker_imports_and_rolls_back_allsky_files(tmp_path: Path):
     assert preview_data["settings"]["schedule"]["sun_angle"] == -12
     assert preview_data["settings"]["overlay"]["enabled"] is True
     assert preview_data["settings"]["overlay"]["settings"]["lines"][0]["text"] == "Garden {captured_time}"
-    assert any(item.get("key") == "UNSUPPORTED_FOO" for item in preview_data["unsupported_settings"])
+    assert any("UNSUPPORTED_FOO" in item.get("keys", []) for item in preview_data["unsupported_settings"])
     assert preview_data["will_delete_original"] is False
 
     queued = client.post("/api/v1/migration/allsky/import", headers=headers, json={"path": str(allsky)})

@@ -45,10 +45,10 @@ Public endpoints are intentionally unauthenticated for kiosk/public-page/mobile 
 
 `GET /api/v1/public/products` returns completed keogram, startrail, timelapse, and mini-timelapse products newer than the configured `public_page.product_days` setting. The response is wrapped in the standard success envelope and includes `days`, `configured_days`, and `products`. Public product entries include safe metadata plus public download/thumbnail URLs; local `file_path` and `thumbnail_path` values are never exposed.
 
-Remote upload endpoints require authenticated admin or processing scopes. Implemented target types are `filesystem`, `rsync_ssh`, and `scp_ssh`. SSH-based targets use key/agent-based SSH only and store no password. Other network upload protocols are still intentionally unsupported until credential handling and protocol-specific failure behavior are designed.
+Remote upload endpoints require authenticated admin or processing scopes. Implemented target types are `filesystem`, `rsync_ssh`, `scp_ssh`, `sftp_ssh`, `ftp`, and `ftps`. SSH-based targets use key/agent-based SSH only and store no password. FTP/FTPS targets require a password, redact it from API responses, diagnostics, and logs, and currently store it in the local Sky Weaver database config column; encrypted-at-rest remote target secrets are still planned.
 
 - `GET /api/v1/remote-targets` lists configured targets with redacted config values.
-- `POST /api/v1/remote-targets` creates a filesystem target with `config.destination_path`, or an `rsync_ssh`/`scp_ssh` target with `config.host`, `config.username`, `config.remote_path`, optional `config.port`, and optional `config.ssh_key_path`.
+- `POST /api/v1/remote-targets` creates a filesystem target with `config.destination_path`; an `rsync_ssh`, `scp_ssh`, or `sftp_ssh` target with `config.host`, `config.username`, `config.remote_path`, optional `config.port`, and optional `config.ssh_key_path`; or an `ftp`/`ftps` target with `config.host`, `config.username`, `config.password`, `config.remote_path`, optional `config.port`, and optional `config.passive`.
 - `PATCH /api/v1/remote-targets/{target_id}` updates name, enabled state, type, or config.
 - `DELETE /api/v1/remote-targets/{target_id}` removes a target.
 - `POST /api/v1/remote-targets/{target_id}/test` creates/validates the destination directory.
@@ -57,7 +57,7 @@ Remote upload endpoints require authenticated admin or processing scopes. Implem
 - `POST /api/v1/uploads/queue` queues latest, image, or product upload work for enabled targets.
 - `POST /api/v1/uploads/retry` requeues failed upload jobs.
 
-Allsky migration endpoints require admin scope. Detection and preview do not modify source data. Import runs through the processing worker, copies recognized images, dark frames, and products into Sky Weaver-owned storage, records provenance under `metadata.migration`, updates processing progress, returns a compact `import_log`, and applies a conservative subset of settings plus basic overlay text settings with a rollback snapshot. Rollback only removes Sky Weaver-created rows/files and restores settings for the selected import job:
+Allsky migration endpoints require admin scope. Detection and preview do not modify source data. Import runs through the processing worker, copies recognized capture images, dark frames, and products into Sky Weaver-owned storage while excluding Allsky web/documentation/config/overlay asset trees, records provenance under `metadata.migration`, updates processing progress, returns a compact `import_log`, and applies a conservative subset of settings plus basic overlay text settings with a rollback snapshot. Rollback only removes Sky Weaver-created rows/files and restores settings for the selected import job:
 
 - `GET /api/v1/migration/allsky/detect`
 - `POST /api/v1/migration/allsky/preview`

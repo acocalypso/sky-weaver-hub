@@ -1653,10 +1653,14 @@ def patch_remote_target(target_id: str, payload: dict[str, Any], _principal: Ann
         current_config = existing.get("config_encrypted")
         if isinstance(current_config, str):
             current_config = json_loads(current_config, {})
+        next_config = payload.get("config", current_config if isinstance(current_config, dict) else {})
+        if isinstance(next_config, dict) and isinstance(current_config, dict):
+            if next_config.get("password") == "***" and current_config.get("password"):
+                next_config = {**next_config, "password": current_config["password"]}
         merged = {
             "name": payload.get("name", existing["name"]),
             "type": payload.get("type", existing["type"]),
-            "config": payload.get("config", current_config if isinstance(current_config, dict) else {}),
+            "config": next_config,
             "enabled": payload.get("enabled", bool(existing["enabled"])),
         }
         try:

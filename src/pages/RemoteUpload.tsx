@@ -6,7 +6,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { SkyApi, type RemoteTarget, type UploadJob } from "@/lib/api";
+import { SkyApi, type RemoteTarget, type RemoteTargetType, type UploadJob } from "@/lib/api";
 import { StatusBadge } from "@/components/StatusBadge";
 
 export default function RemoteUpload() {
@@ -14,13 +14,15 @@ export default function RemoteUpload() {
   const [jobs, setJobs] = useState<UploadJob[]>([]);
   const [selectedJob, setSelectedJob] = useState<UploadJob | null>(null);
   const [name, setName] = useState("Local mirror");
-  const [targetType, setTargetType] = useState<"filesystem" | "rsync_ssh" | "scp_ssh">("filesystem");
+  const [targetType, setTargetType] = useState<RemoteTargetType>("filesystem");
   const [destination, setDestination] = useState("");
   const [host, setHost] = useState("");
   const [username, setUsername] = useState("pi");
   const [remotePath, setRemotePath] = useState("/var/www/html/allsky");
   const [port, setPort] = useState("22");
   const [sshKeyPath, setSshKeyPath] = useState("");
+  const [password, setPassword] = useState("");
+  const [passive, setPassive] = useState(true);
   const [enabled, setEnabled] = useState(true);
   const [loading, setLoading] = useState(false);
 
@@ -46,7 +48,9 @@ export default function RemoteUpload() {
     try {
       const config = targetType === "filesystem"
         ? { destination_path: destination }
-        : { host, username, remote_path: remotePath, port: Number(port || 22), ssh_key_path: sshKeyPath || undefined };
+        : isSshTarget(targetType)
+          ? { host, username, remote_path: remotePath, port: Number(port || 22), ssh_key_path: sshKeyPath || undefined }
+          : { host, username, password, remote_path: remotePath, port: Number(port || 21), passive };
       const target = await SkyApi.createRemoteTarget({ name, type: targetType, enabled, config });
       setTargets([target, ...targets]);
       toast.success("Remote target saved");
@@ -57,7 +61,7 @@ export default function RemoteUpload() {
 
   async function toggleTarget(target: RemoteTarget, nextEnabled: boolean) {
     try {
-      const updated = await SkyApi.patchRemoteTarget(target.id, { name: target.name, type: target.type as "filesystem" | "rsync_ssh" | "scp_ssh", enabled: nextEnabled, config: target.config });
+      const updated = await SkyApi.patchRemoteTarget(target.id, { name: target.name, type: target.type as RemoteTargetType, enabled: nextEnabled });
       setTargets(targets.map((item) => (item.id === target.id ? updated : item)));
     } catch (e: any) {
       toast.error(e.message ?? "Update target failed");
@@ -123,10 +127,13 @@ export default function RemoteUpload() {
           <Field label="Name" value={name} onChange={setName} />
           <div className="space-y-2">
             <Label>Type</Label>
-            <select className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={targetType} onChange={(event) => setTargetType(event.target.value as "filesystem" | "rsync_ssh" | "scp_ssh")}>
+            <select className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={targetType} onChange={(event) => setTargetType(event.target.value as RemoteTargetType)}>
               <option value="filesystem">Filesystem</option>
               <option value="rsync_ssh">Rsync over SSH</option>
               <option value="scp_ssh">SCP over SSH</option>
+              <option value="sftp_ssh">SFTP over SSH</option>
+              <option value="ftp">FTP</option>
+              <option value="ftps">FTPS</option>
             </select>
           </div>
           <div className="flex items-center gap-3 pb-2">
@@ -136,13 +143,25 @@ export default function RemoteUpload() {
         </div>
         {targetType === "filesystem" ? (
           <Field label="Destination path" value={destination} onChange={setDestination} placeholder="/mnt/allsky-upload" />
-        ) : (
+        ) : isSshTarget(targetType) ? (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
             <Field label="Host" value={host} onChange={setHost} placeholder="example.local" />
             <Field label="Username" value={username} onChange={setUsername} />
             <Field label="Remote path" value={remotePath} onChange={setRemotePath} />
             <Field label="Port" value={port} onChange={setPort} type="number" min={1} max={65535} />
             <Field label="SSH key path" value={sshKeyPath} onChange={setSshKeyPath} placeholder="/home/skyweaver/.ssh/id_ed25519" />
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
+            <Field label="Host" value={host} onChange={setHost} placeholder="ftp.example.com" />
+            <Field label="Username" value={username} onChange={setUsername} />
+            <Field label="Password" value={password} onChange={setPassword} type="password" />
+            <Field label="Remote path" value={remotePath} onChange={setRemotePath} />
+            <Field label="Port" value={port} onChange={setPort} type="number" min={1} max={65535} />
+            <div className="flex items-center gap-3 pb-2 md:col-span-2 xl:col-span-1">
+              <Switch checked={passive} onCheckedChange={setPassive} />
+              <span className="text-sm text-muted-foreground">Passive mode</span>
+            </div>
           </div>
         )}
         <Button onClick={addTarget}>Add target</Button>
@@ -210,10 +229,14 @@ export default function RemoteUpload() {
 }
 
 function formatTargetDestination(target: RemoteTarget) {
-  if (target.type === "rsync_ssh" || target.type === "scp_ssh") {
+  if (target.type === "rsync_ssh" || target.type === "scp_ssh" || target.type === "sftp_ssh" || target.type === "ftp" || target.type === "ftps") {
     return `${target.config.username}@${target.config.host}:${target.config.remote_path}`;
   }
   return target.config.destination_path ?? "-";
+}
+
+function isSshTarget(type: RemoteTargetType) {
+  return type === "rsync_ssh" || type === "scp_ssh" || type === "sftp_ssh";
 }
 
 function formatDate(value?: string | null) {
