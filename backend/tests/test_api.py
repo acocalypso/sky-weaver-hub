@@ -209,7 +209,7 @@ def test_builtin_overlay_module_can_render_on_capture(tmp_path):
         json={
             "enabled": True,
             "settings": {
-                "lines": [{"text": "Sky Weaver {mode} {exposure_ms}", "position": "top_left"}],
+                "lines": [{"text": "Sky Weaver {mode} {exposure_ms}", "position": "center"}],
                 "font_size": 20,
                 "margin": 4,
                 "padding": 4,

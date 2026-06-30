@@ -7,10 +7,10 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { StatusBadge } from "@/components/StatusBadge";
 import { SkyApi, type ModuleFlowRow, type ModuleRow } from "@/lib/api";
-import { Play, Puzzle, Save } from "lucide-react";
+import { Play, Plus, Puzzle, Save, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
-const POSITIONS = ["top_left", "top_right", "bottom_left", "bottom_right"];
+const POSITIONS = ["top_left", "top_center", "top_right", "center_left", "center", "center_right", "bottom_left", "bottom_center", "bottom_right"];
 
 export default function Modules() {
   const [modules, setModules] = useState<ModuleRow[]>([]);
@@ -52,6 +52,21 @@ export default function Modules() {
     setOverlaySettings({
       ...overlaySettings,
       lines: lines.map((line, lineIndex) => lineIndex === index ? { ...line, ...patch } : line),
+    });
+  }
+
+  function addLine() {
+    const nextPosition = POSITIONS[Math.min(lines.length, POSITIONS.length - 1)];
+    setOverlaySettings({
+      ...overlaySettings,
+      lines: [...lines, { text: "{captured_time}", position: nextPosition }],
+    });
+  }
+
+  function removeLine(index: number) {
+    setOverlaySettings({
+      ...overlaySettings,
+      lines: lines.filter((_line, lineIndex) => lineIndex !== index),
     });
   }
 
@@ -114,16 +129,17 @@ export default function Modules() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
             <Field label="Font size" type="number" value={String(overlaySettings.font_size ?? 24)} onChange={(value) => setSetting("font_size", Number(value))} />
             <Field label="Margin" type="number" value={String(overlaySettings.margin ?? 18)} onChange={(value) => setSetting("margin", Number(value))} />
             <Field label="Padding" type="number" value={String(overlaySettings.padding ?? 8)} onChange={(value) => setSetting("padding", Number(value))} />
+            <Field label="Text" type="color" value={normalizeColorInput(overlaySettings.text_color ?? "#ffffffff")} onChange={(value) => setSetting("text_color", `${value}ff`)} />
             <Field label="Background" value={overlaySettings.background_color ?? "#00000099"} onChange={(value) => setSetting("background_color", value)} />
           </div>
 
           <div className="space-y-3">
             {lines.map((line, index) => (
-              <div key={index} className="grid grid-cols-1 md:grid-cols-[1fr_180px] gap-3">
+              <div key={index} className="grid grid-cols-1 md:grid-cols-[1fr_180px_auto] gap-3 items-end">
                 <Field label={`Line ${index + 1}`} value={line.text ?? ""} onChange={(value) => setLine(index, { text: value })} />
                 <div className="space-y-2">
                   <Label>Position</Label>
@@ -131,11 +147,17 @@ export default function Modules() {
                     {POSITIONS.map((position) => <option key={position} value={position}>{position.replace("_", " ")}</option>)}
                   </select>
                 </div>
+                <Button type="button" variant="outline" size="icon" onClick={() => removeLine(index)} aria-label={`Remove line ${index + 1}`}>
+                  <Trash2 className="h-4 w-4" />
+                </Button>
               </div>
             ))}
           </div>
 
-          <div className="flex justify-end">
+          <div className="flex flex-wrap justify-between gap-3">
+            <Button type="button" variant="outline" onClick={addLine} disabled={lines.length >= 8}>
+              <Plus className="h-4 w-4 mr-2" />Add line
+            </Button>
             <Button onClick={saveOverlay} disabled={saving}><Save className="h-4 w-4 mr-2" />{saving ? "Saving..." : "Save overlay"}</Button>
           </div>
         </Card>
@@ -191,4 +213,10 @@ export default function Modules() {
 
 function Field({ label, value, onChange, ...rest }: { label: string; value: string; onChange: (value: string) => void } & InputHTMLAttributes<HTMLInputElement>) {
   return <div className="space-y-2"><Label>{label}</Label><Input value={value} onChange={(event) => onChange(event.target.value)} {...rest} /></div>;
+}
+
+function normalizeColorInput(value: string) {
+  const text = value.trim();
+  if (/^#[0-9a-fA-F]{6}/.test(text)) return text.slice(0, 7);
+  return "#ffffff";
 }

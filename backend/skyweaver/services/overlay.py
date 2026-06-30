@@ -11,6 +11,17 @@ from ..db import json_loads, row_to_dict
 
 
 OVERLAY_MODULE_ID = "builtin.overlay"
+OVERLAY_POSITIONS = {
+    "top_left",
+    "top_center",
+    "top_right",
+    "center_left",
+    "center",
+    "center_right",
+    "bottom_left",
+    "bottom_center",
+    "bottom_right",
+}
 
 DEFAULT_OVERLAY_SETTINGS: dict[str, Any] = {
     "lines": [
@@ -34,7 +45,7 @@ OVERLAY_SETTINGS_SCHEMA: dict[str, Any] = {
                 "type": "object",
                 "properties": {
                     "text": {"type": "string"},
-                    "position": {"type": "string", "enum": ["top_left", "top_right", "bottom_left", "bottom_right"]},
+                    "position": {"type": "string", "enum": sorted(OVERLAY_POSITIONS)},
                 },
             },
         },
@@ -101,13 +112,28 @@ def merge_overlay_settings(settings: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(lines, list):
         merged["lines"] = DEFAULT_OVERLAY_SETTINGS["lines"]
     else:
-        merged["lines"] = [line for line in lines if isinstance(line, dict) and str(line.get("text", "")).strip()]
+        merged["lines"] = normalize_lines(lines)
     for key, default, lower, upper in (("font_size", 24, 8, 96), ("margin", 18, 0, 256), ("padding", 8, 0, 64)):
         try:
             merged[key] = max(lower, min(upper, int(merged.get(key, default))))
         except (TypeError, ValueError):
             merged[key] = default
     return merged
+
+
+def normalize_lines(lines: list[Any]) -> list[dict[str, str]]:
+    normalized: list[dict[str, str]] = []
+    for line in lines[:8]:
+        if not isinstance(line, dict):
+            continue
+        text = str(line.get("text", "")).strip()
+        if not text:
+            continue
+        position = str(line.get("position", "bottom_left"))
+        if position not in OVERLAY_POSITIONS:
+            position = "bottom_left"
+        normalized.append({"text": text[:240], "position": position})
+    return normalized
 
 
 def apply_overlay(image_path: Path, context: dict[str, Any], settings: dict[str, Any]) -> dict[str, Any]:
@@ -156,14 +182,18 @@ def draw_text_box(
     bbox = draw.textbbox((0, 0), text, font=font)
     width = bbox[2] - bbox[0]
     height = bbox[3] - bbox[1]
-    if position.endswith("right"):
+    if position.endswith("left"):
+        x = margin
+    elif position.endswith("right"):
         x = image_size[0] - margin - width - padding * 2
     else:
-        x = margin
+        x = (image_size[0] - width - padding * 2) // 2
     if position.startswith("top"):
         y = margin
-    else:
+    elif position.startswith("bottom"):
         y = image_size[1] - margin - height - padding * 2
+    else:
+        y = (image_size[1] - height - padding * 2) // 2
     x = max(0, x)
     y = max(0, y)
     box = (x, y, x + width + padding * 2, y + height + padding * 2)

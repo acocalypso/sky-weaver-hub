@@ -306,6 +306,10 @@ describe("main pages", () => {
     expect(screen.getByDisplayValue("{observatory_name}")).toBeInTheDocument();
     expect(screen.getByText("trusted")).toBeInTheDocument();
     await waitFor(() => expect(SkyApi.modules).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole("button", { name: /add line/i }));
+    expect(screen.getByDisplayValue("{captured_time}")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /remove line 2/i }));
+    expect(screen.queryByDisplayValue("{captured_time}")).not.toBeInTheDocument();
     expect(await screen.findByText("Post-capture processing")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /validate/i }));
     await waitFor(() => expect(SkyApi.runModuleFlow).toHaveBeenCalledWith("builtin.post_capture"));

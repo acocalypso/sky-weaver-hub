@@ -287,7 +287,29 @@ def default_overlay_module(ts: str) -> dict[str, Any]:
         "settings_schema": {
             "type": "object",
             "properties": {
-                "lines": {"type": "array"},
+                "lines": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "text": {"type": "string"},
+                            "position": {
+                                "type": "string",
+                                "enum": [
+                                    "bottom_center",
+                                    "bottom_left",
+                                    "bottom_right",
+                                    "center",
+                                    "center_left",
+                                    "center_right",
+                                    "top_center",
+                                    "top_left",
+                                    "top_right",
+                                ],
+                            },
+                        },
+                    },
+                },
                 "font_size": {"type": "integer", "minimum": 8, "maximum": 96},
                 "margin": {"type": "integer", "minimum": 0, "maximum": 256},
                 "padding": {"type": "integer", "minimum": 0, "maximum": 64},
