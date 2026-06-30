@@ -67,7 +67,7 @@ export default function PublicSky() {
   return (
     <main className="min-h-screen bg-background text-foreground">
       <div className="starfield" />
-      <section className="relative z-10 min-h-screen grid grid-rows-[auto_minmax(0,1fr)_auto_auto]">
+      <section className="relative z-10 min-h-screen grid grid-rows-[auto_auto_auto_auto] sm:grid-rows-[auto_minmax(0,1fr)_auto_auto]">
         <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between px-4 py-4 sm:px-6 lg:px-8 border-b border-border/60 bg-background/70 backdrop-blur-md">
           <div className="flex items-center gap-3 min-w-0">
             <div className="h-10 w-10 rounded-md border border-primary/30 bg-primary/10 grid place-items-center shrink-0">
@@ -86,18 +86,20 @@ export default function PublicSky() {
           </div>
         </header>
 
-        <div className="relative overflow-hidden bg-black">
-          <img src={imageUrl} alt="Latest public all-sky capture" className="absolute inset-0 h-full w-full object-contain" />
-          {!latest && (
-            <div className="absolute inset-0 grid place-items-center bg-background/70">
-              <div className="flex flex-col items-center gap-3 text-center px-4">
-                <ImageOff className="h-10 w-10 text-muted-foreground" />
-                <p className="text-lg font-medium">{emptyTitle(status)}</p>
+        <div className="bg-black sm:relative sm:overflow-hidden">
+          <div className="relative aspect-[4/3] overflow-hidden sm:absolute sm:inset-0 sm:aspect-auto">
+            <img src={imageUrl} alt="Latest public all-sky capture" className="absolute inset-0 h-full w-full object-contain" />
+            {!latest && (
+              <div className="absolute inset-0 grid place-items-center bg-background/70">
+                <div className="flex flex-col items-center gap-3 text-center px-4">
+                  <ImageOff className="h-10 w-10 text-muted-foreground" />
+                  <p className="text-lg font-medium">{emptyTitle(status)}</p>
+                </div>
               </div>
-            </div>
-          )}
-          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-background/95 via-background/45 to-transparent p-2.5 sm:p-4 lg:p-6">
-            <div data-testid="public-stats" className="grid grid-flow-col auto-cols-[minmax(8.5rem,1fr)] gap-2 overflow-x-auto pb-1 sm:grid-flow-row sm:grid-cols-3 sm:overflow-visible lg:grid-cols-5">
+            )}
+          </div>
+          <div className="bg-background/95 p-2.5 sm:absolute sm:inset-x-0 sm:bottom-0 sm:bg-gradient-to-t sm:from-background/95 sm:via-background/45 sm:to-transparent sm:p-4 lg:p-6">
+            <div data-testid="public-stats" className="grid grid-cols-2 gap-2 min-[420px]:grid-cols-3 sm:grid-cols-3 lg:grid-cols-5">
               <PublicStat icon={<Clock className="h-4 w-4" />} label="Captured" value={latest ? formatRelative(latest.captured_at) : "-"} />
               <PublicStat icon={<Camera className="h-4 w-4" />} label="Mode" value={latest?.mode ?? "-"} />
               <PublicStat label="Format" value={latest?.format?.toUpperCase() ?? "-"} />
@@ -108,14 +110,14 @@ export default function PublicSky() {
         </div>
 
         {products.length > 0 && (
-          <section className="border-t border-border/60 bg-background/85 px-4 py-3 backdrop-blur-md sm:px-6 lg:px-8">
+          <section className="border-t border-border/60 bg-background/85 px-3 py-3 backdrop-blur-md sm:px-6 lg:px-8">
             <div className="mb-2 flex items-center justify-between gap-3">
               <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Night products</h2>
               <span className="font-mono-data text-[10px] uppercase tracking-wider text-muted-foreground">{productDays ? `${productDays} days` : "recent"}</span>
             </div>
-            <div className="grid grid-flow-col auto-cols-[minmax(10rem,13rem)] gap-3 overflow-x-auto pb-1">
+            <div data-testid="public-products" className="grid grid-cols-2 gap-2 min-[460px]:grid-cols-3 sm:grid-flow-col sm:auto-cols-[minmax(10rem,13rem)] sm:grid-cols-none sm:gap-3 sm:overflow-x-auto sm:pb-1">
               {products.map((product) => (
-                <a key={product.id} href={product.download_url} className="group rounded-md border border-border/60 bg-muted/20 p-2 transition-colors hover:border-primary/70" target="_blank" rel="noreferrer">
+                <a key={product.id} href={product.download_url} className="group min-w-0 rounded-md border border-border/60 bg-muted/20 p-1.5 transition-colors hover:border-primary/70 sm:p-2" target="_blank" rel="noreferrer">
                   <div className="aspect-video overflow-hidden rounded bg-black/70">
                     {product.thumbnail_url ? (
                       <img src={`${product.thumbnail_url}?v=${encodeURIComponent(product.id)}`} alt={`${productLabel(product.type)} preview`} className="h-full w-full object-cover transition-transform group-hover:scale-105" />
@@ -126,8 +128,8 @@ export default function PublicSky() {
                     )}
                   </div>
                   <div className="mt-2 min-w-0">
-                    <p className="truncate text-sm font-medium">{productLabel(product.type)}</p>
-                    <p className="mt-0.5 truncate font-mono-data text-[11px] text-muted-foreground">{productSubtitle(product)}</p>
+                    <p className="truncate text-xs font-medium sm:text-sm">{productLabel(product.type)}</p>
+                    <p className="mt-0.5 truncate font-mono-data text-[10px] text-muted-foreground sm:text-[11px]">{productSubtitle(product)}</p>
                   </div>
                 </a>
               ))}

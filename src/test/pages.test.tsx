@@ -422,7 +422,8 @@ describe("main pages", () => {
     expect(screen.getByText("Mini timelapse")).toBeInTheDocument();
     expect(screen.getByText("20260623 - 42 frames")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /keogram/i })).toHaveAttribute("href", "/api/v1/public/products/product-1/download");
-    expect(screen.getByTestId("public-stats")).toHaveClass("overflow-x-auto");
+    expect(screen.getByTestId("public-stats")).toHaveClass("grid-cols-2");
+    expect(screen.getByTestId("public-products")).toHaveClass("grid-cols-2");
     expect(screen.getByAltText("Latest public all-sky capture")).toHaveAttribute("src", "/api/v1/public/latest/download?v=img-1");
     await waitFor(() => expect(SkyApi.publicLatest).toHaveBeenCalled());
     await waitFor(() => expect(SkyApi.publicProducts).toHaveBeenCalled());
