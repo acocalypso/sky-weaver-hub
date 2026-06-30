@@ -6,7 +6,7 @@ from typing import Any
 from ..db import event, json_dumps, json_loads, log, new_id, now_iso, row_to_dict, session
 from .capture import decode_row
 
-SUPPORTED_TARGET_TYPES = {"filesystem", "rsync_ssh"}
+SUPPORTED_TARGET_TYPES = {"filesystem", "rsync_ssh", "scp_ssh"}
 SUPPORTED_SOURCE_TYPES = {"image", "product", "latest"}
 SAFE_REMOTE_CHARS = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-/")
 SAFE_HOST_CHARS = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-")
@@ -51,10 +51,12 @@ def validate_target_payload(payload: dict[str, Any]) -> tuple[str, str, dict[str
         raise ValueError("Remote target name is required")
     if target_type == "rsync":
         target_type = "rsync_ssh"
+    if target_type == "scp":
+        target_type = "scp_ssh"
     if target_type not in SUPPORTED_TARGET_TYPES:
         raise ValueError("Remote target type is not supported")
-    if target_type == "rsync_ssh":
-        return name, target_type, validate_rsync_ssh_config(config), bool(payload.get("enabled", False))
+    if target_type in {"rsync_ssh", "scp_ssh"}:
+        return name, target_type, validate_ssh_config(config, target_type), bool(payload.get("enabled", False))
     destination = str(config.get("destination_path") or config.get("path") or "").strip()
     if not destination:
         raise ValueError("Filesystem remote targets require config.destination_path")
@@ -63,6 +65,10 @@ def validate_target_payload(payload: dict[str, Any]) -> tuple[str, str, dict[str
 
 
 def validate_rsync_ssh_config(config: dict[str, Any]) -> dict[str, Any]:
+    return validate_ssh_config(config, "rsync_ssh")
+
+
+def validate_ssh_config(config: dict[str, Any], target_type: str) -> dict[str, Any]:
     host = str(config.get("host") or "").strip()
     username = str(config.get("username") or config.get("user") or "").strip()
     remote_path = str(config.get("remote_path") or config.get("path") or "").strip().rstrip("/")
@@ -70,21 +76,21 @@ def validate_rsync_ssh_config(config: dict[str, Any]) -> dict[str, Any]:
     try:
         port = int(config.get("port") or 22)
     except (TypeError, ValueError) as exc:
-        raise ValueError("rsync_ssh target requires a numeric port") from exc
+        raise ValueError(f"{target_type} target requires a numeric port") from exc
     if not host or not username or not remote_path:
-        raise ValueError("rsync_ssh targets require config.host, config.username, and config.remote_path")
+        raise ValueError(f"{target_type} targets require config.host, config.username, and config.remote_path")
     if port < 1 or port > 65535:
-        raise ValueError("rsync_ssh port must be between 1 and 65535")
+        raise ValueError(f"{target_type} port must be between 1 and 65535")
     if not set(host) <= SAFE_HOST_CHARS or host.startswith("-"):
-        raise ValueError("rsync_ssh host contains unsupported characters")
+        raise ValueError(f"{target_type} host contains unsupported characters")
     if not set(username) <= SAFE_USER_CHARS or username.startswith("-"):
-        raise ValueError("rsync_ssh username contains unsupported characters")
+        raise ValueError(f"{target_type} username contains unsupported characters")
     if not set(remote_path) <= SAFE_REMOTE_CHARS or remote_path.startswith("-"):
-        raise ValueError("rsync_ssh remote_path contains unsupported characters")
+        raise ValueError(f"{target_type} remote_path contains unsupported characters")
     normalized: dict[str, Any] = {"host": host, "username": username, "remote_path": remote_path, "port": port}
     if ssh_key_path:
         if not set(ssh_key_path) <= SAFE_REMOTE_CHARS or ssh_key_path.startswith("-"):
-            raise ValueError("rsync_ssh ssh_key_path contains unsupported characters")
+            raise ValueError(f"{target_type} ssh_key_path contains unsupported characters")
         normalized["ssh_key_path"] = ssh_key_path
     return normalized
 
@@ -208,6 +214,8 @@ def copy_to_target(upload: dict[str, Any], target: dict[str, Any]) -> str:
         return str(copy_to_filesystem_target(upload, target))
     if target.get("type") == "rsync_ssh":
         return copy_to_rsync_ssh_target(upload, target)
+    if target.get("type") == "scp_ssh":
+        return copy_to_scp_ssh_target(upload, target)
     raise ValueError("Remote target type is not supported")
 
 
@@ -256,6 +264,38 @@ def copy_to_rsync_ssh_target(upload: dict[str, Any], target: dict[str, Any]) -> 
     return f"rsync://{config['username']}@{config['host']}:{destination_dir}/{source.name}"
 
 
+def copy_to_scp_ssh_target(upload: dict[str, Any], target: dict[str, Any]) -> str:
+    config = validate_ssh_config(target_config(target), "scp_ssh")
+    source = Path(upload["source_path"])
+    if not source.exists():
+        raise FileNotFoundError(source)
+    if shutil.which("ssh") is None:
+        raise RuntimeError("ssh is not installed")
+    if shutil.which("scp") is None:
+        raise RuntimeError("scp is not installed")
+    destination_dir = f"{config['remote_path']}/{upload['source_type']}/{upload['source_id']}"
+    remote = f"{config['username']}@{config['host']}:{destination_dir}/{source.name}"
+    ssh_base = ["-P", str(config["port"]), "-o", "BatchMode=yes"]
+    ssh_command = ["ssh", "-p", str(config["port"]), "-o", "BatchMode=yes"]
+    if config.get("ssh_key_path"):
+        ssh_base.extend(["-i", str(config["ssh_key_path"])])
+        ssh_command.extend(["-i", str(config["ssh_key_path"])])
+    mkdir_result = subprocess.run(
+        [*ssh_command, f"{config['username']}@{config['host']}", "mkdir", "-p", destination_dir],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    if mkdir_result.returncode != 0:
+        stderr = (mkdir_result.stderr or mkdir_result.stdout or "").strip()
+        raise RuntimeError(f"scp target directory creation failed with exit code {mkdir_result.returncode}: {stderr}")
+    result = subprocess.run(["scp", *ssh_base, str(source), remote], capture_output=True, text=True, timeout=300)
+    if result.returncode != 0:
+        stderr = (result.stderr or result.stdout or "").strip()
+        raise RuntimeError(f"scp upload failed with exit code {result.returncode}: {stderr}")
+    return f"scp://{config['username']}@{config['host']}:{destination_dir}/{source.name}"
+
+
 def test_target(target: dict[str, Any]) -> dict[str, Any]:
     if target.get("type") == "filesystem":
         config = target_config(target)
@@ -265,16 +305,17 @@ def test_target(target: dict[str, Any]) -> dict[str, Any]:
         except OSError as exc:
             raise ValueError(f"Target path is not writable: {exc}") from exc
         return {"id": target["id"], "status": "ready", "type": target["type"], "destination_path": str(destination)}
-    if target.get("type") == "rsync_ssh":
-        config = validate_rsync_ssh_config(target_config(target))
-        missing = [binary for binary in ("rsync", "ssh") if shutil.which(binary) is None]
+    if target.get("type") in {"rsync_ssh", "scp_ssh"}:
+        config = validate_ssh_config(target_config(target), str(target.get("type")))
+        binaries = ("rsync", "ssh") if target.get("type") == "rsync_ssh" else ("scp", "ssh")
+        missing = [binary for binary in binaries if shutil.which(binary) is None]
         if missing:
             raise ValueError(f"Missing required command(s): {', '.join(missing)}")
         return {
             "id": target["id"],
             "status": "configured",
             "type": target["type"],
-            "destination_path": f"rsync://{config['username']}@{config['host']}:{config['remote_path']}",
+            "destination_path": f"{'rsync' if target.get('type') == 'rsync_ssh' else 'scp'}://{config['username']}@{config['host']}:{config['remote_path']}",
         }
     raise ValueError("Remote target type is not supported")
 

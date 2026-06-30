@@ -342,6 +342,67 @@ def test_worker_uploads_latest_image_to_rsync_ssh_target(tmp_path: Path, monkeyp
     assert upload["destination_path"].startswith("rsync://skyweaver@allsky.example:/srv/allsky/")
 
 
+def test_worker_uploads_latest_image_to_scp_ssh_target(tmp_path: Path, monkeypatch):
+    client = make_client(tmp_path)
+    token = login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+    _queued, _job, image = run_queued_test_capture(client, headers, {"exposure_ms": 250, "gain": 1, "format": "jpg", "mode": "night"})
+    commands: list[list[str]] = []
+
+    from skyweaver.services import uploads
+
+    monkeypatch.setattr(uploads.shutil, "which", lambda name: f"/usr/bin/{name}" if name in {"scp", "ssh"} else None)
+
+    def fake_run(command, **kwargs):
+        commands.append(command)
+
+        class Result:
+            returncode = 0
+            stdout = ""
+            stderr = ""
+
+        return Result()
+
+    monkeypatch.setattr(uploads.subprocess, "run", fake_run)
+
+    target_res = client.post(
+        "/api/v1/remote-targets",
+        headers=headers,
+        json={
+            "name": "Website scp",
+            "type": "scp_ssh",
+            "enabled": True,
+            "config": {"host": "allsky.example", "username": "skyweaver", "remote_path": "/srv/allsky", "port": 2222, "ssh_key_path": "/home/skyweaver/.ssh/id_ed25519"},
+        },
+    )
+    assert target_res.status_code == 200, target_res.text
+    target = target_res.json()["data"]
+
+    test_res = client.post(f"/api/v1/remote-targets/{target['id']}/test", headers=headers)
+    assert test_res.status_code == 200, test_res.text
+    assert test_res.json()["data"]["destination_path"].startswith("scp://skyweaver@allsky.example:/srv/allsky")
+
+    queue_res = client.post("/api/v1/uploads/queue", headers=headers, json={"source_type": "latest", "target_id": target["id"]})
+    assert queue_res.status_code == 200, queue_res.text
+    queued_upload = queue_res.json()["data"]
+
+    from skyweaver.services.processing import run_once
+
+    assert asyncio.run(run_once()) is True
+    assert len(commands) == 2
+    assert commands[0][:5] == ["ssh", "-p", "2222", "-o", "BatchMode=yes"]
+    assert commands[0][-3:] == ["mkdir", "-p", f"/srv/allsky/image/{image['id']}"]
+    assert commands[1][:5] == ["scp", "-P", "2222", "-o", "BatchMode=yes"]
+    assert str(Path(image["file_path"])) in commands[1]
+    assert commands[1][-1].endswith(f"/image/{image['id']}/{Path(image['file_path']).name}")
+
+    upload_jobs = client.get("/api/v1/uploads/jobs", headers=headers).json()["data"]
+    upload = next(item for item in upload_jobs if item["id"] == queued_upload["upload_job_ids"][0])
+    assert upload["status"] == "completed"
+    assert upload["target_type"] == "scp_ssh"
+    assert upload["destination_path"].startswith("scp://skyweaver@allsky.example:/srv/allsky/")
+
+
 def test_upload_retry_requeues_failed_uploads(tmp_path: Path):
     client = make_client(tmp_path)
     token = login(client)

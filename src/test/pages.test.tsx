@@ -320,6 +320,15 @@ beforeEach(() => {
       created_at: "2026-06-23T12:00:00+00:00",
       updated_at: "2026-06-23T12:00:00+00:00",
     },
+    {
+      id: "target-scp",
+      name: "Website scp",
+      type: "scp_ssh",
+      enabled: true,
+      config: { host: "scp.example", username: "skyweaver", remote_path: "/srv/scp", port: 22 },
+      created_at: "2026-06-23T12:00:00+00:00",
+      updated_at: "2026-06-23T12:00:00+00:00",
+    },
   ]);
   vi.mocked(SkyApi.uploadJobs).mockResolvedValue([
     {
@@ -506,6 +515,8 @@ describe("main pages", () => {
     expect(screen.getByText("Local mirror")).toBeInTheDocument();
     expect(screen.getAllByText(/\/tmp\/skyweaver-upload/).length).toBeGreaterThan(0);
     expect(screen.getByText(/skyweaver@allsky.example:\/srv\/allsky/)).toBeInTheDocument();
+    expect(screen.getByText(/skyweaver@scp.example:\/srv\/scp/)).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /scp over ssh/i })).toBeInTheDocument();
     expect(screen.getByText("image img-1")).toBeInTheDocument();
     expect(screen.getByText(/Local mirror \(filesystem\) - attempts 1/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /details/i }));

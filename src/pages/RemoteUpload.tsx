@@ -14,7 +14,7 @@ export default function RemoteUpload() {
   const [jobs, setJobs] = useState<UploadJob[]>([]);
   const [selectedJob, setSelectedJob] = useState<UploadJob | null>(null);
   const [name, setName] = useState("Local mirror");
-  const [targetType, setTargetType] = useState<"filesystem" | "rsync_ssh">("filesystem");
+  const [targetType, setTargetType] = useState<"filesystem" | "rsync_ssh" | "scp_ssh">("filesystem");
   const [destination, setDestination] = useState("");
   const [host, setHost] = useState("");
   const [username, setUsername] = useState("pi");
@@ -57,7 +57,7 @@ export default function RemoteUpload() {
 
   async function toggleTarget(target: RemoteTarget, nextEnabled: boolean) {
     try {
-      const updated = await SkyApi.patchRemoteTarget(target.id, { name: target.name, type: target.type as "filesystem" | "rsync_ssh", enabled: nextEnabled, config: target.config });
+      const updated = await SkyApi.patchRemoteTarget(target.id, { name: target.name, type: target.type as "filesystem" | "rsync_ssh" | "scp_ssh", enabled: nextEnabled, config: target.config });
       setTargets(targets.map((item) => (item.id === target.id ? updated : item)));
     } catch (e: any) {
       toast.error(e.message ?? "Update target failed");
@@ -123,9 +123,10 @@ export default function RemoteUpload() {
           <Field label="Name" value={name} onChange={setName} />
           <div className="space-y-2">
             <Label>Type</Label>
-            <select className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={targetType} onChange={(event) => setTargetType(event.target.value as "filesystem" | "rsync_ssh")}>
+            <select className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={targetType} onChange={(event) => setTargetType(event.target.value as "filesystem" | "rsync_ssh" | "scp_ssh")}>
               <option value="filesystem">Filesystem</option>
               <option value="rsync_ssh">Rsync over SSH</option>
+              <option value="scp_ssh">SCP over SSH</option>
             </select>
           </div>
           <div className="flex items-center gap-3 pb-2">
@@ -209,7 +210,7 @@ export default function RemoteUpload() {
 }
 
 function formatTargetDestination(target: RemoteTarget) {
-  if (target.type === "rsync_ssh") {
+  if (target.type === "rsync_ssh" || target.type === "scp_ssh") {
     return `${target.config.username}@${target.config.host}:${target.config.remote_path}`;
   }
   return target.config.destination_path ?? "-";

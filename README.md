@@ -15,13 +15,13 @@ This repository now contains a working local-first platform slice:
 - Daemon-owned scheduled capture loop with day/night profile selection, fixed/sun/twilight windows, restart-safe per-mode capture intervals, next-capture preview, latest-only unsaved captures, queued test/single/sequence captures, pause/resume/stop queue semantics, best-effort rpicam hard-cancel wiring, heartbeat reporting, interrupted job recovery, and stale daemon lock recovery.
 - Processing worker for thumbnail reprocess, keogram JPEGs, ffmpeg timelapses, mini timelapses, and startrail JPEGs, with end-of-night product jobs queued from the nighttime profile.
 - Built-in overlay module with editable lines, colors, placement controls, a trusted post-capture module flow, and external manifest registration; custom code uploads stay disabled until sandboxing/signing is implemented.
-- Remote upload page and worker-backed filesystem plus rsync-over-SSH target execution for latest images and generated products.
+- Remote upload page and worker-backed filesystem, rsync-over-SSH, and SCP-over-SSH target execution for latest images and generated products.
 - Public unauthenticated sky page at `/public`, backed by stable latest-image artifacts and public latest/product API endpoints that honor the public-page enabled setting, including latest-only captures that are not saved to the gallery.
 - System Health UI with service controls, per-service detail, recent journal output, diagnostics export, and queue/metric summaries.
 - Systemd units and installer scripts for Pi deployment, with first-setup prompts, constrained service-control permissions, and dry-run/idempotency tests.
 - Allsky migration detection, preview, worker-backed image/product/dark-frame import, selected settings import, rollback, and Migration UI. Original Allsky files are copied, never deleted.
 
-Some Allsky parity items are intentionally scaffolded for later phases: SFTP/SCP/FTP upload targets, overlay live previews/presets, dark-frame median combine/subtraction, full Allsky settings/overlay import, and custom module sandboxing.
+Some Allsky parity items are intentionally scaffolded for later phases: SFTP/FTP upload targets, overlay live previews/presets, dark-frame median combine/subtraction, full Allsky settings/overlay import, and custom module sandboxing.
 
 ## Supported Targets
 
