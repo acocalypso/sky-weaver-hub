@@ -10,6 +10,7 @@ from PIL import Image
 from ..config import get_settings
 from ..db import event, json_dumps, json_loads, new_id, now_iso, row_to_dict, session
 from .capture import analyze_image, decode_row, delete_image_files, delete_storage_paths, extract_image_metadata, make_thumbnail
+from .overlay import OVERLAY_MODULE_ID, merge_overlay_settings
 
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png"}
 VIDEO_SUFFIXES = {".mp4", ".webm"}
@@ -42,6 +43,25 @@ TRANSLATABLE_KEYS = {
     "publicpage",
     "website",
     "usewebsite",
+    "overlay",
+    "overlayenabled",
+    "showoverlay",
+    "showtext",
+    "imagetext",
+    "imagetextenabled",
+    "textline1",
+    "textline2",
+    "textline3",
+    "textline4",
+    "overlayline1",
+    "overlayline2",
+    "overlayline3",
+    "overlayline4",
+    "fontcolor",
+    "textcolor",
+    "backgroundcolor",
+    "fontsize",
+    "font",
 }
 
 
@@ -424,6 +444,11 @@ def map_allsky_settings(parsed: dict[str, dict[str, Any]]) -> dict[str, Any]:
     angle = first_float(lookup, ("angle", "sunangle"))
     public_enabled = first_bool(lookup, ("publicpage", "public_page", "website", "usewebsite"))
     camera_hint = first_text(lookup, ("camera", "cameratype", "camera_type", "cameramodel", "camera_model"))
+    overlay_enabled = first_bool(lookup, ("overlay", "overlay_enabled", "show_overlay", "show_text", "image_text_enabled"))
+    overlay_lines = overlay_text_lines(lookup)
+    overlay_font_size = first_float(lookup, ("font_size", "fontsize", "font"))
+    overlay_text_color = first_text(lookup, ("text_color", "textcolor", "font_color", "fontcolor"))
+    overlay_background_color = first_text(lookup, ("background_color", "backgroundcolor"))
     observatory: dict[str, Any] = {}
     if latitude is not None and -90 <= latitude <= 90:
         observatory["latitude"] = latitude
@@ -441,6 +466,19 @@ def map_allsky_settings(parsed: dict[str, dict[str, Any]]) -> dict[str, Any]:
         mapped["public_page"] = {"enabled": public_enabled}
     if camera_hint:
         mapped["camera_hints"] = {"source": "allsky", "hint": camera_hint}
+    overlay: dict[str, Any] = {}
+    if overlay_enabled is not None:
+        overlay["enabled"] = overlay_enabled
+    if overlay_lines:
+        overlay["settings"] = {"lines": overlay_lines}
+    if overlay_font_size is not None:
+        overlay.setdefault("settings", {})["font_size"] = int(max(8, min(96, overlay_font_size)))
+    if overlay_text_color:
+        overlay.setdefault("settings", {})["text_color"] = normalize_color(overlay_text_color, "#ffffffff")
+    if overlay_background_color:
+        overlay.setdefault("settings", {})["background_color"] = normalize_color(overlay_background_color, "#00000099")
+    if overlay:
+        mapped["overlay"] = overlay
     return mapped
 
 
@@ -453,6 +491,8 @@ def apply_allsky_settings(root: Path, job_id: str) -> dict[str, Any]:
             backup[key] = json_loads(row["value"], None) if row else None
         schedule_row = row_to_dict(conn.execute("SELECT * FROM capture_schedule LIMIT 1").fetchone())
         backup["capture_schedule"] = schedule_row
+        overlay_row = row_to_dict(conn.execute("SELECT * FROM plugin_modules WHERE id=?", (OVERLAY_MODULE_ID,)).fetchone())
+        backup["overlay_module"] = decode_row(overlay_row) if overlay_row else None
 
         if "observatory" in mapped:
             current = backup.get("observatory") if isinstance(backup.get("observatory"), dict) else {}
@@ -472,6 +512,19 @@ def apply_allsky_settings(root: Path, job_id: str) -> dict[str, Any]:
                     "UPDATE capture_schedule SET sun_angle=?, start_sun_angle=?, end_sun_angle=?, updated_at=? WHERE id=?",
                     (patch["sun_angle"], patch["start_sun_angle"], patch["end_sun_angle"], now_iso(), schedule_row["id"]),
                 )
+        if "overlay" in mapped:
+            overlay_patch = mapped["overlay"]
+            current_settings = {}
+            current_enabled = 0
+            if isinstance(backup.get("overlay_module"), dict):
+                current_settings = backup["overlay_module"].get("settings") if isinstance(backup["overlay_module"].get("settings"), dict) else {}
+                current_enabled = int(bool(backup["overlay_module"].get("enabled")))
+            next_settings = merge_overlay_settings({**current_settings, **overlay_patch.get("settings", {})})
+            next_enabled = int(bool(overlay_patch.get("enabled", current_enabled)))
+            conn.execute(
+                "UPDATE plugin_modules SET enabled=?, settings=?, updated_at=? WHERE id=?",
+                (next_enabled, json_dumps(next_settings), now_iso(), OVERLAY_MODULE_ID),
+            )
         if mapped:
             event(conn, "allsky_settings_imported", {"job_id": job_id, "settings_keys": sorted(mapped.keys())})
     return {"applied": mapped, "backup": backup}
@@ -495,6 +548,13 @@ def restore_settings_from_job_output(conn, job: dict[str, Any] | None) -> dict[s
         else:
             conn.execute("INSERT OR REPLACE INTO system_settings (key, value, updated_at) VALUES (?, ?, ?)", (key, json_dumps(value), now_iso()))
         restored.append(key)
+    overlay_module = backup.get("overlay_module")
+    if isinstance(overlay_module, dict) and overlay_module.get("id"):
+        conn.execute(
+            """UPDATE plugin_modules SET enabled=?, settings=?, updated_at=? WHERE id=?""",
+            (int(bool(overlay_module.get("enabled"))), json_dumps(overlay_module.get("settings") or {}), now_iso(), overlay_module["id"]),
+        )
+        restored.append("overlay_module")
     schedule = backup.get("capture_schedule")
     if isinstance(schedule, dict) and schedule.get("id"):
         conn.execute(
@@ -610,3 +670,24 @@ def first_bool(values: dict[str, Any], keys: tuple[str, ...]) -> bool | None:
     if lowered in {"0", "false", "no", "n", "off", "disabled", "disable"}:
         return False
     return None
+
+
+def overlay_text_lines(values: dict[str, Any]) -> list[dict[str, str]]:
+    lines: list[dict[str, str]] = []
+    for index in range(1, 5):
+        text = first_text(values, (f"overlayline{index}", f"textline{index}", f"line{index}"))
+        if text:
+            lines.append({"text": text[:240], "position": "bottom_left" if index == 1 else "bottom_right"})
+    image_text = first_text(values, ("imagetext",))
+    if image_text and not lines:
+        lines.append({"text": image_text[:240], "position": "bottom_left"})
+    return lines[:8]
+
+
+def normalize_color(value: str, fallback: str) -> str:
+    text = value.strip().lstrip("#")
+    if len(text) in {6, 8} and all(char in "0123456789abcdefABCDEF" for char in text):
+        if len(text) == 6:
+            text += "ff"
+        return f"#{text.lower()}"
+    return fallback

@@ -496,6 +496,10 @@ def test_worker_imports_and_rolls_back_allsky_files(tmp_path: Path):
             "ANGLE=-12",
             "CAMERA_TYPE=IMX290",
             "USEWEBSITE=true",
+            "SHOW_OVERLAY=true",
+            "TEXTLINE1='Garden {captured_time}'",
+            "TEXT_COLOR=#ffcc00",
+            "FONT_SIZE=18",
             "UNSUPPORTED_FOO=bar",
         ]),
         encoding="utf-8",
@@ -509,6 +513,8 @@ def test_worker_imports_and_rolls_back_allsky_files(tmp_path: Path):
     assert preview_data["settings"]["observatory"]["name"] == "Garden Allsky"
     assert preview_data["settings"]["observatory"]["latitude"] == 49.1
     assert preview_data["settings"]["schedule"]["sun_angle"] == -12
+    assert preview_data["settings"]["overlay"]["enabled"] is True
+    assert preview_data["settings"]["overlay"]["settings"]["lines"][0]["text"] == "Garden {captured_time}"
     assert any(item.get("key") == "UNSUPPORTED_FOO" for item in preview_data["unsupported_settings"])
     assert preview_data["will_delete_original"] is False
 
@@ -526,6 +532,7 @@ def test_worker_imports_and_rolls_back_allsky_files(tmp_path: Path):
     assert completed["output"]["imported_products"] == 2
     assert {item["kind"] for item in completed["output"]["import_log"]} == {"image", "dark_frame", "keogram", "timelapse"}
     assert completed["output"]["settings"]["applied"]["camera_hints"]["hint"] == "IMX290"
+    assert completed["output"]["settings"]["applied"]["overlay"]["settings"]["font_size"] == 18
     assert image_source.exists()
     assert dark_source.exists()
     assert keogram_source.exists()
@@ -550,6 +557,11 @@ def test_worker_imports_and_rolls_back_allsky_files(tmp_path: Path):
     assert settings_after_import["allsky_camera_hints"]["hint"] == "IMX290"
     schedule_after_import = client.get("/api/v1/schedule", headers=headers).json()["data"]
     assert schedule_after_import["sun_angle"] == -12
+    modules_after_import = client.get("/api/v1/modules", headers=headers).json()["data"]
+    overlay_after_import = next(item for item in modules_after_import if item["id"] == "builtin.overlay")
+    assert overlay_after_import["enabled"] is True
+    assert overlay_after_import["settings"]["lines"][0]["text"] == "Garden {captured_time}"
+    assert overlay_after_import["settings"]["text_color"] == "#ffcc00ff"
 
     rollback = client.post(f"/api/v1/migration/jobs/{job_id}/rollback", headers=headers)
     assert rollback.status_code == 200, rollback.text
@@ -568,5 +580,8 @@ def test_worker_imports_and_rolls_back_allsky_files(tmp_path: Path):
     assert "allsky_camera_hints" not in settings_after_rollback
     schedule_after_rollback = client.get("/api/v1/schedule", headers=headers).json()["data"]
     assert schedule_after_rollback["sun_angle"] == -6
+    modules_after_rollback = client.get("/api/v1/modules", headers=headers).json()["data"]
+    overlay_after_rollback = next(item for item in modules_after_rollback if item["id"] == "builtin.overlay")
+    assert overlay_after_rollback["enabled"] is False
     after_rollback_dark_frames = client.get("/api/v1/dark-frames", headers=headers).json()["data"]
     assert not any(item["metadata"].get("migration", {}).get("job_id") == job_id for item in after_rollback_dark_frames)
