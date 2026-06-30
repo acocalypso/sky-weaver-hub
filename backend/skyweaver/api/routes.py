@@ -19,6 +19,7 @@ from ..db import default_profile, event, json_dumps, json_loads, log, new_id, no
 from ..rate_limit import InMemoryRateLimiter, RateLimitStatus
 from ..security import create_api_key, hash_password, make_token, verify_password
 from ..services.capture import CaptureCommand, all_rows, cleanup_images_by_retention, configured_image_retention_days, count_files, create_capture_job, current_schedule, decode_row, delete_image_files, enqueue_capture, get_primary_camera, public_latest_payload, publish_latest_image, read_latest_payload, scheduled_capture_timing, system_metrics
+from ..services.modules import run_flow_preview, validate_module_order
 from ..services.processing import cleanup_products_by_retention, delete_product_files
 from ..services.schedule import active_window
 from .deps import current_principal, require_scope
@@ -1463,12 +1464,41 @@ def module_flows(_principal: Annotated[dict, Depends(require_scope("read:setting
 
 @router.patch("/module-flows/{flow_id}")
 def patch_flow(flow_id: str, payload: dict[str, Any], _principal: Annotated[dict, Depends(require_scope("admin"))]):
-    return ok({"id": flow_id, "payload": payload})
+    allowed = {key: payload[key] for key in ("enabled", "module_order") if key in payload}
+    if not allowed:
+        raise HTTPException(400, "No supported flow fields provided")
+    with session() as conn:
+        row = decode_row(row_to_dict(conn.execute("SELECT * FROM module_flows WHERE id=?", (flow_id,)).fetchone()))
+        if not row:
+            raise HTTPException(404, "Module flow not found")
+        enabled = int(bool(allowed.get("enabled", row.get("enabled"))))
+        try:
+            module_order = validate_module_order(conn, allowed.get("module_order", row.get("module_order") or []))
+        except LookupError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        except PermissionError as exc:
+            raise HTTPException(403, str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        conn.execute("UPDATE module_flows SET enabled=?, module_order=?, updated_at=? WHERE id=?", (enabled, json_dumps(module_order), now_iso(), flow_id))
+        event(conn, "module_flow_updated", {"flow_id": flow_id, "enabled": bool(enabled), "module_order": module_order})
+        updated = decode_row(row_to_dict(conn.execute("SELECT * FROM module_flows WHERE id=?", (flow_id,)).fetchone()))
+    return ok(updated)
 
 
 @router.post("/module-flows/{flow_id}/run")
 def run_flow(flow_id: str, _principal: Annotated[dict, Depends(require_scope("write:processing"))]):
-    return ok({"id": flow_id, "status": "queued"})
+    with session() as conn:
+        try:
+            result = run_flow_preview(conn, flow_id)
+        except LookupError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        except PermissionError as exc:
+            raise HTTPException(403, str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        event(conn, "module_flow_run", {"flow_id": flow_id, "status": result["status"], "modules": [module["id"] for module in result["modules"]]})
+    return ok(result)
 
 
 @router.get("/remote-targets")

@@ -48,6 +48,9 @@ vi.mock("@/lib/api", async () => {
       publicLatest: vi.fn(),
       modules: vi.fn(),
       patchModule: vi.fn(),
+      moduleFlows: vi.fn(),
+      patchModuleFlow: vi.fn(),
+      runModuleFlow: vi.fn(),
     },
   };
 });
@@ -212,6 +215,33 @@ beforeEach(() => {
     created_at: "2026-06-23T12:00:00+00:00",
     updated_at: "2026-06-23T12:00:00+00:00",
   }) as any);
+  vi.mocked(SkyApi.moduleFlows).mockResolvedValue([
+    {
+      id: "builtin.post_capture",
+      name: "Post-capture processing",
+      trigger: "post_capture",
+      enabled: true,
+      module_order: ["builtin.overlay"],
+      created_at: "2026-06-23T12:00:00+00:00",
+      updated_at: "2026-06-23T12:00:00+00:00",
+    },
+  ]);
+  vi.mocked(SkyApi.patchModuleFlow).mockImplementation(async (_id, body) => ({
+    id: "builtin.post_capture",
+    name: "Post-capture processing",
+    trigger: "post_capture",
+    enabled: body.enabled ?? true,
+    module_order: ["builtin.overlay"],
+    created_at: "2026-06-23T12:00:00+00:00",
+    updated_at: "2026-06-23T12:00:00+00:00",
+  }));
+  vi.mocked(SkyApi.runModuleFlow).mockResolvedValue({
+    id: "builtin.post_capture",
+    trigger: "post_capture",
+    status: "completed",
+    enabled: true,
+    modules: [{ id: "builtin.overlay", name: "Built-in overlay", enabled: true, trusted: true, status: "ready" }],
+  });
 });
 
 describe("main pages", () => {
@@ -276,6 +306,9 @@ describe("main pages", () => {
     expect(screen.getByDisplayValue("{observatory_name}")).toBeInTheDocument();
     expect(screen.getByText("trusted")).toBeInTheDocument();
     await waitFor(() => expect(SkyApi.modules).toHaveBeenCalled());
+    expect(await screen.findByText("Post-capture processing")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /validate/i }));
+    await waitFor(() => expect(SkyApi.runModuleFlow).toHaveBeenCalledWith("builtin.post_capture"));
   });
 
   it("runs service controls from health", async () => {

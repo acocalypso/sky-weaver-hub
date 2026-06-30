@@ -225,6 +225,21 @@ def seed_defaults(conn: sqlite3.Connection, settings: Settings) -> None:
             overlay["updated_at"],
         ),
     )
+    flow = default_post_capture_flow(ts)
+    conn.execute(
+        """INSERT OR IGNORE INTO module_flows
+           (id, name, trigger, enabled, module_order, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (
+            flow["id"],
+            flow["name"],
+            flow["trigger"],
+            flow["enabled"],
+            json_dumps(flow["module_order"]),
+            flow["created_at"],
+            flow["updated_at"],
+        ),
+    )
 
 
 def default_profile(mode: str) -> dict[str, Any]:
@@ -292,6 +307,18 @@ def default_overlay_module(ts: str) -> dict[str, Any]:
             "text_color": "#ffffffff",
             "background_color": "#00000099",
         },
+        "created_at": ts,
+        "updated_at": ts,
+    }
+
+
+def default_post_capture_flow(ts: str) -> dict[str, Any]:
+    return {
+        "id": "builtin.post_capture",
+        "name": "Post-capture processing",
+        "trigger": "post_capture",
+        "enabled": 1,
+        "module_order": ["builtin.overlay"],
         "created_at": ts,
         "updated_at": ts,
     }

@@ -234,6 +234,38 @@ def test_builtin_overlay_module_can_render_on_capture(tmp_path):
     assert delete_res.status_code == 403
 
 
+def test_post_capture_flow_controls_overlay_application(tmp_path):
+    client = make_client(tmp_path)
+    token = login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    flows = client.get("/api/v1/module-flows", headers=headers)
+    assert flows.status_code == 200, flows.text
+    flow = next(row for row in flows.json()["data"] if row["id"] == "builtin.post_capture")
+    assert flow["enabled"] is True
+    assert flow["module_order"] == ["builtin.overlay"]
+
+    assert client.patch("/api/v1/modules/builtin.overlay", headers=headers, json={"enabled": True}).status_code == 200
+
+    run_res = client.post("/api/v1/module-flows/builtin.post_capture/run", headers=headers)
+    assert run_res.status_code == 200, run_res.text
+    run_data = run_res.json()["data"]
+    assert run_data["status"] == "completed"
+    assert run_data["modules"][0]["id"] == "builtin.overlay"
+    assert run_data["modules"][0]["status"] == "ready"
+
+    disabled = client.patch("/api/v1/module-flows/builtin.post_capture", headers=headers, json={"enabled": False})
+    assert disabled.status_code == 200, disabled.text
+    assert disabled.json()["data"]["enabled"] is False
+
+    _queued, _job, image = run_queued_test_capture(client, headers, {"exposure_ms": 500, "gain": 1, "format": "jpg", "mode": "manual"})
+    assert image["overlay_applied"] is False
+    assert image["metadata"]["overlay"]["applied"] is False
+
+    invalid = client.patch("/api/v1/module-flows/builtin.post_capture", headers=headers, json={"module_order": ["missing.module"]})
+    assert invalid.status_code == 404
+
+
 def test_deleting_latest_republishes_next_newest_image(tmp_path):
     client = make_client(tmp_path)
     token = login(client)

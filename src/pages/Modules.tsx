@@ -6,17 +6,19 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { StatusBadge } from "@/components/StatusBadge";
-import { SkyApi, type ModuleRow } from "@/lib/api";
-import { Puzzle, Save } from "lucide-react";
+import { SkyApi, type ModuleFlowRow, type ModuleRow } from "@/lib/api";
+import { Play, Puzzle, Save } from "lucide-react";
 import { toast } from "sonner";
 
 const POSITIONS = ["top_left", "top_right", "bottom_left", "bottom_right"];
 
 export default function Modules() {
   const [modules, setModules] = useState<ModuleRow[]>([]);
+  const [flows, setFlows] = useState<ModuleFlowRow[]>([]);
   const [overlaySettings, setOverlaySettings] = useState<Record<string, any>>({});
   const [overlayEnabled, setOverlayEnabled] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [runningFlowId, setRunningFlowId] = useState<string | null>(null);
 
   useEffect(() => {
     document.title = "Modules - Sky Weaver Hub";
@@ -25,8 +27,9 @@ export default function Modules() {
 
   async function load() {
     try {
-      const rows = await SkyApi.modules();
+      const [rows, nextFlows] = await Promise.all([SkyApi.modules(), SkyApi.moduleFlows()]);
       setModules(rows);
+      setFlows(nextFlows);
       const overlay = rows.find((row) => row.id === "builtin.overlay");
       if (overlay) {
         setOverlayEnabled(Boolean(overlay.enabled));
@@ -38,6 +41,7 @@ export default function Modules() {
   }
 
   const overlay = useMemo(() => modules.find((row) => row.id === "builtin.overlay"), [modules]);
+  const postCaptureFlow = useMemo(() => flows.find((row) => row.id === "builtin.post_capture"), [flows]);
   const lines = Array.isArray(overlaySettings.lines) ? overlaySettings.lines : [];
 
   function setSetting(key: string, value: any) {
@@ -64,6 +68,29 @@ export default function Modules() {
       toast.error(e.message ?? "Save failed");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function setFlowEnabled(flow: ModuleFlowRow, enabled: boolean) {
+    try {
+      const updated = await SkyApi.patchModuleFlow(flow.id, { enabled });
+      setFlows(flows.map((row) => row.id === updated.id ? updated : row));
+      toast.success("Module flow saved");
+    } catch (e: any) {
+      toast.error(e.message ?? "Flow save failed");
+    }
+  }
+
+  async function runFlow(flow: ModuleFlowRow) {
+    setRunningFlowId(flow.id);
+    try {
+      const result = await SkyApi.runModuleFlow(flow.id);
+      const ready = result.modules.filter((module) => module.status === "ready").length;
+      toast.success(`${flow.name}: ${ready} ready`);
+    } catch (e: any) {
+      toast.error(e.message ?? "Flow run failed");
+    } finally {
+      setRunningFlowId(null);
     }
   }
 
@@ -110,6 +137,38 @@ export default function Modules() {
 
           <div className="flex justify-end">
             <Button onClick={saveOverlay} disabled={saving}><Save className="h-4 w-4 mr-2" />{saving ? "Saving..." : "Save overlay"}</Button>
+          </div>
+        </Card>
+      )}
+
+      {postCaptureFlow && (
+        <Card className="telemetry-card space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold">{postCaptureFlow.name}</h2>
+              <p className="text-xs text-muted-foreground">Trigger: {postCaptureFlow.trigger.replace("_", " ")}</p>
+            </div>
+            <div className="flex items-center gap-3">
+              <StatusBadge variant={postCaptureFlow.enabled ? "active" : "idle"}>{postCaptureFlow.enabled ? "enabled" : "disabled"}</StatusBadge>
+              <Switch checked={postCaptureFlow.enabled} onCheckedChange={(checked) => setFlowEnabled(postCaptureFlow, checked)} />
+              <Button variant="outline" size="sm" onClick={() => runFlow(postCaptureFlow)} disabled={runningFlowId === postCaptureFlow.id}>
+                <Play className="h-4 w-4 mr-2" />{runningFlowId === postCaptureFlow.id ? "Running..." : "Validate"}
+              </Button>
+            </div>
+          </div>
+          <div className="space-y-2">
+            {postCaptureFlow.module_order.map((moduleId, index) => {
+              const module = modules.find((row) => row.id === moduleId);
+              return (
+                <div key={moduleId} className="flex items-center justify-between border border-border rounded-md p-3">
+                  <div>
+                    <p className="font-medium">{index + 1}. {module?.name ?? moduleId}</p>
+                    <p className="text-xs text-muted-foreground">{moduleId}</p>
+                  </div>
+                  <StatusBadge variant={module?.enabled ? "active" : "idle"}>{module?.enabled ? "ready" : "skipped"}</StatusBadge>
+                </div>
+              );
+            })}
           </div>
         </Card>
       )}

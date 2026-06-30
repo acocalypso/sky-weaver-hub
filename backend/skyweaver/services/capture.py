@@ -14,7 +14,8 @@ from ..camera.base import CameraAdapter, CaptureCancelResult, CaptureCanceled, C
 from ..camera.registry import get_adapter
 from ..config import get_settings
 from ..db import event, json_dumps, json_loads, log, new_id, now_iso, row_to_dict, session
-from .overlay import apply_overlay, overlay_enabled, overlay_settings
+from .modules import POST_CAPTURE_TRIGGER, module_enabled_for_trigger
+from .overlay import OVERLAY_MODULE_ID, apply_overlay, overlay_enabled, overlay_settings
 from .schedule import should_capture_now
 
 
@@ -62,7 +63,7 @@ def decode_row(row: dict[str, Any] | None) -> dict[str, Any] | None:
     if row is None:
         return None
     out = dict(row)
-    for key in ["capabilities", "settings", "metadata", "context", "request", "result", "input", "output", "payload", "value", "scopes"]:
+    for key in ["capabilities", "settings", "metadata", "context", "request", "result", "input", "output", "payload", "value", "scopes", "module_order"]:
         if key in out and isinstance(out[key], str):
             out[key] = json_loads(out[key], out[key])
     for key, value in list(out.items()):
@@ -432,7 +433,7 @@ async def execute_capture(command: CaptureCommand, job_type: str = "manual", job
         )
         overlay_result: dict[str, Any] = {"applied": False}
         with session() as conn:
-            if overlay_enabled(conn):
+            if overlay_enabled(conn) and module_enabled_for_trigger(conn, POST_CAPTURE_TRIGGER, OVERLAY_MODULE_ID):
                 observatory_row = conn.execute("SELECT value FROM system_settings WHERE key='observatory'").fetchone()
                 observatory = json_loads(observatory_row["value"], {}) if observatory_row else {}
                 overlay_result = apply_overlay(
