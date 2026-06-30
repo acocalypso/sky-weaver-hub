@@ -1408,7 +1408,7 @@ def image_detail(image_id: str, _principal: Annotated[dict, Depends(require_scop
 
 
 @router.get("/images/{image_id}/download")
-def image_download(image_id: str):
+def image_download(image_id: str, _principal: Annotated[dict, Depends(require_scope("read:images"))]):
     with session() as conn:
         row = conn.execute("SELECT file_path FROM images WHERE id=?", (image_id,)).fetchone()
     if not row or not Path(row["file_path"]).exists():
@@ -1514,7 +1514,7 @@ def delete_product(product_id: str, _principal: Annotated[dict, Depends(require_
 
 
 @router.get("/products/{product_id}/download")
-def product_download(product_id: str):
+def product_download(product_id: str, _principal: Annotated[dict, Depends(require_scope("read:images"))]):
     with session() as conn:
         row = conn.execute("SELECT file_path FROM night_products WHERE id=?", (product_id,)).fetchone()
     if not row or not row["file_path"] or not Path(row["file_path"]).exists():

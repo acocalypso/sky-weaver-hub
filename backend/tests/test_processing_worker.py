@@ -39,7 +39,7 @@ def test_worker_generates_keogram_product(tmp_path: Path):
     assert product["metadata"]["source_images"] == 3
     assert Path(product["file_path"]).exists()
 
-    download = client.get(f"/api/v1/products/{product['id']}/download")
+    download = client.get(f"/api/v1/products/{product['id']}/download", headers=headers)
     assert download.status_code == 200
 
 
@@ -98,7 +98,7 @@ def test_delete_product_removes_files_and_row(tmp_path: Path):
     assert not file_path.exists()
     assert not thumbnail_path.exists()
     assert client.get(f"/api/v1/products/{product['id']}", headers=headers).status_code == 404
-    assert client.get(f"/api/v1/products/{product['id']}/download").status_code == 404
+    assert client.get(f"/api/v1/products/{product['id']}/download", headers=headers).status_code == 404
 
 
 def test_product_retention_cleanup_removes_old_products_only(tmp_path: Path):
@@ -179,7 +179,7 @@ def test_worker_generates_timelapse_product(tmp_path: Path):
     assert Path(product["file_path"]).exists()
     assert Path(product["file_path"]).suffix == ".mp4"
 
-    download = client.get(f"/api/v1/products/{product['id']}/download")
+    download = client.get(f"/api/v1/products/{product['id']}/download", headers=headers)
     assert download.status_code == 200
 
 
@@ -224,7 +224,7 @@ def test_worker_generates_mini_timelapse_product(tmp_path: Path):
     assert Path(product["file_path"]).exists()
     assert Path(product["file_path"]).suffix == ".mp4"
 
-    download = client.get(f"/api/v1/products/{product['id']}/download")
+    download = client.get(f"/api/v1/products/{product['id']}/download", headers=headers)
     assert download.status_code == 200
 
 
@@ -259,7 +259,7 @@ def test_worker_generates_startrail_product(tmp_path: Path):
     assert Path(product["file_path"]).exists()
     assert Path(product["file_path"]).suffix == ".jpg"
 
-    download = client.get(f"/api/v1/products/{product['id']}/download")
+    download = client.get(f"/api/v1/products/{product['id']}/download", headers=headers)
     assert download.status_code == 200
 
 

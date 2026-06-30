@@ -26,6 +26,16 @@ def login(client: TestClient) -> str:
     return res.json()["data"]["token"]
 
 
+def create_scoped_api_key(client: TestClient, admin_token: str, scopes: list[str], name: str = "scope-test") -> str:
+    res = client.post(
+        "/api/v1/api-keys",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={"name": name, "scopes": scopes},
+    )
+    assert res.status_code == 200, res.text
+    return res.json()["data"]["key"]
+
+
 def run_queued_test_capture(client: TestClient, headers: dict[str, str], payload: dict):
     queued_res = client.post("/api/v1/capture/test-shot", headers=headers, json=payload)
     assert queued_res.status_code == 200, queued_res.text
@@ -432,15 +442,92 @@ def test_public_products_are_safe_unauthenticated_and_visibility_limited(tmp_pat
 def test_api_key_scopes(tmp_path):
     client = make_client(tmp_path)
     token = login(client)
-    key_res = client.post(
-        "/api/v1/api-keys",
-        headers={"Authorization": f"Bearer {token}"},
-        json={"name": "mobile", "scopes": ["read:status", "read:images"]},
-    )
-    assert key_res.status_code == 200
-    api_key = key_res.json()["data"]["key"]
+    api_key = create_scoped_api_key(client, token, ["read:status", "read:images"], "mobile")
     assert client.get("/api/v1/status", headers={"Authorization": f"Bearer {api_key}"}).status_code == 200
     assert client.post("/api/v1/capture/start", headers={"Authorization": f"Bearer {api_key}"}).status_code == 403
+
+
+def test_api_key_scope_boundaries_for_endpoint_groups(tmp_path):
+    client = make_client(tmp_path)
+    admin_token = login(client)
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+    no_scope_key = create_scoped_api_key(client, admin_token, [], "no-scope")
+
+    cameras = client.get("/api/v1/cameras", headers=admin_headers).json()["data"]
+    camera_id = cameras[0]["id"]
+
+    scope_cases = [
+        ("read:status", "GET", "/api/v1/status", None),
+        ("read:status", "GET", "/api/v1/system/metrics", None),
+        ("read:status", "GET", "/api/v1/system/services", None),
+        ("read:status", "GET", "/api/v1/system/services/skyweaver-capture", None),
+        ("read:status", "GET", "/api/v1/system/diagnostics", None),
+        ("read:status", "GET", "/api/v1/logs", None),
+        ("read:status", "GET", "/api/v1/capture/state", None),
+        ("read:status", "GET", "/api/v1/capture/jobs", None),
+        ("read:settings", "GET", "/api/v1/cameras", None),
+        ("read:settings", "GET", f"/api/v1/cameras/{camera_id}", None),
+        ("read:settings", "GET", f"/api/v1/cameras/{camera_id}/capabilities", None),
+        ("read:settings", "GET", f"/api/v1/cameras/{camera_id}/settings-schema", None),
+        ("read:settings", "GET", "/api/v1/settings", None),
+        ("read:settings", "GET", "/api/v1/camera-profiles", None),
+        ("read:settings", "GET", "/api/v1/schedule", None),
+        ("read:settings", "POST", "/api/v1/schedule/preview-tonight", {"timezone": "UTC", "latitude": 0, "longitude": 0}),
+        ("read:settings", "GET", "/api/v1/modules", None),
+        ("read:settings", "GET", "/api/v1/module-flows", None),
+        ("read:settings", "GET", "/api/v1/remote-targets", None),
+        ("read:images", "GET", "/api/v1/images", None),
+        ("read:images", "GET", "/api/v1/images/latest", None),
+        ("read:images", "GET", "/api/v1/images/days", None),
+        ("read:images", "GET", "/api/v1/processing/jobs", None),
+        ("read:images", "GET", "/api/v1/products", None),
+        ("read:images", "GET", "/api/v1/dark-frames", None),
+        ("read:images", "GET", "/api/v1/uploads/jobs", None),
+        ("write:capture", "POST", "/api/v1/dark-frames/capture", None),
+        ("write:settings", "POST", "/api/v1/schedule/recalculate", None),
+        ("write:processing", "POST", "/api/v1/products/keogram", {"day_key": "20260630"}),
+        ("admin", "GET", "/api/v1/users", None),
+        ("admin", "GET", "/api/v1/api-keys", None),
+        ("admin", "POST", "/api/v1/modules/upload", None),
+        ("admin", "GET", "/api/v1/migration/allsky/detect", None),
+    ]
+
+    for scope, method, path, payload in scope_cases:
+        scoped_key = create_scoped_api_key(client, admin_token, [scope], f"{scope}-{method}-{path}".replace("/", "-")[:80])
+        allowed = client.request(method, path, headers={"Authorization": f"Bearer {scoped_key}"}, json=payload)
+        assert allowed.status_code == 200, (scope, method, path, allowed.status_code, allowed.text)
+        denied = client.request(method, path, headers={"Authorization": f"Bearer {no_scope_key}"}, json=payload)
+        assert denied.status_code == 403, (scope, method, path, denied.status_code, denied.text)
+        assert denied.json()["error"]["message"] == f"Missing scope: {scope}"
+
+
+def test_private_download_routes_require_read_images_scope(tmp_path):
+    client = make_client(tmp_path)
+    admin_token = login(client)
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+    read_images_key = create_scoped_api_key(client, admin_token, ["read:images"], "download-reader")
+    no_scope_key = create_scoped_api_key(client, admin_token, [], "download-denied")
+
+    _queued, _job, image = run_queued_test_capture(client, admin_headers, {"exposure_ms": 250, "gain": 1, "format": "jpg", "mode": "night"})
+    product_file = tmp_path / "product.jpg"
+    product_file.write_bytes(b"product")
+    product_id = "product-download-1"
+    from skyweaver.db import json_dumps, now_iso, session
+
+    with session() as conn:
+        conn.execute(
+            "INSERT INTO night_products (id, type, day_key, file_path, thumbnail_path, status, metadata, created_at) VALUES (?, 'keogram', ?, ?, NULL, 'completed', ?, ?)",
+            (product_id, image["day_key"], str(product_file), json_dumps({}), now_iso()),
+        )
+
+    private_image_path = f"/api/v1/images/{image['id']}/download"
+    private_product_path = f"/api/v1/products/{product_id}/download"
+    for path in (private_image_path, private_product_path):
+        assert client.get(path).status_code == 401
+        denied = client.get(path, headers={"Authorization": f"Bearer {no_scope_key}"})
+        assert denied.status_code == 403
+        allowed = client.get(path, headers={"Authorization": f"Bearer {read_images_key}"})
+        assert allowed.status_code == 200, allowed.text
 
 
 def test_setup_environment_seeds_admin_camera_schedule_and_settings(tmp_path, monkeypatch):
