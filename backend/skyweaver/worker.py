@@ -1,13 +1,15 @@
 import asyncio
+import os
 
 from .db import init_db, log, session
-from .services.processing import run_once
+from .services.processing import run_once, update_worker_heartbeat
 from .services.recovery import recover_processing_jobs
 
 
 async def main() -> None:
     init_db()
     recover_processing_jobs()
+    update_worker_heartbeat(os.getpid())
     with session() as conn:
         log(conn, "info", "worker", "Processing worker started", {})
     while True:

@@ -170,14 +170,13 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 | Phase 7: Overlay/modules | Done | Trusted built-in overlay module seeding, API configuration, capture-time text rendering with variables, image metadata/flagging, expanded overlay editor, built-in post-capture module flow execution, external module manifest registration/listing/deletion, and Modules UI exist. Custom code upload/execution is intentionally disabled until a future sandbox/signing runtime is designed. |
 | Phase 8: Installer/systemd/support/docs | Partial | Scripts and units exist. Shellcheck CI, installer dry-run/idempotency tests, service-control sudoers generation, interactive first-setup prompts, ZWO `libasi`/SDK provisioning hooks, real Pi install, repeat install, service restart, and reboot verification exist. Nginx option and broader Pi camera verification are open. |
 | Phase 9: Allsky migration/remote upload | Done | Allsky detection, dry-run count preview, compact unsupported-setting report, worker-backed recognized image/product/dark-frame/overlay-asset import with progress/import-log output, selected observatory/schedule/public/storage/processing/profile settings import, basic overlay text import with rollback restore, camera hint capture, rollback of Sky Weaver-created rows/files/settings/profile changes, Migration UI loading/job polling, and asset-tree exclusion for Allsky HTML/docs/config/overlay files from gallery imports exist. Filesystem, rsync-over-SSH, SCP-over-SSH, SFTP-over-SSH, FTP, and FTPS remote targets, encrypted local target configs, upload queue/retry, worker-backed upload execution, upload job listing/detail views, credential redaction, and Remote Upload UI exist. Full Allsky setting parity and rendering imported overlay image assets remain future polish, not Phase 9 blockers. |
-| Phase 10: Polish/mobile/tests/hardening | Partial | Mobile API docs, latest/status/gallery endpoints, route bundle splitting, system health diagnostics/service detail UI with failure analysis and unit history, initial frontend component tests, and CI workflow exist. Broader tests, UX polish, performance, and security hardening remain. |
+| Phase 10: Polish/mobile/tests/hardening | Partial | Mobile API docs, latest/status/gallery endpoints, route bundle splitting, system health diagnostics/service detail UI with failure analysis and unit history, worker heartbeat/activity reporting, initial frontend component tests, and CI workflow exist. Broader tests, UX polish, performance, and security hardening remain. |
 
 ## Open Topics
 
 ### Highest Priority
 
 - Run real outdoor overnight field validation with the IMX290/rpicam setup once the Pi/camera can be placed outside.
-- Add worker heartbeat/activity reporting so `skyweaver-worker` status is as observable as the capture daemon.
 - Expand API-key scope tests for every protected endpoint group.
 
 ### Raspberry Pi Deployment
@@ -322,8 +321,7 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 ## Known Current Limitations
 
 - Capture daemon now performs day/night scheduled captures and consumes queued test-shot, single-capture, and sequence jobs. Restart-safe per-profile interval/save controls, next-capture due visibility, latest-only unsaved captures, end-of-night product queueing, graceful stop fallback, real-Pi validated rpicam hard-cancel, pause/resume/stop queue semantics, daemon activity visibility, Dashboard capture job progress, and interrupted job requeue on service start exist. Real outdoor overnight image quality and environmental stability still need field validation.
-- Worker now generates thumbnails, keograms, ffmpeg timelapses, mini timelapses, and startrails. Image/product retention cleanup, product deletion, and filesystem upload execution exist.
-- Worker service work is real, but Health still lacks worker heartbeat/PID/last-job reporting comparable to the capture daemon.
+- Worker now generates thumbnails, keograms, ffmpeg timelapses, mini timelapses, and startrails. Image/product retention cleanup, product deletion, filesystem upload execution, and Health-visible heartbeat/PID/last-job reporting exist.
 - Product endpoints queue jobs; keogram, timelapse, mini timelapse, and startrail currently produce downloadable night products.
 - Public page exists for latest-image display with compact responsive metadata and honors the public-page enabled setting; richer public archives and branding controls are still open.
 - Phase 7 has a trusted built-in overlay module, module-flow execution, and external manifest registration. Arbitrary custom code execution is intentionally not enabled without sandboxing/signing.
@@ -339,11 +337,11 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 
 Most recent local checks on 2026-06-30:
 
-- `backend\\.venv\\Scripts\\python -m pytest -p no:cacheprovider --basetemp .tmp\\pytest-all backend\\tests`: passed with 80 tests.
+- `backend\\.venv\\Scripts\\python -m pytest -p no:cacheprovider --basetemp .tmp\\pytest-all backend\\tests`: passed with 81 tests.
 - `npm run lint`: passed with zero warnings.
 - `npm test`: passed with 15 tests.
 - `npm run build`: passed.
-- `git diff --check`: passed for the current Phase 9 changes.
+- `git diff --check`: passed for the current Phase 10 worker observability changes.
 - `shellcheck install.sh scripts/test_install.sh upgrade.sh uninstall.sh support.sh`: not run locally because ShellCheck is not installed on this Windows host; CI installs ShellCheck on Ubuntu.
 
 Raspberry Pi acceptance on 2026-06-23:
@@ -387,7 +385,7 @@ The next development phase should focus on Phase 8/10 operational hardening and 
 
 Suggested next tasks:
 
-1. Add worker heartbeat/activity reporting and reflect it in System Health.
-2. Run real outdoor overnight field validation once the Pi/camera can be placed outside.
-3. Expand API-key scope tests for every protected endpoint group.
-4. Add browser smoke coverage for migration and remote-upload forms with real API fixtures.
+1. Run real outdoor overnight field validation once the Pi/camera can be placed outside.
+2. Expand API-key scope tests for every protected endpoint group.
+3. Add browser smoke coverage for migration and remote-upload forms with real API fixtures.
+4. Add optional nginx reverse proxy and broader installer smoke coverage for fresh Pi OS Bookworm images.

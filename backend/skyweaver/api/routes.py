@@ -306,6 +306,9 @@ def service_rows() -> list[dict[str, Any]]:
         state = decode_row(row_to_dict(conn.execute(
             "SELECT daemon_heartbeat_at, daemon_pid, daemon_last_claimed_job_id, daemon_last_claimed_job_type, daemon_last_claimed_at, daemon_last_success_at FROM capture_state WHERE id=1"
         ).fetchone())) or {}
+        worker = decode_row(row_to_dict(conn.execute(
+            "SELECT heartbeat_at, pid, last_claimed_job_id, last_claimed_job_type, last_claimed_at, last_success_at FROM worker_state WHERE id=1"
+        ).fetchone())) or {}
     heartbeat = state.get("daemon_heartbeat_at")
     age_seconds = None
     capture_status = "idle"
@@ -315,6 +318,15 @@ def service_rows() -> list[dict[str, Any]]:
             capture_status = "running" if age_seconds <= 120 else "stale"
         except ValueError:
             capture_status = "unknown"
+    worker_heartbeat = worker.get("heartbeat_at")
+    worker_age_seconds = None
+    worker_status = "idle"
+    if worker_heartbeat:
+        try:
+            worker_age_seconds = int((datetime.now(UTC) - datetime.fromisoformat(worker_heartbeat)).total_seconds())
+            worker_status = "running" if worker_age_seconds <= 120 else "stale"
+        except ValueError:
+            worker_status = "unknown"
     return [
         {"name": "skyweaver", "unit": "skyweaver.target", "status": "running", "managed_by": "systemd", "actions": sorted(SERVICE_ACTIONS)},
         {"name": "skyweaver-api", "unit": "skyweaver-api.service", "status": "running", "managed_by": "systemd", "actions": sorted(SERVICE_ACTIONS)},
@@ -332,7 +344,20 @@ def service_rows() -> list[dict[str, Any]]:
             "last_claimed_at": state.get("daemon_last_claimed_at"),
             "last_success_at": state.get("daemon_last_success_at"),
         },
-        {"name": "skyweaver-worker", "unit": "skyweaver-worker.service", "status": "idle", "managed_by": "systemd", "actions": sorted(SERVICE_ACTIONS)},
+        {
+            "name": "skyweaver-worker",
+            "unit": "skyweaver-worker.service",
+            "status": worker_status,
+            "managed_by": "systemd",
+            "actions": sorted(SERVICE_ACTIONS),
+            "heartbeat_at": worker_heartbeat,
+            "heartbeat_age_seconds": worker_age_seconds,
+            "pid": worker.get("pid"),
+            "last_claimed_job_id": worker.get("last_claimed_job_id"),
+            "last_claimed_job_type": worker.get("last_claimed_job_type"),
+            "last_claimed_at": worker.get("last_claimed_at"),
+            "last_success_at": worker.get("last_success_at"),
+        },
     ]
 
 
@@ -395,8 +420,8 @@ def service_failure_analysis(service: dict[str, Any], properties: dict[str, str]
         findings.append({"level": "warning", "message": f"systemd recorded {restart_count} restart attempt(s)."})
         suggestions.append("Check whether the service is repeatedly failing during startup or after camera access.")
     if service.get("status") == "stale":
-        findings.append({"level": "warning", "message": "Capture daemon heartbeat is stale."})
-        suggestions.append("Restart skyweaver-capture and verify camera/device permissions if the heartbeat does not recover.")
+        findings.append({"level": "warning", "message": f"{service.get('name', 'Service')} heartbeat is stale."})
+        suggestions.append(f"Restart {service.get('name', 'the service')} and inspect recent logs if the heartbeat does not recover.")
 
     important_terms = ("failed", "error", "denied", "permission", "traceback", "exception", "timeout", "fatal")
     matching_journal = [line for line in journal if any(term in line.lower() for term in important_terms)]

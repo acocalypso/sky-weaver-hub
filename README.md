@@ -146,7 +146,7 @@ Individual services:
 - `skyweaver-capture.service`
 - `skyweaver-worker.service`
 
-The admin Health page can start, stop, restart, inspect `systemctl show` details, and read recent `journalctl` output for the Sky Weaver units when systemd is available.
+The admin Health page can start, stop, restart, inspect `systemctl show` details, read recent `journalctl` output, and show capture/worker heartbeat plus recent job activity for the Sky Weaver units when systemd is available.
 
 ## Verification
 

@@ -160,7 +160,7 @@ beforeEach(() => {
     { name: "skyweaver", unit: "skyweaver.target", status: "running", managed_by: "systemd", actions: ["start", "stop", "restart"] },
     { name: "skyweaver-api", unit: "skyweaver-api.service", status: "running", managed_by: "systemd", actions: ["start", "stop", "restart"] },
     { name: "skyweaver-capture", unit: "skyweaver-capture.service", status: "running", managed_by: "systemd", actions: ["start", "stop", "restart"], heartbeat_at: "2026-06-23T22:16:00+00:00" },
-    { name: "skyweaver-worker", unit: "skyweaver-worker.service", status: "idle", managed_by: "systemd", actions: ["start", "stop", "restart"] },
+    { name: "skyweaver-worker", unit: "skyweaver-worker.service", status: "running", managed_by: "systemd", actions: ["start", "stop", "restart"], heartbeat_at: "2026-06-23T22:17:00+00:00", last_claimed_job_id: "worker-job-1", last_claimed_job_type: "keogram" },
   ]);
   vi.mocked(SkyApi.serviceDetail).mockResolvedValue({
     service: { name: "skyweaver-capture", unit: "skyweaver-capture.service", status: "running", managed_by: "systemd" },
@@ -566,6 +566,7 @@ describe("main pages", () => {
     render(<Health />);
 
     const serviceName = await screen.findByText("skyweaver-capture");
+    expect(screen.getByText("last job keogram worker-job-1")).toBeInTheDocument();
     const serviceRow = serviceName.closest(".rounded-md") as HTMLElement;
     fireEvent.click(within(serviceRow).getByRole("button", { name: /restart/i }));
 

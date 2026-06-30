@@ -43,6 +43,31 @@ def test_worker_generates_keogram_product(tmp_path: Path):
     assert download.status_code == 200
 
 
+def test_worker_activity_is_reported_by_system_services(tmp_path: Path):
+    client = make_client(tmp_path)
+    token = login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    _queued, _job, image = run_queued_test_capture(client, headers, {"exposure_ms": 250, "gain": 1, "format": "jpg", "mode": "night"})
+    day_key = image["captured_at"][:10].replace("-", "")
+    queued = client.post("/api/v1/products/keogram", headers=headers, json={"day_key": day_key}).json()["data"]
+
+    from skyweaver.services.processing import run_once
+
+    assert asyncio.run(run_once()) is True
+
+    services = client.get("/api/v1/system/services", headers=headers).json()["data"]
+    worker = next(item for item in services if item["name"] == "skyweaver-worker")
+    assert worker["status"] == "running"
+    assert worker["heartbeat_at"]
+    assert worker["heartbeat_age_seconds"] >= 0
+    assert worker["pid"]
+    assert worker["last_claimed_job_id"] == queued["id"]
+    assert worker["last_claimed_job_type"] == "keogram"
+    assert worker["last_claimed_at"]
+    assert worker["last_success_at"]
+
+
 def test_delete_product_removes_files_and_row(tmp_path: Path):
     client = make_client(tmp_path)
     token = login(client)

@@ -71,6 +71,11 @@ CREATE TABLE IF NOT EXISTS processing_jobs (
   output TEXT, error TEXT, progress REAL NOT NULL DEFAULT 0, created_at TEXT NOT NULL,
   started_at TEXT, completed_at TEXT
 );
+CREATE TABLE IF NOT EXISTS worker_state (
+  id INTEGER PRIMARY KEY CHECK (id = 1), heartbeat_at TEXT, pid INTEGER,
+  last_claimed_job_id TEXT, last_claimed_job_type TEXT, last_claimed_at TEXT,
+  last_success_at TEXT, updated_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS night_products (
   id TEXT PRIMARY KEY, type TEXT NOT NULL, day_key TEXT NOT NULL, file_path TEXT,
   thumbnail_path TEXT, status TEXT NOT NULL, metadata TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL
@@ -208,6 +213,10 @@ def seed_defaults(conn: sqlite3.Connection, settings: Settings) -> None:
         """INSERT OR IGNORE INTO capture_state
            (id, status, current_mode, active_camera_id, updated_at)
            VALUES (1, 'idle', 'manual', (SELECT id FROM cameras WHERE is_primary=1 LIMIT 1), ?)""",
+        (ts,),
+    )
+    conn.execute(
+        "INSERT OR IGNORE INTO worker_state (id, updated_at) VALUES (1, ?)",
         (ts,),
     )
     for key, value in default_settings(settings).items():

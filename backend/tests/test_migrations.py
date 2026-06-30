@@ -43,12 +43,17 @@ def test_migration_upgrade_backfills_legacy_capture_columns(tmp_path: Path):
         conn.row_factory = sqlite3.Row
         capture_state_columns = {row["name"] for row in conn.execute("PRAGMA table_info(capture_state)").fetchall()}
         capture_job_columns = {row["name"] for row in conn.execute("PRAGMA table_info(capture_jobs)").fetchall()}
+        worker_state_columns = {row["name"] for row in conn.execute("PRAGMA table_info(worker_state)").fetchall()}
+        worker_state = conn.execute("SELECT id, updated_at FROM worker_state WHERE id=1").fetchone()
         applied_count = conn.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0]
 
     assert "daemon_heartbeat_at" in capture_state_columns
     assert "daemon_last_success_at" in capture_state_columns
     assert "progress" in capture_job_columns
     assert "cancel_mode" in capture_job_columns
+    assert "heartbeat_at" in worker_state_columns
+    assert "last_success_at" in worker_state_columns
+    assert worker_state is not None
     assert applied_count == latest_schema_version()
 
 

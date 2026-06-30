@@ -1,3 +1,4 @@
+import os
 import shutil
 import subprocess
 from datetime import UTC, datetime, timedelta
@@ -13,6 +14,35 @@ from .capture import decode_row, delete_storage_paths, make_thumbnail
 from .uploads import execute_upload_processing_job
 
 
+def update_worker_heartbeat(pid: int | None = None) -> None:
+    ts = now_iso()
+    with session() as conn:
+        conn.execute("INSERT OR IGNORE INTO worker_state (id, updated_at) VALUES (1, ?)", (ts,))
+        conn.execute(
+            "UPDATE worker_state SET heartbeat_at=?, pid=?, updated_at=? WHERE id=1",
+            (ts, pid if pid is not None else os.getpid(), ts),
+        )
+
+
+def record_worker_claimed(job: dict[str, Any]) -> None:
+    ts = now_iso()
+    with session() as conn:
+        conn.execute("INSERT OR IGNORE INTO worker_state (id, updated_at) VALUES (1, ?)", (ts,))
+        conn.execute(
+            """UPDATE worker_state
+               SET last_claimed_job_id=?, last_claimed_job_type=?, last_claimed_at=?, updated_at=?
+               WHERE id=1""",
+            (job["id"], job["type"], ts, ts),
+        )
+
+
+def record_worker_success() -> None:
+    ts = now_iso()
+    with session() as conn:
+        conn.execute("INSERT OR IGNORE INTO worker_state (id, updated_at) VALUES (1, ?)", (ts,))
+        conn.execute("UPDATE worker_state SET last_success_at=?, updated_at=? WHERE id=1", (ts, ts))
+
+
 def claim_next_processing_job(job_types: tuple[str, ...] = ("thumbnail", "keogram", "timelapse", "mini_timelapse", "startrail", "upload", "allsky_import")) -> dict[str, Any] | None:
     placeholders = ",".join("?" for _ in job_types)
     with session() as conn:
@@ -25,7 +55,11 @@ def claim_next_processing_job(job_types: tuple[str, ...] = ("thumbnail", "keogra
             return None
         conn.execute("UPDATE processing_jobs SET status='running', progress=0.05, started_at=? WHERE id=?", (now_iso(), row["id"]))
         event(conn, "processing_job_started", {"job_id": row["id"], "type": row["type"]})
-        return decode_row(row_to_dict(row))
+        job = decode_row(row_to_dict(row))
+        if job is None:
+            raise RuntimeError("Claimed processing job disappeared")
+    record_worker_claimed(job)
+    return job
 
 
 async def execute_processing_job(job: dict[str, Any]) -> dict[str, Any]:
@@ -333,8 +367,10 @@ def cleanup_products_by_retention(conn, retention_days: int) -> dict[str, Any]:
 
 
 async def run_once() -> bool:
+    update_worker_heartbeat()
     job = claim_next_processing_job()
     if not job:
         return False
     await execute_processing_job(job)
+    record_worker_success()
     return True

@@ -178,6 +178,17 @@ def _encrypt_remote_target_configs(conn: sqlite3.Connection) -> None:
         conn.execute("UPDATE remote_targets SET config_encrypted=? WHERE id=?", (json.dumps(envelope, separators=(",", ":"), sort_keys=True), row["id"]))
 
 
+def _worker_state(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS worker_state (
+           id INTEGER PRIMARY KEY CHECK (id = 1), heartbeat_at TEXT, pid INTEGER,
+           last_claimed_job_id TEXT, last_claimed_job_type TEXT, last_claimed_at TEXT,
+           last_success_at TEXT, updated_at TEXT NOT NULL
+        )"""
+    )
+    conn.execute("INSERT OR IGNORE INTO worker_state (id, updated_at) VALUES (1, ?)", (now_iso(),))
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(1, "capture_daemon_job_columns", _capture_daemon_columns),
     Migration(2, "core_query_indexes", _core_indexes),
@@ -185,4 +196,5 @@ MIGRATIONS: tuple[Migration, ...] = (
     Migration(4, "upload_jobs", _upload_jobs),
     Migration(5, "dark_frames", _dark_frames),
     Migration(6, "encrypt_remote_target_configs", _encrypt_remote_target_configs),
+    Migration(7, "worker_state", _worker_state),
 )
