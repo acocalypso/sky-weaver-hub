@@ -1,14 +1,14 @@
 # Sky Weaver Hub Project State
 
-Last updated: 2026-06-29
+Last updated: 2026-06-30
 
 This document tracks the current implementation state against the all-sky platform prompt. It is intended to be updated after each implementation phase.
 
 ## Current Summary
 
-Sky Weaver Hub has moved from a mock dashboard toward a local-first Raspberry Pi/Linux all-sky platform. The repository now has a FastAPI backend, SQLite persistence, a camera adapter interface, mock capture with real image artifacts, an initial Raspberry Pi camera adapter, a daemon-owned scheduled capture loop, API-key authentication, systemd and installer scaffolding, and a React UI wired to the local API.
+Sky Weaver Hub has moved from a mock dashboard toward a local-first Raspberry Pi/Linux all-sky platform. The repository now has a FastAPI backend, SQLite persistence, a camera adapter interface, mock capture with real image artifacts, Raspberry Pi camera support, initial native ZWO ASI support, a daemon-owned scheduled capture loop, API-key authentication, systemd and installer support, and a React UI wired to the local API.
 
-The product is not yet Allsky feature-complete. The main missing areas are longer real overnight soak validation, richer image-product options, overlay/module workflows, Phase 9 remote upload execution, complete Allsky import, and broader validated camera adapter coverage beyond Raspberry Pi libcamera hardware.
+The product is not yet Allsky feature-complete. The main missing areas are longer real outdoor overnight soak validation, richer image-product options, remote upload execution, complete Allsky import, dark-frame processing, and broader validated camera adapter coverage beyond Raspberry Pi libcamera hardware.
 
 ## Repo Map
 
@@ -22,7 +22,7 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 | Camera abstraction | `CameraAdapter` base class plus working `mock` adapter, initial `rpicam`/`libcamera` adapter, and initial ZWO ASI adapter using the native `libASICamera2` SDK library from Debian `libasi` or a vendor SDK install. Other adapters are placeholders with actionable errors. |
 | UI/API integration | Public Sky, Dashboard, Cameras, Schedule, Gallery, Night Products, Logs, Settings, API Keys, Modules, and Developer API call the local backend. |
 | Deployment | `install.sh`, `upgrade.sh`, `uninstall.sh`, `support.sh`, and systemd units exist. Fresh interactive installs prompt for first-setup values. Installer/upgrade can provision Debian `libasi`, ZWO USB rules, and optional vendor SDK library support when ZWO is configured. |
-| Tests | Backend pytest coverage for health/status, login, auth audit logs, API keys, mock capture, image/product delete, retention cleanup, first-setup hardening, system service controls, scheduled daemon capture, day/night profile scheduling, latest-only unsaved captures, end-of-night product queuing, queued test/single/sequence capture execution, pause/resume/stop queue semantics, schedule preview, daemon heartbeat/activity, interrupted job recovery, mock overnight acceptance flow, night product generation, migration preview, mock adapter, and fake-SDK ZWO adapter behavior. Frontend component tests cover Public Sky, Dashboard, Gallery, Health, Settings, API Keys, and first setup. Shell tests cover installer dry-run, service-control sudoers generation, and repeat-install idempotency with mocked system commands. |
+| Tests | Backend pytest coverage for health/status, login, auth audit logs, API keys, mock capture, image/product delete, retention cleanup, first-setup hardening, system service controls, scheduled daemon capture, day/night profile scheduling, latest-only unsaved captures, end-of-night product queuing, queued test/single/sequence capture execution, pause/resume/stop queue semantics, schedule preview, daemon heartbeat/activity, interrupted job recovery, mock overnight acceptance flow, night product generation, migration preview, module/overlay flows, external module manifests, mock adapter, and fake-SDK ZWO adapter behavior. Frontend component tests cover Public Sky, Dashboard, Gallery, Health, Settings, API Keys, Modules, and first setup. Shell tests cover installer dry-run, service-control sudoers generation, and repeat-install idempotency with mocked system commands. |
 
 ## Implemented Capabilities
 
@@ -51,7 +51,7 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 - Public latest metadata/download/thumbnail endpoints gated by `public_page.enabled`
 - Products list/detail/queue/download/delete and retention cleanup
 - Dark frame placeholder endpoints
-- Module and module-flow endpoints, with a trusted built-in overlay module and custom uploads still disabled
+- Module and module-flow endpoints, with a trusted built-in overlay module, trusted post-capture flow, external manifest registration, and custom code uploads still disabled
 - Remote target placeholder endpoints
 - Allsky migration detect/preview/import/job endpoints
 - Server-Sent Events at `/api/v1/events/stream`
@@ -93,7 +93,7 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 ### Frontend
 
 - Local login page.
-- Public Sky page at `/public` that displays the latest public image and safe metadata without admin login or controls, and shows a disabled state when `public_page.enabled` is false.
+- Public Sky page at `/public` that displays the latest public image and compact responsive safe metadata without admin login or controls, and shows a disabled state when `public_page.enabled` is false.
 - First-setup page that blocks normal admin routes until observatory details, timezone, primary camera, public page mode, and bootstrap password status are confirmed. It detects hardware camera candidates, warns when only mock capture is available, and shows live password readiness guidance.
 - Dashboard with latest image, start/pause/resume/stop/test-shot controls, queued single/sequence capture controls, capture job progress, daemon activity, status, metrics, and recent captures.
 - Cameras page with detection, adapter selection, day/night profile editing, per-mode capture/save/interval controls, end-of-night product toggles, and test shot.
@@ -175,10 +175,9 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 
 ### Highest Priority
 
-- Keep schedule preview and daemon state visible across Dashboard and Schedule as the daemon model evolves.
-- Complete mock acceptance flow end to end:
-  - run longer manual/dev overnight simulations outside pytest
-  - validate behavior with real service restarts
+- Run real outdoor overnight field validation with the IMX290/rpicam setup once the Pi/camera can be placed outside.
+- Add worker heartbeat/activity reporting so `skyweaver-worker` status is as observable as the capture daemon.
+- Expand API-key scope tests for every protected endpoint group.
 
 ### Raspberry Pi Deployment
 
@@ -213,7 +212,7 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 - Add configurable bad image thresholds.
 - Add dark-frame capture and median combine.
 - Add dark-frame matching by exposure/gain/temperature/camera.
-- Expand overlay rendering with live previews and preset import/export.
+- Add overlay live preview and preset import/export.
 - Add star count placeholder or simple implementation.
 - Add cloud score placeholder or simple heuristic.
 
@@ -229,7 +228,7 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 
 - Add capture control page separate from dashboard.
 - Add image detail route.
-- Expand overlay editor with live preview and preset import/export.
+- Add overlay live preview and preset import/export.
 - Design future sandboxed/signed external module runtime.
 - Add dark frames page.
 - Add remote upload page.
@@ -316,7 +315,7 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 
 - Add frontend route smoke tests.
 - Expand component tests beyond Dashboard, Settings, Gallery, and API Keys.
-- Add browser smoke coverage for public page enabled/disabled states.
+- Add browser smoke coverage for public page enabled/disabled states and compact mobile layout.
 - Add admin route auth tests.
 - Add backend tests for:
   - schedule calculation
@@ -333,34 +332,27 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 
 - Capture daemon now performs day/night scheduled captures and consumes queued test-shot, single-capture, and sequence jobs. Restart-safe per-profile interval/save controls, next-capture due visibility, latest-only unsaved captures, end-of-night product queueing, graceful stop fallback, real-Pi validated rpicam hard-cancel, pause/resume/stop queue semantics, daemon activity visibility, Dashboard capture job progress, and interrupted job requeue on service start exist. Real outdoor overnight image quality and environmental stability still need field validation.
 - Worker now generates thumbnails, keograms, ffmpeg timelapses, mini timelapses, and startrails. Image/product retention cleanup and product deletion exist. Remote upload execution is still open under Phase 9.
+- Worker service work is real, but Health still lacks worker heartbeat/PID/last-job reporting comparable to the capture daemon.
 - Product endpoints queue jobs; keogram, timelapse, mini timelapse, and startrail currently produce downloadable night products.
-- Public page exists for latest-image display and honors the public-page enabled setting; richer public archives and branding controls are still open.
+- Public page exists for latest-image display with compact responsive metadata and honors the public-page enabled setting; richer public archives and branding controls are still open.
 - Phase 7 has a trusted built-in overlay module, module-flow execution, and external manifest registration. Arbitrary custom code execution is intentionally not enabled without sandboxing/signing.
 - ZWO ASI support is adapter-backed with native-SDK fake tests, but it has not yet been validated with real ZWO hardware in this environment.
 - Remote upload is not implemented.
 - Allsky migration does not yet import data.
 - API server no longer performs camera capture inline for test shots; test-shot requests enqueue daemon-owned `test` jobs so manual verification still works while automation is stopped.
 - Tailwind 4 is enabled through the official Vite plugin while preserving the existing theme config and shadcn animation utilities.
-- Lint passes with warnings from existing generated UI/hook patterns.
+- Lint passes with zero warnings in the current local validation.
 - Real Raspberry Pi install, service restart, reboot, and IMX290 real-camera capture acceptance passed on a Raspberry Pi 3 Model B running Debian 13/trixie.
 
 ## Recent Verification
 
-Most recent checks run during implementation:
+Most recent local checks on 2026-06-30:
 
-- `npm run build`: passed
-- `npm test`: passed with 6 tests
-- `npm run lint`: passed with zero warnings
-- `npm audit --audit-level=high`: passed with 0 vulnerabilities
-- `backend\\.venv\\Scripts\\python -m pytest backend\\tests`: passed with 22 tests
-
-Most recent local follow-up checks on 2026-06-24:
-
-- `npm run lint`: passed
-- `npm test`: passed with 9 tests
-- `npm run build`: passed
-- `backend\\.venv\\Scripts\\python -m pytest backend\\tests`: passed with 43 tests
-- Local OpenAPI generation plus `python -m json.tool artifacts\\openapi.json`: passed
+- `backend\\.venv\\Scripts\\python -m pytest -p no:cacheprovider --basetemp .tmp\\pytest-all backend\\tests`: passed with 69 tests.
+- `npm run lint`: passed with zero warnings.
+- `npm test`: passed with 13 tests.
+- `npm run build`: passed.
+- `git diff --check`: passed for the current public-page responsive layout changes.
 - `shellcheck install.sh scripts/test_install.sh upgrade.sh uninstall.sh support.sh`: not run locally because ShellCheck is not installed on this Windows host; CI installs ShellCheck on Ubuntu.
 
 Raspberry Pi acceptance on 2026-06-23:
@@ -400,10 +392,11 @@ Raspberry Pi accelerated Phase 4 acceptance on 2026-06-29:
 
 ## Recommended Next Phase
 
-The next development phase should focus on operational hardening, because interrupted job recovery and the initial night products now generate real downloadable artifacts.
+The next development phase should focus on Phase 8/10 operational hardening and observability, because capture, products, public latest, overlays/modules, and local service management now have working implementation paths.
 
 Suggested next tasks:
 
-1. Expand system health recovery guidance after collecting more real Pi failure examples.
+1. Add worker heartbeat/activity reporting and reflect it in System Health.
 2. Run real outdoor overnight field validation once the Pi/camera can be placed outside.
 3. Expand API-key scope tests for every protected endpoint group.
+4. Start Phase 9 remote upload execution or real Allsky import when operational hardening is stable.
