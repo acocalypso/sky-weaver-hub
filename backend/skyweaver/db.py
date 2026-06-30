@@ -75,6 +75,11 @@ CREATE TABLE IF NOT EXISTS night_products (
   id TEXT PRIMARY KEY, type TEXT NOT NULL, day_key TEXT NOT NULL, file_path TEXT,
   thumbnail_path TEXT, status TEXT NOT NULL, metadata TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS dark_frames (
+  id TEXT PRIMARY KEY, camera_id TEXT, captured_at TEXT NOT NULL, day_key TEXT NOT NULL,
+  file_path TEXT NOT NULL, thumbnail_path TEXT, format TEXT NOT NULL, width INTEGER, height INTEGER,
+  size_bytes INTEGER, metadata TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS remote_targets (
   id TEXT PRIMARY KEY, name TEXT NOT NULL, type TEXT NOT NULL, config_encrypted TEXT NOT NULL,
   enabled INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL

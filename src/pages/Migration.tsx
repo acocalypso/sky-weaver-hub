@@ -64,7 +64,7 @@ export default function Migration() {
     if (!job) return;
     try {
       const result = await SkyApi.rollbackMigrationJob(job.id);
-      toast.success(`Rolled back ${result.deleted_images} image(s) and ${result.deleted_products} product(s)`);
+      toast.success(`Rolled back ${result.deleted_images} image(s), ${result.deleted_dark_frames ?? 0} dark frame(s), and ${result.deleted_products} product(s)`);
       await refreshJob();
     } catch (e: any) {
       toast.error(e.message ?? "Rollback failed");
@@ -142,7 +142,31 @@ export default function Migration() {
           {job.output && (
             <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
               <Stat label="images" value={String(job.output.imported_images ?? 0)} />
+              <Stat label="dark frames" value={String(job.output.imported_dark_frames ?? 0)} />
               <Stat label="products" value={String(job.output.imported_products ?? 0)} />
+              <Stat label="settings" value={String(Object.keys(job.output.settings?.applied ?? {}).length)} />
+            </div>
+          )}
+          <div>
+            <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
+              <span>Progress</span>
+              <span>{Math.round((job.progress ?? 0) * 100)}%</span>
+            </div>
+            <div className="h-2 overflow-hidden rounded-full bg-muted">
+              <div className="h-full bg-primary transition-all" style={{ width: `${Math.round((job.progress ?? 0) * 100)}%` }} />
+            </div>
+          </div>
+          {Array.isArray(job.output?.import_log) && job.output.import_log.length > 0 && (
+            <div>
+              <h3 className="text-sm font-medium">Imported files</h3>
+              <div className="mt-2 max-h-52 space-y-2 overflow-auto rounded-md border border-border bg-muted/20 p-3">
+                {job.output.import_log.slice(0, 50).map((item: any) => (
+                  <p key={`${item.kind}-${item.id}`} className="font-mono-data text-xs text-muted-foreground truncate">
+                    {item.kind} {item.id} - {item.original_path}
+                  </p>
+                ))}
+                {job.output.import_log.length > 50 && <p className="text-xs text-muted-foreground">Showing first 50 imported files.</p>}
+              </div>
             </div>
           )}
           {job.error && <p className="text-sm text-destructive">{job.error}</p>}

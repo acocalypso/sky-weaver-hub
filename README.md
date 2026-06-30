@@ -19,9 +19,9 @@ This repository now contains a working local-first platform slice:
 - Public unauthenticated sky page at `/public`, backed by stable latest-image artifacts and public latest/product API endpoints that honor the public-page enabled setting, including latest-only captures that are not saved to the gallery.
 - System Health UI with service controls, per-service detail, recent journal output, diagnostics export, and queue/metric summaries.
 - Systemd units and installer scripts for Pi deployment, with first-setup prompts, constrained service-control permissions, and dry-run/idempotency tests.
-- Allsky migration detection, preview, worker-backed image/product import, selected settings import, rollback, and Migration UI. Original Allsky files are copied, never deleted.
+- Allsky migration detection, preview, worker-backed image/product/dark-frame import, selected settings import, rollback, and Migration UI. Original Allsky files are copied, never deleted.
 
-Some Allsky parity items are intentionally scaffolded for later phases: SFTP/SCP/FTP upload targets, overlay live previews/presets, dark-frame median combine, full Allsky settings/dark-frame/overlay import, and custom module sandboxing.
+Some Allsky parity items are intentionally scaffolded for later phases: SFTP/SCP/FTP upload targets, overlay live previews/presets, dark-frame median combine/subtraction, full Allsky settings/overlay import, and custom module sandboxing.
 
 ## Supported Targets
 
@@ -176,7 +176,7 @@ The migration command is idempotent and records applied versions in `schema_migr
 
 ## Allsky Migration
 
-Sky Weaver detects common Allsky directories such as `~/allsky`, `~/allsky-OLD`, `~/allsky-SAVED`, `/home/pi/allsky`, and `/var/www/html/allsky`. Current migration support provides detection, dry-run counts, unsupported-setting reporting, queued image/product import jobs, selected settings import, camera hints, and rollback of Sky Weaver-created rows/files plus restored settings snapshots. The original Allsky data is never deleted.
+Sky Weaver detects common Allsky directories such as `~/allsky`, `~/allsky-OLD`, `~/allsky-SAVED`, `/home/pi/allsky`, and `/var/www/html/allsky`. Current migration support provides detection, dry-run counts, unsupported-setting reporting, queued image/product/dark-frame import jobs, selected settings import, camera hints, and rollback of Sky Weaver-created rows/files plus restored settings snapshots. The original Allsky data is never deleted.
 
 ## Documentation
 

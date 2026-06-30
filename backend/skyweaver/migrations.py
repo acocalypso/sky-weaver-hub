@@ -139,9 +139,22 @@ def _upload_jobs(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_upload_jobs_target_created ON upload_jobs (target_id, created_at DESC)")
 
 
+def _dark_frames(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS dark_frames (
+           id TEXT PRIMARY KEY, camera_id TEXT, captured_at TEXT NOT NULL, day_key TEXT NOT NULL,
+           file_path TEXT NOT NULL, thumbnail_path TEXT, format TEXT NOT NULL, width INTEGER, height INTEGER,
+           size_bytes INTEGER, metadata TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL
+        )"""
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_dark_frames_captured_at ON dark_frames (captured_at DESC)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_dark_frames_day ON dark_frames (day_key, captured_at DESC)")
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(1, "capture_daemon_job_columns", _capture_daemon_columns),
     Migration(2, "core_query_indexes", _core_indexes),
     Migration(3, "schedule_split_sun_angles", _schedule_split_sun_angles),
     Migration(4, "upload_jobs", _upload_jobs),
+    Migration(5, "dark_frames", _dark_frames),
 )

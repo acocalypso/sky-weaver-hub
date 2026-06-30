@@ -19,7 +19,7 @@ from ..db import default_profile, event, json_dumps, json_loads, log, new_id, no
 from ..rate_limit import InMemoryRateLimiter, RateLimitStatus
 from ..security import create_api_key, hash_password, make_token, verify_password
 from ..services.allsky_migration import preview_allsky_root, rollback_allsky_import
-from ..services.capture import CaptureCommand, all_rows, cleanup_images_by_retention, configured_image_retention_days, create_capture_job, current_schedule, decode_row, delete_image_files, enqueue_capture, get_primary_camera, public_latest_payload, publish_latest_image, read_latest_payload, scheduled_capture_timing, system_metrics
+from ..services.capture import CaptureCommand, all_rows, cleanup_images_by_retention, configured_image_retention_days, create_capture_job, current_schedule, decode_row, delete_image_files, delete_storage_paths, enqueue_capture, get_primary_camera, public_latest_payload, publish_latest_image, read_latest_payload, scheduled_capture_timing, system_metrics
 from ..services.modules import register_external_module, run_flow_preview, validate_module_order
 from ..services.processing import cleanup_products_by_retention, delete_product_files
 from ..services.schedule import active_window
@@ -1498,7 +1498,9 @@ def product_download(product_id: str):
 
 @router.get("/dark-frames")
 def dark_frames(_principal: Annotated[dict, Depends(require_scope("read:images"))]):
-    return ok([])
+    with session() as conn:
+        rows = all_rows(conn, "SELECT * FROM dark_frames ORDER BY captured_at DESC LIMIT 200")
+    return ok(rows)
 
 
 @router.post("/dark-frames/capture")
@@ -1508,7 +1510,14 @@ def capture_dark_frame(_principal: Annotated[dict, Depends(require_scope("write:
 
 @router.delete("/dark-frames/{frame_id}")
 def delete_dark_frame(frame_id: str, _principal: Annotated[dict, Depends(require_scope("write:processing"))]):
-    return ok({"deleted": frame_id})
+    with session() as conn:
+        row = decode_row(row_to_dict(conn.execute("SELECT * FROM dark_frames WHERE id=?", (frame_id,)).fetchone()))
+        if not row:
+            raise HTTPException(404, "Dark frame not found")
+        result = delete_storage_paths([Path(str(path)) for path in (row.get("file_path"), row.get("thumbnail_path")) if path])
+        conn.execute("DELETE FROM dark_frames WHERE id=?", (frame_id,))
+        event(conn, "dark_frame_deleted", {"dark_frame_id": frame_id})
+    return ok({"deleted": frame_id, **result})
 
 
 @router.get("/modules")

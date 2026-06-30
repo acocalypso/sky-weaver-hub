@@ -370,18 +370,55 @@ def test_upload_retry_requeues_failed_uploads(tmp_path: Path):
     assert retried["last_error"] is None
 
 
+def test_dark_frame_delete_removes_skyweaver_files(tmp_path: Path):
+    client = make_client(tmp_path)
+    token = login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+    frame_path = tmp_path / "data" / "dark-frames" / "20260630" / "dark.jpg"
+    thumb_path = tmp_path / "data" / "thumbnails" / "dark-frames" / "20260630" / "dark.jpg"
+    frame_path.parent.mkdir(parents=True)
+    thumb_path.parent.mkdir(parents=True)
+    Image.new("RGB", (32, 24), "black").save(frame_path)
+    Image.new("RGB", (16, 12), "black").save(thumb_path)
+
+    from skyweaver.db import json_dumps, new_id, now_iso, session
+
+    frame_id = new_id()
+    with session() as conn:
+        conn.execute(
+            """INSERT INTO dark_frames
+               (id, camera_id, captured_at, day_key, file_path, thumbnail_path, format, width, height, size_bytes, metadata, created_at)
+               VALUES (?, NULL, ?, '20260630', ?, ?, 'jpg', 32, 24, ?, ?, ?)""",
+            (frame_id, now_iso(), str(frame_path), str(thumb_path), frame_path.stat().st_size, json_dumps({"test": True}), now_iso()),
+        )
+
+    listed = client.get("/api/v1/dark-frames", headers=headers)
+    assert listed.status_code == 200, listed.text
+    assert listed.json()["data"][0]["id"] == frame_id
+
+    deleted = client.delete(f"/api/v1/dark-frames/{frame_id}", headers=headers)
+    assert deleted.status_code == 200, deleted.text
+    assert deleted.json()["data"]["deleted"] == frame_id
+    assert not frame_path.exists()
+    assert not thumb_path.exists()
+    assert client.get("/api/v1/dark-frames", headers=headers).json()["data"] == []
+
+
 def test_worker_imports_and_rolls_back_allsky_files(tmp_path: Path):
     client = make_client(tmp_path)
     token = login(client)
     headers = {"Authorization": f"Bearer {token}"}
     allsky = tmp_path / "allsky"
     image_source = allsky / "images" / "2026-06-30" / "capture_20260630_010203.jpg"
+    dark_source = allsky / "darks" / "2026-06-30" / "darkframe_20260630_000000.jpg"
     keogram_source = allsky / "images" / "2026-06-30" / "keogram_20260630.jpg"
     timelapse_source = allsky / "videos" / "timelapse_20260630.mp4"
     config_source = allsky / "config.sh"
     image_source.parent.mkdir(parents=True)
+    dark_source.parent.mkdir(parents=True)
     timelapse_source.parent.mkdir(parents=True)
     Image.new("RGB", (64, 48), "navy").save(image_source)
+    Image.new("RGB", (64, 48), "black").save(dark_source)
     Image.new("RGB", (64, 12), "white").save(keogram_source)
     timelapse_source.write_bytes(b"fake-mp4")
     config_source.write_text(
@@ -401,7 +438,7 @@ def test_worker_imports_and_rolls_back_allsky_files(tmp_path: Path):
     preview = client.post("/api/v1/migration/allsky/preview", headers=headers, json={"path": str(allsky)})
     assert preview.status_code == 200, preview.text
     preview_data = preview.json()["data"]
-    assert preview_data["counts"] == {"images": 1, "timelapses": 1, "keograms": 1, "startrails": 0}
+    assert preview_data["counts"] == {"images": 1, "timelapses": 1, "keograms": 1, "startrails": 0, "dark_frames": 1}
     assert preview_data["unsupported_settings"][0]["path"] == str(config_source)
     assert preview_data["settings"]["observatory"]["name"] == "Garden Allsky"
     assert preview_data["settings"]["observatory"]["latitude"] == 49.1
@@ -419,9 +456,12 @@ def test_worker_imports_and_rolls_back_allsky_files(tmp_path: Path):
     completed = client.get(f"/api/v1/migration/jobs/{job_id}", headers=headers).json()["data"]
     assert completed["status"] == "completed"
     assert completed["output"]["imported_images"] == 1
+    assert completed["output"]["imported_dark_frames"] == 1
     assert completed["output"]["imported_products"] == 2
+    assert {item["kind"] for item in completed["output"]["import_log"]} == {"image", "dark_frame", "keogram", "timelapse"}
     assert completed["output"]["settings"]["applied"]["camera_hints"]["hint"] == "IMX290"
     assert image_source.exists()
+    assert dark_source.exists()
     assert keogram_source.exists()
     assert timelapse_source.exists()
 
@@ -432,7 +472,10 @@ def test_worker_imports_and_rolls_back_allsky_files(tmp_path: Path):
     products = client.get("/api/v1/products", headers=headers).json()["data"]
     imported_products = [item for item in products if item["metadata"]["migration"]["job_id"] == job_id]
     assert {item["type"] for item in imported_products} == {"keogram", "timelapse"}
-    copied_paths = [Path(imported_image["file_path"]), *(Path(item["file_path"]) for item in imported_products)]
+    dark_frames = client.get("/api/v1/dark-frames", headers=headers).json()["data"]
+    imported_dark = next(item for item in dark_frames if item["metadata"]["migration"]["job_id"] == job_id)
+    assert imported_dark["metadata"]["migration"]["original_path"] == str(dark_source)
+    copied_paths = [Path(imported_image["file_path"]), Path(imported_dark["file_path"]), *(Path(item["file_path"]) for item in imported_products)]
     assert all(path.exists() for path in copied_paths)
     settings_after_import = client.get("/api/v1/settings", headers=headers).json()["data"]
     assert settings_after_import["observatory"]["name"] == "Garden Allsky"
@@ -446,10 +489,12 @@ def test_worker_imports_and_rolls_back_allsky_files(tmp_path: Path):
     assert rollback.status_code == 200, rollback.text
     rollback_data = rollback.json()["data"]
     assert rollback_data["deleted_images"] == 1
+    assert rollback_data["deleted_dark_frames"] == 1
     assert rollback_data["deleted_products"] == 2
     assert rollback_data["settings_restored"]["restored"] is True
     assert all(not path.exists() for path in copied_paths)
     assert image_source.exists()
+    assert dark_source.exists()
     assert keogram_source.exists()
     assert timelapse_source.exists()
     settings_after_rollback = client.get("/api/v1/settings", headers=headers).json()["data"]
@@ -457,3 +502,5 @@ def test_worker_imports_and_rolls_back_allsky_files(tmp_path: Path):
     assert "allsky_camera_hints" not in settings_after_rollback
     schedule_after_rollback = client.get("/api/v1/schedule", headers=headers).json()["data"]
     assert schedule_after_rollback["sun_angle"] == -6
+    after_rollback_dark_frames = client.get("/api/v1/dark-frames", headers=headers).json()["data"]
+    assert not any(item["metadata"].get("migration", {}).get("job_id") == job_id for item in after_rollback_dark_frames)

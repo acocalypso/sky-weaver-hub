@@ -56,6 +56,7 @@ def preview_allsky_root(root: Path) -> dict[str, Any]:
             "timelapses": len(files["timelapses"]),
             "keograms": len(files["keograms"]),
             "startrails": len(files["startrails"]),
+            "dark_frames": len(files["dark_frames"]),
         },
         "unsupported_settings": settings_preview["unsupported_settings"],
         "settings": settings_preview["settings"],
@@ -69,7 +70,7 @@ def preview_allsky_root(root: Path) -> dict[str, Any]:
 
 
 def scan_allsky_files(root: Path) -> dict[str, list[Path]]:
-    buckets: dict[str, list[Path]] = {"images": [], "timelapses": [], "keograms": [], "startrails": []}
+    buckets: dict[str, list[Path]] = {"images": [], "timelapses": [], "keograms": [], "startrails": [], "dark_frames": []}
     if not root.exists() or not root.is_dir():
         return buckets
     for path in sorted(root.rglob("*")):
@@ -79,6 +80,8 @@ def scan_allsky_files(root: Path) -> dict[str, list[Path]]:
         suffix = path.suffix.lower()
         if suffix in VIDEO_SUFFIXES:
             buckets["timelapses"].append(path)
+        elif suffix in IMAGE_SUFFIXES and is_dark_frame_path(path):
+            buckets["dark_frames"].append(path)
         elif suffix in IMAGE_SUFFIXES and "keogram" in name:
             buckets["keograms"].append(path)
         elif suffix in IMAGE_SUFFIXES and "startrail" in name:
@@ -118,25 +121,56 @@ def execute_allsky_import(job: dict[str, Any]) -> dict[str, Any]:
     if not root.exists() or not root.is_dir():
         raise FileNotFoundError(root)
     files = scan_allsky_files(root)
-    imported_images = [import_image(path, job["id"]) for path in files["images"]]
-    imported_products = [
-        *(import_product(path, job["id"], "keogram") for path in files["keograms"]),
-        *(import_product(path, job["id"], "startrail") for path in files["startrails"]),
-        *(import_product(path, job["id"], "timelapse") for path in files["timelapses"]),
-    ]
+    total_steps = max(1, len(files["images"]) + len(files["dark_frames"]) + len(files["keograms"]) + len(files["startrails"]) + len(files["timelapses"]) + 1)
+    completed_steps = 0
+    import_log: list[dict[str, Any]] = []
+    imported_images: list[str] = []
+    imported_dark_frames: list[str] = []
+    imported_products: list[str] = []
+
+    for path in files["images"]:
+        image_id = import_image(path, job["id"])
+        imported_images.append(image_id)
+        import_log.append({"kind": "image", "id": image_id, "original_path": str(path)})
+        completed_steps += 1
+        update_allsky_import_progress(job["id"], completed_steps, total_steps)
+    for path in files["dark_frames"]:
+        frame_id = import_dark_frame(path, job["id"])
+        imported_dark_frames.append(frame_id)
+        import_log.append({"kind": "dark_frame", "id": frame_id, "original_path": str(path)})
+        completed_steps += 1
+        update_allsky_import_progress(job["id"], completed_steps, total_steps)
+    for product_type, paths in (("keogram", files["keograms"]), ("startrail", files["startrails"]), ("timelapse", files["timelapses"])):
+        for path in paths:
+            product_id = import_product(path, job["id"], product_type)
+            imported_products.append(product_id)
+            import_log.append({"kind": product_type, "id": product_id, "original_path": str(path)})
+            completed_steps += 1
+            update_allsky_import_progress(job["id"], completed_steps, total_steps)
     settings_result = apply_allsky_settings(root, job["id"])
+    completed_steps += 1
+    update_allsky_import_progress(job["id"], completed_steps, total_steps)
     with session() as conn:
-        event(conn, "allsky_import_completed", {"job_id": job["id"], "images": len(imported_images), "products": len(imported_products)})
+        event(conn, "allsky_import_completed", {"job_id": job["id"], "images": len(imported_images), "dark_frames": len(imported_dark_frames), "products": len(imported_products)})
     return {
         "migration_job_id": job["id"],
         "imported_images": len(imported_images),
+        "imported_dark_frames": len(imported_dark_frames),
         "imported_products": len(imported_products),
         "image_ids": imported_images,
+        "dark_frame_ids": imported_dark_frames,
         "product_ids": imported_products,
+        "import_log": import_log,
         "settings": settings_result,
         "unsupported_settings": preview_settings(root)["unsupported_settings"],
         "will_delete_original": False,
     }
+
+
+def update_allsky_import_progress(job_id: str, completed_steps: int, total_steps: int) -> None:
+    progress = 0.05 + (max(0, min(completed_steps, total_steps)) / max(1, total_steps)) * 0.85
+    with session() as conn:
+        conn.execute("UPDATE processing_jobs SET progress=? WHERE id=?", (max(0.05, min(0.95, progress)), job_id))
 
 
 def import_image(source: Path, job_id: str) -> str:
@@ -218,6 +252,53 @@ def import_product(source: Path, job_id: str, product_type: str) -> str:
     return product_id
 
 
+def import_dark_frame(source: Path, job_id: str) -> str:
+    settings = get_settings()
+    captured_at = datetime.fromtimestamp(source.stat().st_mtime, UTC)
+    day_key = infer_day_key(source, captured_at)
+    frame_id = new_id()
+    suffix = normalized_image_suffix(source)
+    target = settings.data_dir / "dark-frames" / day_key / f"allsky_dark_{captured_at.strftime('%H%M%S')}_{frame_id[:8]}{suffix}"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, target)
+    thumbnail = make_thumbnail(target, settings.thumbnail_dir / "dark-frames" / day_key / target.name)
+    width = height = None
+    image_format = suffix.lstrip(".")
+    try:
+        with Image.open(target) as img:
+            width, height = img.width, img.height
+            image_format = (img.format or image_format).lower()
+    except Exception:
+        pass
+    metadata = {
+        "id": frame_id,
+        "captured_at": captured_at.isoformat(),
+        "storage": extract_image_metadata(target),
+        "migration": {"source": "allsky", "job_id": job_id, "original_path": str(source)},
+    }
+    with session() as conn:
+        conn.execute(
+            """INSERT INTO dark_frames
+               (id, camera_id, captured_at, day_key, file_path, thumbnail_path, format, width, height, size_bytes, metadata, created_at)
+               VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                frame_id,
+                captured_at.isoformat(),
+                day_key,
+                str(target),
+                str(thumbnail) if thumbnail else None,
+                image_format,
+                width,
+                height,
+                target.stat().st_size,
+                json_dumps(metadata),
+                now_iso(),
+            ),
+        )
+        event(conn, "allsky_dark_frame_imported", {"job_id": job_id, "dark_frame_id": frame_id, "original_path": str(source)})
+    return frame_id
+
+
 def rollback_allsky_import(job_id: str) -> dict[str, Any]:
     with session() as conn:
         job = decode_row(row_to_dict(conn.execute("SELECT output FROM processing_jobs WHERE id=?", (job_id,)).fetchone()))
@@ -230,13 +311,19 @@ def rollback_allsky_import(job_id: str) -> dict[str, Any]:
             decode_row(row_to_dict(row))
             for row in conn.execute("SELECT * FROM night_products ORDER BY created_at DESC").fetchall()
         ]
+        dark_frames = [
+            decode_row(row_to_dict(row))
+            for row in conn.execute("SELECT * FROM dark_frames ORDER BY created_at DESC").fetchall()
+        ]
         images = [image for image in images if migration_job_id(image) == job_id]
         products = [product for product in products if migration_job_id(product) == job_id]
+        dark_frames = [frame for frame in dark_frames if migration_job_id(frame) == job_id]
         deleted_files: list[str] = []
         missing_files: list[str] = []
         skipped_files: list[dict[str, Any]] = []
         image_ids: list[str] = []
         product_ids: list[str] = []
+        dark_frame_ids: list[str] = []
         for image in images:
             result = delete_image_files(image)
             conn.execute("DELETE FROM images WHERE id=?", (image["id"],))
@@ -251,12 +338,21 @@ def rollback_allsky_import(job_id: str) -> dict[str, Any]:
             deleted_files.extend(result["deleted_files"])
             missing_files.extend(result["missing_files"])
             skipped_files.extend(result["skipped_files"])
-        event(conn, "allsky_import_rolled_back", {"job_id": job_id, "images": len(image_ids), "products": len(product_ids)})
+        for frame in dark_frames:
+            result = delete_storage_paths(dark_frame_storage_artifacts(frame))
+            conn.execute("DELETE FROM dark_frames WHERE id=?", (frame["id"],))
+            dark_frame_ids.append(frame["id"])
+            deleted_files.extend(result["deleted_files"])
+            missing_files.extend(result["missing_files"])
+            skipped_files.extend(result["skipped_files"])
+        event(conn, "allsky_import_rolled_back", {"job_id": job_id, "images": len(image_ids), "dark_frames": len(dark_frame_ids), "products": len(product_ids)})
     return {
         "migration_job_id": job_id,
         "deleted_images": len(image_ids),
+        "deleted_dark_frames": len(dark_frame_ids),
         "deleted_products": len(product_ids),
         "deleted_image_ids": image_ids,
+        "deleted_dark_frame_ids": dark_frame_ids,
         "deleted_product_ids": product_ids,
         "deleted_files": deleted_files,
         "missing_files": missing_files,
@@ -427,6 +523,29 @@ def product_storage_artifacts(product: dict[str, Any]) -> list[Path]:
         if value:
             paths.append(Path(str(value)))
     return paths
+
+
+def dark_frame_storage_artifacts(frame: dict[str, Any]) -> list[Path]:
+    paths: list[Path] = []
+    for key in ("file_path", "thumbnail_path"):
+        value = frame.get(key)
+        if value:
+            paths.append(Path(str(value)))
+    return paths
+
+
+def is_dark_frame_path(path: Path) -> bool:
+    tokens = {part.lower().replace("-", "_") for part in path.parts[-5:]}
+    name = path.name.lower().replace("-", "_")
+    return (
+        "dark" in tokens
+        or "darks" in tokens
+        or "dark_frames" in tokens
+        or "darkframes" in tokens
+        or name.startswith("dark_")
+        or "darkframe" in name
+        or "dark_frame" in name
+    )
 
 
 def infer_day_key(path: Path, fallback: datetime) -> str:
