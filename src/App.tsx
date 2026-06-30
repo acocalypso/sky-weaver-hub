@@ -21,6 +21,7 @@ const SettingsPage = lazy(() => import("@/pages/Settings"));
 const ApiKeys = lazy(() => import("@/pages/ApiKeys"));
 const DeveloperApi = lazy(() => import("@/pages/DeveloperApi"));
 const Modules = lazy(() => import("@/pages/Modules"));
+const RemoteUpload = lazy(() => import("@/pages/RemoteUpload"));
 const Setup = lazy(() => import("@/pages/Setup"));
 const PublicSky = lazy(() => import("@/pages/PublicSky"));
 const Deployment = lazy(() => import("@/pages/Placeholder").then((module) => ({ default: module.Deployment })));
@@ -51,6 +52,7 @@ const App = () => (
                 <Route path="/api-keys" element={<ApiKeys />} />
                 <Route path="/developer" element={<DeveloperApi />} />
                 <Route path="/modules" element={<Modules />} />
+                <Route path="/remote-upload" element={<RemoteUpload />} />
                 <Route path="/deployment" element={<Deployment />} />
               </Route>
               <Route path="*" element={<NotFound />} />

@@ -10,6 +10,7 @@ import SetupPage from "@/pages/Setup";
 import Health from "@/pages/Health";
 import PublicSky from "@/pages/PublicSky";
 import Modules from "@/pages/Modules";
+import RemoteUpload from "@/pages/RemoteUpload";
 import { SkyApi } from "@/lib/api";
 
 vi.mock("sonner", () => ({
@@ -53,6 +54,13 @@ vi.mock("@/lib/api", async () => {
       moduleFlows: vi.fn(),
       patchModuleFlow: vi.fn(),
       runModuleFlow: vi.fn(),
+      remoteTargets: vi.fn(),
+      createRemoteTarget: vi.fn(),
+      patchRemoteTarget: vi.fn(),
+      testRemoteTarget: vi.fn(),
+      uploadJobs: vi.fn(),
+      queueUpload: vi.fn(),
+      retryUploads: vi.fn(),
     },
   };
 });
@@ -286,6 +294,51 @@ beforeEach(() => {
     enabled: true,
     modules: [{ id: "builtin.overlay", name: "Built-in overlay", enabled: true, trusted: true, status: "ready" }],
   });
+  vi.mocked(SkyApi.remoteTargets).mockResolvedValue([
+    {
+      id: "target-1",
+      name: "Local mirror",
+      type: "filesystem",
+      enabled: true,
+      config: { destination_path: "/tmp/skyweaver-upload" },
+      created_at: "2026-06-23T12:00:00+00:00",
+      updated_at: "2026-06-23T12:00:00+00:00",
+    },
+  ]);
+  vi.mocked(SkyApi.uploadJobs).mockResolvedValue([
+    {
+      id: "upload-1",
+      target_id: "target-1",
+      source_type: "image",
+      source_id: "img-1",
+      source_path: "/data/images/one.jpg",
+      destination_path: "/tmp/skyweaver-upload/image/img-1/one.jpg",
+      status: "completed",
+      attempts: 1,
+      created_at: "2026-06-23T12:00:00+00:00",
+    },
+  ]);
+  vi.mocked(SkyApi.createRemoteTarget).mockImplementation(async (body) => ({
+    id: "target-2",
+    name: body.name,
+    type: body.type,
+    enabled: body.enabled,
+    config: body.config,
+    created_at: "2026-06-23T12:00:00+00:00",
+    updated_at: "2026-06-23T12:00:00+00:00",
+  }));
+  vi.mocked(SkyApi.patchRemoteTarget).mockImplementation(async (_id, body) => ({
+    id: "target-1",
+    name: body.name ?? "Local mirror",
+    type: "filesystem",
+    enabled: Boolean(body.enabled),
+    config: body.config ?? { destination_path: "/tmp/skyweaver-upload" },
+    created_at: "2026-06-23T12:00:00+00:00",
+    updated_at: "2026-06-23T12:00:00+00:00",
+  }));
+  vi.mocked(SkyApi.testRemoteTarget).mockResolvedValue({ id: "target-1", status: "ready", type: "filesystem", destination_path: "/tmp/skyweaver-upload" });
+  vi.mocked(SkyApi.queueUpload).mockResolvedValue({ id: "processing-1", status: "pending", upload_job_ids: ["upload-2"] });
+  vi.mocked(SkyApi.retryUploads).mockResolvedValue({ status: "idle", processing_job_id: null, upload_job_ids: [] });
 });
 
 describe("main pages", () => {
@@ -362,6 +415,17 @@ describe("main pages", () => {
     fireEvent.change(screen.getByPlaceholderText("My module"), { target: { value: "Test module" } });
     fireEvent.click(screen.getByRole("button", { name: /register manifest/i }));
     await waitFor(() => expect(SkyApi.registerModule).toHaveBeenCalled());
+  });
+
+  it("renders remote upload targets and queues latest upload", async () => {
+    render(<RemoteUpload />);
+
+    expect(await screen.findByRole("heading", { name: /remote upload/i })).toBeInTheDocument();
+    expect(screen.getByText("Local mirror")).toBeInTheDocument();
+    expect(screen.getAllByText(/\/tmp\/skyweaver-upload/).length).toBeGreaterThan(0);
+    expect(screen.getByText("image img-1")).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole("button", { name: /queue latest/i })[0]);
+    await waitFor(() => expect(SkyApi.queueUpload).toHaveBeenCalledWith({ source_type: "latest", target_id: undefined }));
   });
 
   it("runs service controls from health", async () => {

@@ -22,6 +22,7 @@ from ..services.capture import CaptureCommand, all_rows, cleanup_images_by_reten
 from ..services.modules import register_external_module, run_flow_preview, validate_module_order
 from ..services.processing import cleanup_products_by_retention, delete_product_files
 from ..services.schedule import active_window
+from ..services.uploads import queue_upload, remote_target_payload, retry_failed_uploads, validate_target_payload
 from .deps import current_principal, require_scope
 from .responses import ok
 
@@ -1614,39 +1615,101 @@ def run_flow(flow_id: str, _principal: Annotated[dict, Depends(require_scope("wr
 @router.get("/remote-targets")
 def remote_targets(_principal: Annotated[dict, Depends(require_scope("read:settings"))]):
     with session() as conn:
-        rows = all_rows(conn, "SELECT id, name, type, enabled, created_at, updated_at FROM remote_targets")
-    return ok(rows)
+        rows = all_rows(conn, "SELECT * FROM remote_targets ORDER BY created_at DESC")
+    return ok([remote_target_payload(row) for row in rows])
 
 
 @router.post("/remote-targets")
 def create_remote_target(payload: dict[str, Any], _principal: Annotated[dict, Depends(require_scope("admin"))]):
+    try:
+        name, target_type, config, enabled = validate_target_payload(payload)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
     target_id = new_id()
     with session() as conn:
         conn.execute("INSERT INTO remote_targets (id, name, type, config_encrypted, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                     (target_id, payload["name"], payload["type"], json_dumps({"redacted": True}), int(payload.get("enabled", False)), now_iso(), now_iso()))
-    return ok({"id": target_id})
+                     (target_id, name, target_type, json_dumps(config), int(enabled), now_iso(), now_iso()))
+        row = row_to_dict(conn.execute("SELECT * FROM remote_targets WHERE id=?", (target_id,)).fetchone())
+        event(conn, "remote_target_created", {"target_id": target_id, "type": target_type, "enabled": enabled})
+    return ok(remote_target_payload(row))
 
 
 @router.patch("/remote-targets/{target_id}")
 def patch_remote_target(target_id: str, payload: dict[str, Any], _principal: Annotated[dict, Depends(require_scope("admin"))]):
-    return ok({"id": target_id, "payload": {k: "***" if "password" in k else v for k, v in payload.items()}})
+    with session() as conn:
+        existing = decode_row(row_to_dict(conn.execute("SELECT * FROM remote_targets WHERE id=?", (target_id,)).fetchone()))
+        if not existing:
+            raise HTTPException(404, "Remote target not found")
+        current_config = existing.get("config_encrypted")
+        if isinstance(current_config, str):
+            current_config = json_loads(current_config, {})
+        merged = {
+            "name": payload.get("name", existing["name"]),
+            "type": payload.get("type", existing["type"]),
+            "config": payload.get("config", current_config if isinstance(current_config, dict) else {}),
+            "enabled": payload.get("enabled", bool(existing["enabled"])),
+        }
+        try:
+            name, target_type, config, enabled = validate_target_payload(merged)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        conn.execute(
+            "UPDATE remote_targets SET name=?, type=?, config_encrypted=?, enabled=?, updated_at=? WHERE id=?",
+            (name, target_type, json_dumps(config), int(enabled), now_iso(), target_id),
+        )
+        row = row_to_dict(conn.execute("SELECT * FROM remote_targets WHERE id=?", (target_id,)).fetchone())
+        event(conn, "remote_target_updated", {"target_id": target_id, "type": target_type, "enabled": enabled})
+    return ok(remote_target_payload(row))
 
 
 @router.delete("/remote-targets/{target_id}")
 def delete_remote_target(target_id: str, _principal: Annotated[dict, Depends(require_scope("admin"))]):
     with session() as conn:
+        if not conn.execute("SELECT 1 FROM remote_targets WHERE id=?", (target_id,)).fetchone():
+            raise HTTPException(404, "Remote target not found")
         conn.execute("DELETE FROM remote_targets WHERE id=?", (target_id,))
+        event(conn, "remote_target_deleted", {"target_id": target_id})
     return ok({"deleted": target_id})
 
 
 @router.post("/remote-targets/{target_id}/test")
 def test_remote_target(target_id: str, _principal: Annotated[dict, Depends(require_scope("admin"))]):
-    return ok({"id": target_id, "status": "planned"})
+    with session() as conn:
+        row = decode_row(row_to_dict(conn.execute("SELECT * FROM remote_targets WHERE id=?", (target_id,)).fetchone()))
+    if not row:
+        raise HTTPException(404, "Remote target not found")
+    config = row.get("config_encrypted")
+    if isinstance(config, str):
+        config = json_loads(config, {})
+    destination = Path(str((config or {}).get("destination_path", ""))).expanduser()
+    try:
+        destination.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise HTTPException(400, f"Target path is not writable: {exc}") from exc
+    return ok({"id": target_id, "status": "ready", "type": row["type"], "destination_path": str(destination)})
+
+
+@router.get("/uploads/jobs")
+def upload_jobs(_principal: Annotated[dict, Depends(require_scope("read:images"))]):
+    with session() as conn:
+        rows = all_rows(conn, "SELECT * FROM upload_jobs ORDER BY created_at DESC LIMIT 200")
+    return ok(rows)
+
+
+@router.post("/uploads/queue")
+def queue_uploads(payload: dict[str, Any], _principal: Annotated[dict, Depends(require_scope("write:processing"))]):
+    try:
+        result = queue_upload(str(payload.get("source_type", "latest")), payload.get("source_id"), payload.get("target_id"))
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except (ValueError, FileNotFoundError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return ok(result)
 
 
 @router.post("/uploads/retry")
 def retry_uploads(_principal: Annotated[dict, Depends(require_scope("write:processing"))]):
-    return ok({"status": "queued"})
+    return ok(retry_failed_uploads())
 
 
 @router.get("/migration/allsky/detect")

@@ -8,7 +8,7 @@ This document tracks the current implementation state against the all-sky platfo
 
 Sky Weaver Hub has moved from a mock dashboard toward a local-first Raspberry Pi/Linux all-sky platform. The repository now has a FastAPI backend, SQLite persistence, a camera adapter interface, mock capture with real image artifacts, Raspberry Pi camera support, initial native ZWO ASI support, a daemon-owned scheduled capture loop, API-key authentication, systemd and installer support, and a React UI wired to the local API.
 
-The product is not yet Allsky feature-complete. The main missing areas are longer real outdoor overnight soak validation, richer image-product options, remote upload execution, complete Allsky import, dark-frame processing, and broader validated camera adapter coverage beyond Raspberry Pi libcamera hardware.
+The product is not yet Allsky feature-complete. The main missing areas are longer real outdoor overnight soak validation, richer image-product options, network remote upload protocols, complete Allsky import, dark-frame processing, and broader validated camera adapter coverage beyond Raspberry Pi libcamera hardware.
 
 ## Repo Map
 
@@ -22,7 +22,7 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 | Camera abstraction | `CameraAdapter` base class plus working `mock` adapter, initial `rpicam`/`libcamera` adapter, and initial ZWO ASI adapter using the native `libASICamera2` SDK library from Debian `libasi` or a vendor SDK install. Other adapters are placeholders with actionable errors. |
 | UI/API integration | Public Sky, Dashboard, Cameras, Schedule, Gallery, Night Products, Logs, Settings, API Keys, Modules, and Developer API call the local backend. |
 | Deployment | `install.sh`, `upgrade.sh`, `uninstall.sh`, `support.sh`, and systemd units exist. Fresh interactive installs prompt for first-setup values. Installer/upgrade can provision Debian `libasi`, ZWO USB rules, and optional vendor SDK library support when ZWO is configured. |
-| Tests | Backend pytest coverage for health/status, login, auth audit logs, API keys, mock capture, image/product delete, retention cleanup, first-setup hardening, system service controls, scheduled daemon capture, day/night profile scheduling, latest-only unsaved captures, end-of-night product queuing, queued test/single/sequence capture execution, pause/resume/stop queue semantics, schedule preview, daemon heartbeat/activity, interrupted job recovery, mock overnight acceptance flow, night product generation, migration preview, module/overlay flows, external module manifests, mock adapter, and fake-SDK ZWO adapter behavior. Frontend component tests cover Public Sky, Dashboard, Gallery, Health, Settings, API Keys, Modules, and first setup. Shell tests cover installer dry-run, service-control sudoers generation, and repeat-install idempotency with mocked system commands. |
+| Tests | Backend pytest coverage for health/status, login, auth audit logs, API keys, mock capture, image/product delete, retention cleanup, first-setup hardening, system service controls, scheduled daemon capture, day/night profile scheduling, latest-only unsaved captures, end-of-night product queuing, queued test/single/sequence capture execution, pause/resume/stop queue semantics, schedule preview, daemon heartbeat/activity, interrupted job recovery, mock overnight acceptance flow, night product generation, filesystem upload execution/retry, migration preview, module/overlay flows, external module manifests, mock adapter, and fake-SDK ZWO adapter behavior. Frontend component tests cover Public Sky, Dashboard, Gallery, Health, Settings, API Keys, Modules, Remote Upload, and first setup. Shell tests cover installer dry-run, service-control sudoers generation, and repeat-install idempotency with mocked system commands. |
 
 ## Implemented Capabilities
 
@@ -169,7 +169,7 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 | Phase 6: Processing worker/products/retention | Done | Worker claims jobs, thumbnail reprocess exists, keogram JPEG generation, ffmpeg timelapse/mini-timelapse generation, startrail generation, image/product retention cleanup, and product deletion exist, and product job progress is visible in the UI. Remote upload execution is intentionally tracked in Phase 9. |
 | Phase 7: Overlay/modules | Done | Trusted built-in overlay module seeding, API configuration, capture-time text rendering with variables, image metadata/flagging, expanded overlay editor, built-in post-capture module flow execution, external module manifest registration/listing/deletion, and Modules UI exist. Custom code upload/execution is intentionally disabled until a future sandbox/signing runtime is designed. |
 | Phase 8: Installer/systemd/support/docs | Partial | Scripts and units exist. Shellcheck CI, installer dry-run/idempotency tests, service-control sudoers generation, interactive first-setup prompts, ZWO `libasi`/SDK provisioning hooks, real Pi install, repeat install, service restart, and reboot verification exist. Nginx option and broader Pi camera verification are open. |
-| Phase 9: Allsky migration/remote upload | Early scaffold | Detection and dry-run count preview exist. Real import, rollback, unsupported-setting report, and remote upload execution are open. |
+| Phase 9: Allsky migration/remote upload | Partial | Allsky detection and dry-run count preview exist. Filesystem remote targets, upload queue/retry, worker-backed file copy execution, upload job listing, and Remote Upload UI exist. Real Allsky import, rollback, unsupported-setting report, and network upload protocols are open. |
 | Phase 10: Polish/mobile/tests/hardening | Partial | Mobile API docs, latest/status/gallery endpoints, route bundle splitting, system health diagnostics/service detail UI with failure analysis and unit history, initial frontend component tests, and CI workflow exist. Broader tests, UX polish, performance, and security hardening remain. |
 
 ## Open Topics
@@ -283,11 +283,11 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 
 ### Remote Upload
 
-- Add remote target config UI.
+- Filesystem remote target config UI exists.
 - Expand local public website mode beyond latest-image display.
 - Implement SFTP/SCP/rsync/FTP where feasible.
-- Add upload retry queue.
-- Add upload logs.
+- Upload retry queue exists for failed upload jobs.
+- Expand upload logs and job detail views.
 - Redact credentials everywhere.
 
 ### Plugin/Module System
@@ -332,13 +332,13 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 ## Known Current Limitations
 
 - Capture daemon now performs day/night scheduled captures and consumes queued test-shot, single-capture, and sequence jobs. Restart-safe per-profile interval/save controls, next-capture due visibility, latest-only unsaved captures, end-of-night product queueing, graceful stop fallback, real-Pi validated rpicam hard-cancel, pause/resume/stop queue semantics, daemon activity visibility, Dashboard capture job progress, and interrupted job requeue on service start exist. Real outdoor overnight image quality and environmental stability still need field validation.
-- Worker now generates thumbnails, keograms, ffmpeg timelapses, mini timelapses, and startrails. Image/product retention cleanup and product deletion exist. Remote upload execution is still open under Phase 9.
+- Worker now generates thumbnails, keograms, ffmpeg timelapses, mini timelapses, and startrails. Image/product retention cleanup, product deletion, and filesystem upload execution exist.
 - Worker service work is real, but Health still lacks worker heartbeat/PID/last-job reporting comparable to the capture daemon.
 - Product endpoints queue jobs; keogram, timelapse, mini timelapse, and startrail currently produce downloadable night products.
 - Public page exists for latest-image display with compact responsive metadata and honors the public-page enabled setting; richer public archives and branding controls are still open.
 - Phase 7 has a trusted built-in overlay module, module-flow execution, and external manifest registration. Arbitrary custom code execution is intentionally not enabled without sandboxing/signing.
 - ZWO ASI support is adapter-backed with native-SDK fake tests, but it has not yet been validated with real ZWO hardware in this environment.
-- Remote upload is not implemented.
+- Remote upload supports filesystem targets. SFTP/SCP/rsync/FTP targets are not implemented.
 - Allsky migration does not yet import data.
 - API server no longer performs camera capture inline for test shots; test-shot requests enqueue daemon-owned `test` jobs so manual verification still works while automation is stopped.
 - Tailwind 4 is enabled through the official Vite plugin while preserving the existing theme config and shadcn animation utilities.
@@ -349,9 +349,9 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 
 Most recent local checks on 2026-06-30:
 
-- `backend\\.venv\\Scripts\\python -m pytest -p no:cacheprovider --basetemp .tmp\\pytest-all backend\\tests`: passed with 70 tests.
+- `backend\\.venv\\Scripts\\python -m pytest -p no:cacheprovider --basetemp .tmp\\pytest-all backend\\tests`: passed with 72 tests.
 - `npm run lint`: passed with zero warnings.
-- `npm test`: passed with 13 tests.
+- `npm test`: passed with 14 tests.
 - `npm run build`: passed.
 - `git diff --check`: passed for the current public-page responsive layout changes.
 - `shellcheck install.sh scripts/test_install.sh upgrade.sh uninstall.sh support.sh`: not run locally because ShellCheck is not installed on this Windows host; CI installs ShellCheck on Ubuntu.

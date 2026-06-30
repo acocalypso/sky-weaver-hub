@@ -234,3 +234,75 @@ def test_worker_generates_startrail_product(tmp_path: Path):
 
     download = client.get(f"/api/v1/products/{product['id']}/download")
     assert download.status_code == 200
+
+
+def test_worker_uploads_latest_image_to_filesystem_target(tmp_path: Path):
+    client = make_client(tmp_path)
+    token = login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+    _queued, _job, image = run_queued_test_capture(client, headers, {"exposure_ms": 250, "gain": 1, "format": "jpg", "mode": "night"})
+    destination = tmp_path / "remote-target"
+
+    target_res = client.post(
+        "/api/v1/remote-targets",
+        headers=headers,
+        json={"name": "Local mirror", "type": "filesystem", "enabled": True, "config": {"destination_path": str(destination)}},
+    )
+    assert target_res.status_code == 200, target_res.text
+    target = target_res.json()["data"]
+    assert target["config"]["destination_path"] == str(destination)
+
+    test_res = client.post(f"/api/v1/remote-targets/{target['id']}/test", headers=headers)
+    assert test_res.status_code == 200, test_res.text
+    assert test_res.json()["data"]["status"] == "ready"
+
+    queue_res = client.post("/api/v1/uploads/queue", headers=headers, json={"source_type": "latest"})
+    assert queue_res.status_code == 200, queue_res.text
+    queued_upload = queue_res.json()["data"]
+    assert queued_upload["status"] == "pending"
+    assert len(queued_upload["upload_job_ids"]) == 1
+
+    from skyweaver.services.processing import run_once
+
+    assert asyncio.run(run_once()) is True
+    upload_jobs = client.get("/api/v1/uploads/jobs", headers=headers).json()["data"]
+    upload = next(item for item in upload_jobs if item["id"] == queued_upload["upload_job_ids"][0])
+    assert upload["status"] == "completed"
+    assert upload["attempts"] == 1
+    copied = Path(upload["destination_path"])
+    assert copied.exists()
+    assert copied.read_bytes() == Path(image["file_path"]).read_bytes()
+    assert copied.parent == destination / "image" / image["id"]
+
+
+def test_upload_retry_requeues_failed_uploads(tmp_path: Path):
+    client = make_client(tmp_path)
+    token = login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+    missing_source = tmp_path / "missing.jpg"
+    target_destination = tmp_path / "remote-target"
+
+    from skyweaver.db import json_dumps, new_id, now_iso, session
+
+    target_id = new_id()
+    upload_id = new_id()
+    with session() as conn:
+        conn.execute(
+            "INSERT INTO remote_targets (id, name, type, config_encrypted, enabled, created_at, updated_at) VALUES (?, 'Local mirror', 'filesystem', ?, 1, ?, ?)",
+            (target_id, json_dumps({"destination_path": str(target_destination)}), now_iso(), now_iso()),
+        )
+        conn.execute(
+            "INSERT INTO upload_jobs (id, target_id, source_type, source_id, source_path, status, attempts, last_error, created_at) VALUES (?, ?, 'image', 'missing-image', ?, 'failed', 1, 'missing', ?)",
+            (upload_id, target_id, str(missing_source), now_iso()),
+        )
+
+    retry_res = client.post("/api/v1/uploads/retry", headers=headers)
+    assert retry_res.status_code == 200, retry_res.text
+    payload = retry_res.json()["data"]
+    assert payload["status"] == "pending"
+    assert payload["upload_job_ids"] == [upload_id]
+
+    jobs = client.get("/api/v1/uploads/jobs", headers=headers).json()["data"]
+    retried = next(item for item in jobs if item["id"] == upload_id)
+    assert retried["status"] == "pending"
+    assert retried["last_error"] is None

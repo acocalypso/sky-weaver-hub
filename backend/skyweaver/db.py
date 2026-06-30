@@ -79,6 +79,11 @@ CREATE TABLE IF NOT EXISTS remote_targets (
   id TEXT PRIMARY KEY, name TEXT NOT NULL, type TEXT NOT NULL, config_encrypted TEXT NOT NULL,
   enabled INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS upload_jobs (
+  id TEXT PRIMARY KEY, target_id TEXT NOT NULL, source_type TEXT NOT NULL, source_id TEXT NOT NULL,
+  source_path TEXT NOT NULL, destination_path TEXT, status TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0,
+  last_error TEXT, processing_job_id TEXT, created_at TEXT NOT NULL, started_at TEXT, completed_at TEXT
+);
 CREATE TABLE IF NOT EXISTS plugin_modules (
   id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT, version TEXT, author TEXT,
   module_path TEXT, enabled INTEGER NOT NULL DEFAULT 0, trusted INTEGER NOT NULL DEFAULT 0,

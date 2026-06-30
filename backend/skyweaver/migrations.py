@@ -127,8 +127,21 @@ def _schedule_split_sun_angles(conn: sqlite3.Connection) -> None:
     conn.execute("UPDATE capture_schedule SET start_sun_angle=COALESCE(start_sun_angle, sun_angle), end_sun_angle=COALESCE(end_sun_angle, sun_angle)")
 
 
+def _upload_jobs(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS upload_jobs (
+           id TEXT PRIMARY KEY, target_id TEXT NOT NULL, source_type TEXT NOT NULL, source_id TEXT NOT NULL,
+           source_path TEXT NOT NULL, destination_path TEXT, status TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0,
+           last_error TEXT, processing_job_id TEXT, created_at TEXT NOT NULL, started_at TEXT, completed_at TEXT
+        )"""
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_upload_jobs_status_created ON upload_jobs (status, created_at)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_upload_jobs_target_created ON upload_jobs (target_id, created_at DESC)")
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(1, "capture_daemon_job_columns", _capture_daemon_columns),
     Migration(2, "core_query_indexes", _core_indexes),
     Migration(3, "schedule_split_sun_angles", _schedule_split_sun_angles),
+    Migration(4, "upload_jobs", _upload_jobs),
 )

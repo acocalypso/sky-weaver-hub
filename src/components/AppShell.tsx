@@ -2,7 +2,7 @@ import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, Camera, CalendarClock, Images, Film, ScrollText,
   Settings, KeyRound, Code2, ServerCog, LogOut, Telescope, Menu, X, Activity,
-  Puzzle,
+  Puzzle, CloudUpload,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/auth-context";
@@ -22,6 +22,7 @@ const NAV = [
   { to: "/api-keys", label: "API Keys", icon: KeyRound },
   { to: "/developer", label: "Developer API", icon: Code2 },
   { to: "/modules", label: "Modules", icon: Puzzle },
+  { to: "/remote-upload", label: "Remote Upload", icon: CloudUpload },
   { to: "/deployment", label: "Deployment", icon: ServerCog },
 ];
 

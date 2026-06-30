@@ -73,6 +73,13 @@ export const SkyApi = {
   moduleFlows: () => api<ModuleFlowRow[]>("/api/v1/module-flows"),
   patchModuleFlow: (id: string, body: { enabled?: boolean; module_order?: string[] }) => api<ModuleFlowRow>(`/api/v1/module-flows/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   runModuleFlow: (id: string) => api<ModuleFlowRunResult>(`/api/v1/module-flows/${id}/run`, { method: "POST" }),
+  remoteTargets: () => api<RemoteTarget[]>("/api/v1/remote-targets"),
+  createRemoteTarget: (body: RemoteTargetPayload) => api<RemoteTarget>("/api/v1/remote-targets", { method: "POST", body: JSON.stringify(body) }),
+  patchRemoteTarget: (id: string, body: Partial<RemoteTargetPayload>) => api<RemoteTarget>(`/api/v1/remote-targets/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  testRemoteTarget: (id: string) => api<RemoteTargetTestResult>(`/api/v1/remote-targets/${id}/test`, { method: "POST" }),
+  uploadJobs: () => api<UploadJob[]>("/api/v1/uploads/jobs"),
+  queueUpload: (body: UploadQueuePayload) => api<UploadQueueResult>("/api/v1/uploads/queue", { method: "POST", body: JSON.stringify(body) }),
+  retryUploads: () => api<UploadRetryResult>("/api/v1/uploads/retry", { method: "POST" }),
   apiKeys: () => api<ApiKeyRow[]>("/api/v1/api-keys"),
   createApiKey: (body: { name: string; scopes: string[] }) => api<any>("/api/v1/api-keys", { method: "POST", body: JSON.stringify(body) }),
   patchApiKey: (id: string, body: { enabled?: boolean }) => api<any>(`/api/v1/api-keys/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
@@ -132,6 +139,13 @@ export interface ModuleRow { id: string; name: string; description?: string | nu
 export interface ModuleManifest { id: string; name: string; description?: string; version?: string; author?: string; capabilities?: string[]; settings_schema?: Record<string, any>; settings?: Record<string, any>; }
 export interface ModuleFlowRow { id: string; name: string; trigger: string; enabled: boolean; module_order: string[]; created_at: string; updated_at: string; }
 export interface ModuleFlowRunResult { id: string; trigger: string; status: string; enabled: boolean; modules: { id: string; name: string; enabled: boolean; trusted: boolean; status: string }[]; }
+export interface RemoteTarget { id: string; name: string; type: string; enabled: boolean; config: Record<string, any>; created_at: string; updated_at: string; }
+export interface RemoteTargetPayload { name: string; type: "filesystem"; enabled: boolean; config: { destination_path: string }; }
+export interface RemoteTargetTestResult { id: string; status: string; type: string; destination_path: string; }
+export interface UploadJob { id: string; target_id: string; source_type: string; source_id: string; source_path: string; destination_path?: string | null; status: string; attempts: number; last_error?: string | null; processing_job_id?: string | null; created_at: string; started_at?: string | null; completed_at?: string | null; }
+export interface UploadQueuePayload { source_type: "latest" | "image" | "product"; source_id?: string; target_id?: string; }
+export interface UploadQueueResult { id: string; status: string; upload_job_ids: string[]; }
+export interface UploadRetryResult { status: string; processing_job_id: string | null; upload_job_ids: string[]; }
 export interface ProcessingJob { id: string; type: string; status: string; input: any; output?: any; error?: string | null; progress: number; created_at: string; started_at?: string | null; completed_at?: string | null; }
 export interface CaptureJob { id: string; type: string; status: string; request: any; result?: any; error?: string | null; progress: number; created_at: string; started_at?: string | null; completed_at?: string | null; }
 export interface LogRow { id: string; level: string; source: string; message: string; context: any; created_at: string; }

@@ -45,6 +45,17 @@ Public endpoints are intentionally unauthenticated for kiosk/public-page/mobile 
 
 `GET /api/v1/public/products` returns completed keogram, startrail, timelapse, and mini-timelapse products newer than the configured `public_page.product_days` setting. The response is wrapped in the standard success envelope and includes `days`, `configured_days`, and `products`. Public product entries include safe metadata plus public download/thumbnail URLs; local `file_path` and `thumbnail_path` values are never exposed.
 
+Remote upload endpoints require authenticated admin or processing scopes. The first implemented target type is `filesystem`; network upload protocols are still intentionally unsupported until credential handling and protocol-specific failure behavior are designed.
+
+- `GET /api/v1/remote-targets` lists configured targets with redacted config values.
+- `POST /api/v1/remote-targets` creates a filesystem target with `config.destination_path`.
+- `PATCH /api/v1/remote-targets/{target_id}` updates name, enabled state, type, or config.
+- `DELETE /api/v1/remote-targets/{target_id}` removes a target.
+- `POST /api/v1/remote-targets/{target_id}/test` creates/validates the destination directory.
+- `GET /api/v1/uploads/jobs` lists recent upload jobs.
+- `POST /api/v1/uploads/queue` queues latest, image, or product upload work for enabled targets.
+- `POST /api/v1/uploads/retry` requeues failed upload jobs.
+
 `GET /api/v1/system/services/{name}` returns per-service `systemctl show` properties, recent `journalctl` output, a `failure_analysis` summary, and `unit_history` timestamps/restart metadata when systemd tooling is available. These fields are read-only diagnostics for operators and mobile clients; service actions remain separate admin-scoped `POST /api/v1/system/services/{name}/{action}` calls.
 
 `POST /api/v1/capture/stop` cancels pending/claimed capture jobs immediately and reports any already-running exposure in `in_progress_jobs`/`in_progress_job_ids`. It also records best-effort cancel intent in `cancel_requested_jobs`/`cancel_requested_job_ids`; adapters with safe hard-cancel support, currently the rpicam/libcamera adapter, may interrupt the exposure in the capture daemon process and mark the job `canceled` with `stop_mode: hard_cancel`. Unsupported adapters finish gracefully and are marked `stopped` with `completed_after_stop` and `stop_mode: graceful`.
