@@ -60,6 +60,7 @@ vi.mock("@/lib/api", async () => {
       patchRemoteTarget: vi.fn(),
       testRemoteTarget: vi.fn(),
       uploadJobs: vi.fn(),
+      uploadJob: vi.fn(),
       queueUpload: vi.fn(),
       retryUploads: vi.fn(),
       migrationDetect: vi.fn(),
@@ -330,9 +331,30 @@ beforeEach(() => {
       destination_path: "/tmp/skyweaver-upload/image/img-1/one.jpg",
       status: "completed",
       attempts: 1,
+      target_name: "Local mirror",
+      target_type: "filesystem",
+      processing_job_id: "processing-1",
       created_at: "2026-06-23T12:00:00+00:00",
+      started_at: "2026-06-23T12:00:01+00:00",
+      completed_at: "2026-06-23T12:00:02+00:00",
     },
   ]);
+  vi.mocked(SkyApi.uploadJob).mockResolvedValue({
+    id: "upload-1",
+    target_id: "target-1",
+    target_name: "Local mirror",
+    target_type: "filesystem",
+    source_type: "image",
+    source_id: "img-1",
+    source_path: "/data/images/one.jpg",
+    destination_path: "/tmp/skyweaver-upload/image/img-1/one.jpg",
+    status: "completed",
+    attempts: 1,
+    processing_job_id: "processing-1",
+    created_at: "2026-06-23T12:00:00+00:00",
+    started_at: "2026-06-23T12:00:01+00:00",
+    completed_at: "2026-06-23T12:00:02+00:00",
+  });
   vi.mocked(SkyApi.createRemoteTarget).mockImplementation(async (body) => ({
     id: "target-2",
     name: body.name,
@@ -485,6 +507,10 @@ describe("main pages", () => {
     expect(screen.getAllByText(/\/tmp\/skyweaver-upload/).length).toBeGreaterThan(0);
     expect(screen.getByText(/skyweaver@allsky.example:\/srv\/allsky/)).toBeInTheDocument();
     expect(screen.getByText("image img-1")).toBeInTheDocument();
+    expect(screen.getByText(/Local mirror \(filesystem\) - attempts 1/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /details/i }));
+    expect(await screen.findByText("Job detail")).toBeInTheDocument();
+    expect(screen.getByText("processing-1")).toBeInTheDocument();
     fireEvent.click(screen.getAllByRole("button", { name: /queue latest/i })[0]);
     await waitFor(() => expect(SkyApi.queueUpload).toHaveBeenCalledWith({ source_type: "latest", target_id: undefined }));
   });

@@ -169,7 +169,7 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 | Phase 6: Processing worker/products/retention | Done | Worker claims jobs, thumbnail reprocess exists, keogram JPEG generation, ffmpeg timelapse/mini-timelapse generation, startrail generation, image/product retention cleanup, and product deletion exist, and product job progress is visible in the UI. Remote upload execution is intentionally tracked in Phase 9. |
 | Phase 7: Overlay/modules | Done | Trusted built-in overlay module seeding, API configuration, capture-time text rendering with variables, image metadata/flagging, expanded overlay editor, built-in post-capture module flow execution, external module manifest registration/listing/deletion, and Modules UI exist. Custom code upload/execution is intentionally disabled until a future sandbox/signing runtime is designed. |
 | Phase 8: Installer/systemd/support/docs | Partial | Scripts and units exist. Shellcheck CI, installer dry-run/idempotency tests, service-control sudoers generation, interactive first-setup prompts, ZWO `libasi`/SDK provisioning hooks, real Pi install, repeat install, service restart, and reboot verification exist. Nginx option and broader Pi camera verification are open. |
-| Phase 9: Allsky migration/remote upload | Partial | Allsky detection, dry-run count preview, unsupported-setting report, worker-backed image/product/dark-frame import with progress/import-log output, selected settings import with rollback restore, camera hint capture, rollback of Sky Weaver-created rows/files, and Migration UI exist. Filesystem and rsync-over-SSH remote targets, upload queue/retry, worker-backed upload execution, upload job listing, and Remote Upload UI exist. Full settings/overlay import and additional network upload protocols are open. |
+| Phase 9: Allsky migration/remote upload | Partial | Allsky detection, dry-run count preview, unsupported-setting report, worker-backed image/product/dark-frame import with progress/import-log output, selected settings import with rollback restore, camera hint capture, rollback of Sky Weaver-created rows/files, and Migration UI exist. Filesystem and rsync-over-SSH remote targets, upload queue/retry, worker-backed upload execution, upload job listing/detail views, and Remote Upload UI exist. Full settings/overlay import and additional network upload protocols are open. |
 | Phase 10: Polish/mobile/tests/hardening | Partial | Mobile API docs, latest/status/gallery endpoints, route bundle splitting, system health diagnostics/service detail UI with failure analysis and unit history, initial frontend component tests, and CI workflow exist. Broader tests, UX polish, performance, and security hardening remain. |
 
 ## Open Topics
@@ -280,7 +280,7 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 - Expand local public website mode beyond latest-image display.
 - Implement SFTP/SCP/FTP where feasible.
 - Upload retry queue exists for failed upload jobs.
-- Expand upload logs and job detail views.
+- Upload job list and detail views expose target metadata, attempts, timing, source, destination, and last error.
 - Redact credentials everywhere.
 
 ### Plugin/Module System

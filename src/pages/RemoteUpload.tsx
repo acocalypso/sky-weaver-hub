@@ -12,6 +12,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 export default function RemoteUpload() {
   const [targets, setTargets] = useState<RemoteTarget[]>([]);
   const [jobs, setJobs] = useState<UploadJob[]>([]);
+  const [selectedJob, setSelectedJob] = useState<UploadJob | null>(null);
   const [name, setName] = useState("Local mirror");
   const [targetType, setTargetType] = useState<"filesystem" | "rsync_ssh">("filesystem");
   const [destination, setDestination] = useState("");
@@ -92,6 +93,14 @@ export default function RemoteUpload() {
     }
   }
 
+  async function showJob(job: UploadJob) {
+    try {
+      setSelectedJob(await SkyApi.uploadJob(job.id));
+    } catch (e: any) {
+      toast.error(e.message ?? "Upload job detail failed");
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -167,12 +176,34 @@ export default function RemoteUpload() {
               <p className="text-sm font-medium">{job.source_type} {job.source_id}</p>
               <StatusBadge variant={job.status === "completed" ? "ok" : job.status === "failed" ? "error" : job.status === "running" ? "warn" : "idle"}>{job.status}</StatusBadge>
             </div>
+            <p className="mt-1 text-xs text-muted-foreground">{job.target_name ?? job.target_id} {job.target_type ? `(${job.target_type})` : ""} - attempts {job.attempts}</p>
             <p className="mt-1 font-mono-data text-xs text-muted-foreground truncate">{job.destination_path ?? job.source_path}</p>
             {job.last_error && <p className="mt-2 text-xs text-destructive">{job.last_error}</p>}
+            <Button className="mt-3" variant="outline" size="sm" onClick={() => showJob(job)}>Details</Button>
           </div>
         ))}
         {jobs.length === 0 && <p className="text-sm text-muted-foreground">No upload jobs yet.</p>}
       </Card>
+
+      {selectedJob && (
+        <Card className="telemetry-card space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Job detail</h2>
+            <StatusBadge variant={selectedJob.status === "completed" ? "ok" : selectedJob.status === "failed" ? "error" : selectedJob.status === "running" ? "warn" : "idle"}>{selectedJob.status}</StatusBadge>
+          </div>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+            <Detail label="Target" value={`${selectedJob.target_name ?? selectedJob.target_id}${selectedJob.target_type ? ` (${selectedJob.target_type})` : ""}`} />
+            <Detail label="Attempts" value={String(selectedJob.attempts)} />
+            <Detail label="Processing job" value={selectedJob.processing_job_id ?? "-"} />
+            <Detail label="Created" value={formatDate(selectedJob.created_at)} />
+            <Detail label="Started" value={formatDate(selectedJob.started_at)} />
+            <Detail label="Completed" value={formatDate(selectedJob.completed_at)} />
+          </div>
+          <Detail label="Source" value={selectedJob.source_path} />
+          <Detail label="Destination" value={selectedJob.destination_path ?? "-"} />
+          {selectedJob.last_error && <p className="text-sm text-destructive">{selectedJob.last_error}</p>}
+        </Card>
+      )}
     </div>
   );
 }
@@ -182,6 +213,19 @@ function formatTargetDestination(target: RemoteTarget) {
     return `${target.config.username}@${target.config.host}:${target.config.remote_path}`;
   }
   return target.config.destination_path ?? "-";
+}
+
+function formatDate(value?: string | null) {
+  return value ? new Date(value).toLocaleString() : "-";
+}
+
+function Detail({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0 rounded-md border border-border bg-muted/20 p-3">
+      <p className="text-xs uppercase tracking-wider text-muted-foreground">{label}</p>
+      <p className="mt-1 truncate font-mono-data text-xs">{value}</p>
+    </div>
+  );
 }
 
 function Field({ label, value, onChange, ...rest }: { label: string; value: string; onChange: (value: string) => void } & React.InputHTMLAttributes<HTMLInputElement>) {

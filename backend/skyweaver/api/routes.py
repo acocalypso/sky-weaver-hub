@@ -1698,8 +1698,31 @@ def test_remote_target(target_id: str, _principal: Annotated[dict, Depends(requi
 @router.get("/uploads/jobs")
 def upload_jobs(_principal: Annotated[dict, Depends(require_scope("read:images"))]):
     with session() as conn:
-        rows = all_rows(conn, "SELECT * FROM upload_jobs ORDER BY created_at DESC LIMIT 200")
+        rows = all_rows(
+            conn,
+            """SELECT upload_jobs.*, remote_targets.name AS target_name, remote_targets.type AS target_type,
+                      remote_targets.enabled AS target_enabled
+               FROM upload_jobs
+               LEFT JOIN remote_targets ON remote_targets.id = upload_jobs.target_id
+               ORDER BY upload_jobs.created_at DESC LIMIT 200""",
+        )
     return ok(rows)
+
+
+@router.get("/uploads/jobs/{upload_id}")
+def upload_job(upload_id: str, _principal: Annotated[dict, Depends(require_scope("read:images"))]):
+    with session() as conn:
+        row = decode_row(row_to_dict(conn.execute(
+            """SELECT upload_jobs.*, remote_targets.name AS target_name, remote_targets.type AS target_type,
+                      remote_targets.enabled AS target_enabled
+               FROM upload_jobs
+               LEFT JOIN remote_targets ON remote_targets.id = upload_jobs.target_id
+               WHERE upload_jobs.id=?""",
+            (upload_id,),
+        ).fetchone()))
+    if not row:
+        raise HTTPException(404, "Upload job not found")
+    return ok(row)
 
 
 @router.post("/uploads/queue")

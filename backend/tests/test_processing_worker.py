@@ -271,6 +271,11 @@ def test_worker_uploads_latest_image_to_filesystem_target(tmp_path: Path):
     upload = next(item for item in upload_jobs if item["id"] == queued_upload["upload_job_ids"][0])
     assert upload["status"] == "completed"
     assert upload["attempts"] == 1
+    assert upload["target_name"] == "Local mirror"
+    assert upload["target_type"] == "filesystem"
+    detail = client.get(f"/api/v1/uploads/jobs/{upload['id']}", headers=headers)
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["data"]["target_name"] == "Local mirror"
     copied = Path(upload["destination_path"])
     assert copied.exists()
     assert copied.read_bytes() == Path(image["file_path"]).read_bytes()

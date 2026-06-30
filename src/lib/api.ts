@@ -80,6 +80,7 @@ export const SkyApi = {
   patchRemoteTarget: (id: string, body: Partial<RemoteTargetPayload>) => api<RemoteTarget>(`/api/v1/remote-targets/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   testRemoteTarget: (id: string) => api<RemoteTargetTestResult>(`/api/v1/remote-targets/${id}/test`, { method: "POST" }),
   uploadJobs: () => api<UploadJob[]>("/api/v1/uploads/jobs"),
+  uploadJob: (id: string) => api<UploadJob>(`/api/v1/uploads/jobs/${id}`),
   queueUpload: (body: UploadQueuePayload) => api<UploadQueueResult>("/api/v1/uploads/queue", { method: "POST", body: JSON.stringify(body) }),
   retryUploads: () => api<UploadRetryResult>("/api/v1/uploads/retry", { method: "POST" }),
   apiKeys: () => api<ApiKeyRow[]>("/api/v1/api-keys"),
@@ -149,7 +150,7 @@ export interface ModuleFlowRunResult { id: string; trigger: string; status: stri
 export interface RemoteTarget { id: string; name: string; type: string; enabled: boolean; config: Record<string, any>; created_at: string; updated_at: string; }
 export interface RemoteTargetPayload { name: string; type: "filesystem" | "rsync_ssh"; enabled: boolean; config: Record<string, any>; }
 export interface RemoteTargetTestResult { id: string; status: string; type: string; destination_path: string; }
-export interface UploadJob { id: string; target_id: string; source_type: string; source_id: string; source_path: string; destination_path?: string | null; status: string; attempts: number; last_error?: string | null; processing_job_id?: string | null; created_at: string; started_at?: string | null; completed_at?: string | null; }
+export interface UploadJob { id: string; target_id: string; target_name?: string | null; target_type?: string | null; target_enabled?: boolean | number | null; source_type: string; source_id: string; source_path: string; destination_path?: string | null; status: string; attempts: number; last_error?: string | null; processing_job_id?: string | null; created_at: string; started_at?: string | null; completed_at?: string | null; }
 export interface UploadQueuePayload { source_type: "latest" | "image" | "product"; source_id?: string; target_id?: string; }
 export interface UploadQueueResult { id: string; status: string; upload_job_ids: string[]; }
 export interface UploadRetryResult { status: string; processing_job_id: string | null; upload_job_ids: string[]; }

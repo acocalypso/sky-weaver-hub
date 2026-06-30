@@ -53,6 +53,7 @@ Remote upload endpoints require authenticated admin or processing scopes. Implem
 - `DELETE /api/v1/remote-targets/{target_id}` removes a target.
 - `POST /api/v1/remote-targets/{target_id}/test` creates/validates the destination directory.
 - `GET /api/v1/uploads/jobs` lists recent upload jobs.
+- `GET /api/v1/uploads/jobs/{upload_id}` returns one upload job with target name/type metadata and timing fields.
 - `POST /api/v1/uploads/queue` queues latest, image, or product upload work for enabled targets.
 - `POST /api/v1/uploads/retry` requeues failed upload jobs.
 
