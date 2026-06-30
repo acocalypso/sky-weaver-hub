@@ -15,7 +15,7 @@ This repository now contains a working local-first platform slice:
 - Daemon-owned scheduled capture loop with day/night profile selection, fixed/sun/twilight windows, restart-safe per-mode capture intervals, next-capture preview, latest-only unsaved captures, queued test/single/sequence captures, pause/resume/stop queue semantics, best-effort rpicam hard-cancel wiring, heartbeat reporting, interrupted job recovery, and stale daemon lock recovery.
 - Processing worker for thumbnail reprocess, keogram JPEGs, ffmpeg timelapses, mini timelapses, and startrail JPEGs, with end-of-night product jobs queued from the nighttime profile.
 - Built-in overlay module with editable lines, colors, placement controls, a trusted post-capture module flow, and external manifest registration; custom code uploads stay disabled until sandboxing/signing is implemented.
-- Public unauthenticated sky page at `/public`, backed by stable latest-image artifacts and public latest API endpoints that honor the public-page enabled setting, including latest-only captures that are not saved to the gallery.
+- Public unauthenticated sky page at `/public`, backed by stable latest-image artifacts and public latest/product API endpoints that honor the public-page enabled setting, including latest-only captures that are not saved to the gallery.
 - System Health UI with service controls, per-service detail, recent journal output, diagnostics export, and queue/metric summaries.
 - Systemd units and installer scripts for Pi deployment, with first-setup prompts, constrained service-control permissions, and dry-run/idempotency tests.
 - Allsky migration detection and dry-run preview endpoints. Real import is still scaffolded.
@@ -57,7 +57,7 @@ After install:
 
 On first login, the admin UI requires setup completion so you can replace the bootstrap password, confirm observatory location/timezone, detect or choose the primary camera, and set public page mode before normal admin use.
 
-When public page mode is disabled, `/public` shows a disabled state and `/api/v1/public/latest` plus its download/thumbnail endpoints return `403 Public page is disabled`.
+When public page mode is disabled, `/public` shows a disabled state and `/api/v1/public/latest` plus public product endpoints return `403 Public page is disabled`. When enabled, `/public` can show the latest image plus completed keograms, startrails, timelapses, and mini timelapses within the configured public product day window.
 
 The installer creates `/opt/skyweaver`, `/etc/skyweaver`, `/var/lib/skyweaver`, and `/var/log/skyweaver`, installs Node/npm and Python dependencies, grants the service user camera hardware groups, builds the frontend, installs systemd units, grants narrow sudoers permissions for Sky Weaver service controls, and starts `skyweaver.target`. On a fresh interactive install it asks for admin credentials, observatory location, timezone, primary camera adapter, and public page mode. Re-running the installer preserves the existing `/etc/skyweaver/skyweaver.env`.
 

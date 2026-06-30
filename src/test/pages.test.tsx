@@ -46,6 +46,7 @@ vi.mock("@/lib/api", async () => {
       detectCameras: vi.fn(),
       createCamera: vi.fn(),
       publicLatest: vi.fn(),
+      publicProducts: vi.fn(),
       modules: vi.fn(),
       registerModule: vi.fn(),
       patchModule: vi.fn(),
@@ -82,7 +83,7 @@ const mockImage = {
 const mockSettings = {
   observatory: { name: "Test Observatory", latitude: 47.1, longitude: 15.4, timezone: "Europe/Berlin" },
   storage: { images: "./data/images", videos: "./data/videos", retention_days: 30, min_free_gb: 2 },
-  public_page: { enabled: true, iframe_enabled: true },
+  public_page: { enabled: true, iframe_enabled: true, product_days: 7 },
   security: { cors_origins: ["http://localhost:8080"], first_setup_required: true },
 };
 
@@ -101,6 +102,33 @@ const mockPublicLatest = {
   download_url: "/api/v1/public/latest/download",
   metadata_url: "/api/v1/public/latest",
   thumbnail_url: "/api/v1/public/latest/thumbnail",
+};
+
+const mockPublicProducts = {
+  days: 7,
+  configured_days: 7,
+  products: [
+    {
+      id: "product-1",
+      type: "keogram",
+      day_key: "20260623",
+      status: "completed",
+      created_at: "2026-06-24T05:00:00+00:00",
+      metadata: { source_images: 42 },
+      download_url: "/api/v1/public/products/product-1/download",
+      thumbnail_url: "/api/v1/public/products/product-1/thumbnail",
+    },
+    {
+      id: "product-2",
+      type: "mini-timelapse",
+      day_key: "20260623",
+      status: "completed",
+      created_at: "2026-06-24T05:05:00+00:00",
+      metadata: { fps: 10 },
+      download_url: "/api/v1/public/products/product-2/download",
+      thumbnail_url: null,
+    },
+  ],
 };
 
 beforeEach(() => {
@@ -180,6 +208,7 @@ beforeEach(() => {
   vi.mocked(SkyApi.detectCameras).mockResolvedValue([]);
   vi.mocked(SkyApi.createCamera).mockResolvedValue({ id: "cam-2" });
   vi.mocked(SkyApi.publicLatest).mockResolvedValue(mockPublicLatest);
+  vi.mocked(SkyApi.publicProducts).mockResolvedValue(mockPublicProducts);
   vi.mocked(SkyApi.modules).mockResolvedValue([
     {
       id: "builtin.overlay",
@@ -301,6 +330,7 @@ describe("main pages", () => {
     expect(await screen.findByDisplayValue("Test Observatory")).toBeInTheDocument();
     expect(screen.getByText("Storage and retention")).toBeInTheDocument();
     expect(screen.getByText("Public and API")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("7")).toBeInTheDocument();
   });
 
   it("renders API key rows", async () => {
@@ -387,13 +417,20 @@ describe("main pages", () => {
     expect(screen.getByText("live")).toBeInTheDocument();
     expect(screen.getByText("night")).toBeInTheDocument();
     expect(screen.getByText("1280 x 960")).toBeInTheDocument();
+    expect(screen.getByText("Night products")).toBeInTheDocument();
+    expect(screen.getByText("Keogram")).toBeInTheDocument();
+    expect(screen.getByText("Mini timelapse")).toBeInTheDocument();
+    expect(screen.getByText("20260623 - 42 frames")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /keogram/i })).toHaveAttribute("href", "/api/v1/public/products/product-1/download");
     expect(screen.getByTestId("public-stats")).toHaveClass("overflow-x-auto");
     expect(screen.getByAltText("Latest public all-sky capture")).toHaveAttribute("src", "/api/v1/public/latest/download?v=img-1");
     await waitFor(() => expect(SkyApi.publicLatest).toHaveBeenCalled());
+    await waitFor(() => expect(SkyApi.publicProducts).toHaveBeenCalled());
   });
 
   it("renders disabled public sky state", async () => {
     vi.mocked(SkyApi.publicLatest).mockRejectedValueOnce(new Error("Public page is disabled"));
+    vi.mocked(SkyApi.publicProducts).mockRejectedValueOnce(new Error("Public page is disabled"));
 
     render(<PublicSky />);
 

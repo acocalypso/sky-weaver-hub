@@ -6,6 +6,7 @@ Mobile clients should use:
 - `GET /api/v1/images/latest`
 - `GET /api/v1/public/latest`
 - `GET /api/v1/public/latest/download`
+- `GET /api/v1/public/products`
 - `GET /api/v1/images?limit=50&offset=0`
 - `POST /api/v1/capture/start`
 - `POST /api/v1/capture/stop`
@@ -13,4 +14,4 @@ Mobile clients should use:
 
 Use API keys with least-privilege scopes. CORS is local-only by default and configurable in settings/environment.
 
-`/api/v1/public/latest` and its download endpoints are unauthenticated by design when `public_page.enabled` is true, and return only public display metadata plus stable latest image bytes. When the public page is disabled, mobile clients should treat `403 Public page is disabled` as a user-configured disabled state rather than an authentication failure.
+`/api/v1/public/latest`, `/api/v1/public/products`, and their download endpoints are unauthenticated by design when `public_page.enabled` is true. They return only public display metadata, stable latest image bytes, and completed product links within the configured `public_page.product_days` window. When the public page is disabled, mobile clients should treat `403 Public page is disabled` as a user-configured disabled state rather than an authentication failure.

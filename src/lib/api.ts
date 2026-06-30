@@ -56,6 +56,7 @@ export const SkyApi = {
   deleteImage: (id: string) => api<ImageDeleteResult>(`/api/v1/images/${id}`, { method: "DELETE" }),
   runImageRetention: (days?: number) => api<ImageRetentionResult>(`/api/v1/images/retention/run${days === undefined ? "" : `?days=${encodeURIComponent(days)}`}`, { method: "POST" }),
   publicLatest: () => api<PublicLatestImage>("/api/v1/public/latest"),
+  publicProducts: () => api<PublicProductsResponse>("/api/v1/public/products"),
   settings: () => api<Record<string, any>>("/api/v1/settings"),
   patchSettings: (values: Record<string, any>) => api<Record<string, any>>("/api/v1/settings", { method: "PATCH", body: JSON.stringify({ values }) }),
   schedule: () => api<ScheduleRow>("/api/v1/schedule"),
@@ -102,6 +103,8 @@ export interface ImageSkippedFile { path: string; status: "skipped"; reason?: st
 export interface ImageDeleteResult { deleted: string; deleted_files: string[]; missing_files: string[]; skipped_files: ImageSkippedFile[]; latest_republished?: PublicLatestImage | null; }
 export interface ImageRetentionResult { retention_days: number; cutoff: string; deleted_images: number; deleted_image_ids: string[]; deleted_files: string[]; missing_files: string[]; skipped_files: ImageSkippedFile[]; }
 export interface PublicLatestImage { id: string; captured_at: string; day_key: string; mode: string; format: string; width: number | null; height: number | null; size_bytes: number | null; exposure_ms?: number | null; gain?: number | null; camera_id?: string | null; download_url: string; metadata_url: string; thumbnail_url?: string | null; latest_file?: string; latest_thumbnail_file?: string; }
+export interface PublicProduct { id: string; type: string; day_key: string; status: string; created_at: string; metadata: any; download_url: string; thumbnail_url?: string | null; }
+export interface PublicProductsResponse { days: number; configured_days: number; products: PublicProduct[]; }
 export interface ScheduleRow { id?: string; enabled: boolean; start_mode: string; end_mode: string; sun_angle: number; start_sun_angle?: number | null; end_sun_angle?: number | null; fixed_start_time?: string | null; fixed_end_time?: string | null; timezone: string; latitude: number; longitude: number; interval_seconds: number; exposure_ramping_enabled: boolean; }
 export interface SchedulePreview {
   enabled: boolean;

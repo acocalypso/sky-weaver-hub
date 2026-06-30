@@ -5,7 +5,7 @@ import platform
 import shutil
 import subprocess
 import sys
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Annotated
 
@@ -1197,20 +1197,64 @@ def run_image_retention(
     return ok(result)
 
 
-def public_page_enabled() -> bool:
+PUBLIC_PRODUCT_TYPES = {"keogram", "startrail", "timelapse", "mini-timelapse"}
+PUBLIC_PRODUCT_DEFAULT_DAYS = 7
+
+
+def public_page_settings() -> dict[str, Any]:
     with session() as conn:
         row = conn.execute("SELECT value FROM system_settings WHERE key='public_page'").fetchone()
     if not row:
-        return True
+        return {"enabled": True, "product_days": PUBLIC_PRODUCT_DEFAULT_DAYS}
     value = json_loads(row["value"], {})
     if not isinstance(value, dict):
-        return True
+        return {"enabled": True, "product_days": PUBLIC_PRODUCT_DEFAULT_DAYS}
+    return value
+
+
+def public_page_enabled() -> bool:
+    value = public_page_settings()
     return bool(value.get("enabled", True))
 
 
 def require_public_page_enabled() -> None:
     if not public_page_enabled():
         raise HTTPException(403, "Public page is disabled")
+
+
+def public_product_days_limit() -> int:
+    value = public_page_settings().get("product_days", PUBLIC_PRODUCT_DEFAULT_DAYS)
+    try:
+        days = int(value)
+    except (TypeError, ValueError):
+        days = PUBLIC_PRODUCT_DEFAULT_DAYS
+    return max(1, min(days, 3650))
+
+
+def public_product_cutoff(days: int) -> str:
+    return (datetime.now(UTC) - timedelta(days=days)).isoformat()
+
+
+def public_product_payload(row: dict[str, Any]) -> dict[str, Any]:
+    product_id = row["id"]
+    thumbnail_path = row.get("thumbnail_path")
+    thumbnail_exists = bool(thumbnail_path and Path(thumbnail_path).exists())
+    metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
+    safe_metadata = {
+        key: metadata[key]
+        for key in ("source_images", "used_images", "fps", "codec", "format", "max_width", "sample_every")
+        if key in metadata
+    }
+    return {
+        "id": product_id,
+        "type": row["type"],
+        "day_key": row["day_key"],
+        "status": row["status"],
+        "created_at": row["created_at"],
+        "metadata": safe_metadata,
+        "download_url": f"/api/v1/public/products/{product_id}/download",
+        "thumbnail_url": f"/api/v1/public/products/{product_id}/thumbnail" if thumbnail_exists else None,
+    }
 
 
 @router.get("/public/latest")
@@ -1255,6 +1299,61 @@ def public_latest_thumbnail():
     if not latest_thumbnail or not latest_thumbnail.exists():
         raise HTTPException(404, "Latest thumbnail file not found")
     return FileResponse(latest_thumbnail)
+
+
+def public_product_row(product_id: str, days: int) -> dict[str, Any] | None:
+    cutoff = public_product_cutoff(days)
+    with session() as conn:
+        row = decode_row(row_to_dict(conn.execute(
+            "SELECT * FROM night_products WHERE id=? AND status='completed' AND created_at >= ?",
+            (product_id, cutoff),
+        ).fetchone()))
+    if not row or row.get("type") not in PUBLIC_PRODUCT_TYPES:
+        return None
+    return row
+
+
+@router.get("/public/products")
+def public_products(
+    days: int | None = Query(default=None, ge=1, le=3650),
+    limit: int = Query(default=48, ge=1, le=200),
+):
+    require_public_page_enabled()
+    configured_days = public_product_days_limit()
+    visible_days = min(days if days is not None else configured_days, configured_days)
+    cutoff = public_product_cutoff(visible_days)
+    placeholders = ",".join("?" for _ in PUBLIC_PRODUCT_TYPES)
+    params: tuple[Any, ...] = (*sorted(PUBLIC_PRODUCT_TYPES), cutoff, limit)
+    with session() as conn:
+        rows = all_rows(
+            conn,
+            f"SELECT * FROM night_products WHERE type IN ({placeholders}) AND status='completed' AND file_path IS NOT NULL AND created_at >= ? ORDER BY created_at DESC LIMIT ?",
+            params,
+        )
+    products_payload = [
+        public_product_payload(row)
+        for row in rows
+        if row.get("file_path") and Path(row["file_path"]).exists()
+    ]
+    return ok({"days": visible_days, "configured_days": configured_days, "products": products_payload})
+
+
+@router.get("/public/products/{product_id}/download")
+def public_product_download(product_id: str):
+    require_public_page_enabled()
+    row = public_product_row(product_id, public_product_days_limit())
+    if not row or not row.get("file_path") or not Path(row["file_path"]).exists():
+        raise HTTPException(404, "Product file not found")
+    return FileResponse(row["file_path"])
+
+
+@router.get("/public/products/{product_id}/thumbnail")
+def public_product_thumbnail(product_id: str):
+    require_public_page_enabled()
+    row = public_product_row(product_id, public_product_days_limit())
+    if not row or not row.get("thumbnail_path") or not Path(row["thumbnail_path"]).exists():
+        raise HTTPException(404, "Product thumbnail not found")
+    return FileResponse(row["thumbnail_path"])
 
 
 @router.get("/images/days")

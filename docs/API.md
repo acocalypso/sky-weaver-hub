@@ -34,11 +34,16 @@ Image and product cleanup endpoints use the same success envelope and require `w
 
 `GET /api/v1/modules` lists built-in and installed modules. The trusted built-in overlay module (`builtin.overlay`) can be enabled and configured with `PATCH /api/v1/modules/builtin.overlay`; custom code uploads stay disabled. External module packages can register a manifest with `POST /api/v1/modules/register`, but registered external modules are forced disabled/untrusted and cannot run until a future sandbox/signing runtime exists. Overlay settings include up to eight text lines, text/background colors, font size, margin, padding, and nine placement options. `GET /api/v1/module-flows` exposes the built-in `post_capture` flow, `PATCH /api/v1/module-flows/builtin.post_capture` can enable/disable it or update its validated built-in module order, and `POST /api/v1/module-flows/builtin.post_capture/run` validates the runnable module list. When the overlay module and post-capture flow are enabled, overlay metadata is recorded on image rows under `metadata.overlay` and `overlay_applied`.
 
-Public latest endpoints are intentionally unauthenticated for kiosk/public-page/mobile display use when `public_page.enabled` is true. When the public page is disabled, these endpoints return `403` with `Public page is disabled`:
+Public endpoints are intentionally unauthenticated for kiosk/public-page/mobile display use when `public_page.enabled` is true. When the public page is disabled, these endpoints return `403` with `Public page is disabled`:
 
 - `GET /api/v1/public/latest`
 - `GET /api/v1/public/latest/download`
 - `GET /api/v1/public/latest/thumbnail`
+- `GET /api/v1/public/products`
+- `GET /api/v1/public/products/{product_id}/download`
+- `GET /api/v1/public/products/{product_id}/thumbnail`
+
+`GET /api/v1/public/products` returns completed keogram, startrail, timelapse, and mini-timelapse products newer than the configured `public_page.product_days` setting. The response is wrapped in the standard success envelope and includes `days`, `configured_days`, and `products`. Public product entries include safe metadata plus public download/thumbnail URLs; local `file_path` and `thumbnail_path` values are never exposed.
 
 `GET /api/v1/system/services/{name}` returns per-service `systemctl show` properties, recent `journalctl` output, a `failure_analysis` summary, and `unit_history` timestamps/restart metadata when systemd tooling is available. These fields are read-only diagnostics for operators and mobile clients; service actions remain separate admin-scoped `POST /api/v1/system/services/{name}/{action}` calls.
 

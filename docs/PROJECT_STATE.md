@@ -48,7 +48,7 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 - Capture state/start/stop/pause/resume/test-shot/single/sequence/jobs
 - Schedule get/put/preview/recalculate
 - Image list/latest/detail/download/delete/reprocess/days/day and retention cleanup
-- Public latest metadata/download/thumbnail endpoints gated by `public_page.enabled`
+- Public latest and public product metadata/download/thumbnail endpoints gated by `public_page.enabled`
 - Products list/detail/queue/download/delete and retention cleanup
 - Dark frame placeholder endpoints
 - Module and module-flow endpoints, with a trusted built-in overlay module, trusted post-capture flow, external manifest registration, and custom code uploads still disabled
@@ -88,12 +88,13 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 - Capture daemon startup requeues interrupted claimed/running capture jobs after service restart.
 - `/api/v1/schedule/preview-tonight` returns a real active window, next transition, capture mode, interval, persisted last scheduled capture, and next capture due time for fixed, named twilight, sunrise/sunset, or independent start/end sun-altitude schedules.
 - Successful captures publish stable local latest artifacts and unauthenticated public latest metadata/download endpoints when the public page is enabled.
+- Completed keogram, startrail, timelapse, and mini-timelapse products can be exposed through public product endpoints within the configured `public_page.product_days` visibility window.
 - Backend tests verify daemon-run scheduled capture creation, interval gating, latest-only unsaved day captures, end-of-night product queueing, queued test-shot completion while automation is stopped, queued single-capture completion, queued sequence completion, graceful stop reporting, best-effort hard-cancel intent, adapter hard-cancel handling, pause/resume/stop semantics, schedule preview, heartbeat/activity reporting, interrupted job recovery, schema migrations, and a mock overnight flow that checks latest/gallery updates.
 
 ### Frontend
 
 - Local login page.
-- Public Sky page at `/public` that displays the latest public image and compact responsive safe metadata without admin login or controls, and shows a disabled state when `public_page.enabled` is false.
+- Public Sky page at `/public` that displays the latest public image, compact responsive safe metadata, and available public night products without admin login or controls, and shows a disabled state when `public_page.enabled` is false.
 - First-setup page that blocks normal admin routes until observatory details, timezone, primary camera, public page mode, and bootstrap password status are confirmed. It detects hardware camera candidates, warns when only mock capture is available, and shows live password readiness guidance.
 - Dashboard with latest image, start/pause/resume/stop/test-shot controls, queued single/sequence capture controls, capture job progress, daemon activity, status, metrics, and recent captures.
 - Cameras page with detection, adapter selection, day/night profile editing, per-mode capture/save/interval controls, end-of-night product toggles, and test shot.
@@ -164,7 +165,7 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 | Phase 2: Auth/API keys/settings/docs | Done | JWT login, API-key scopes, settings, API Keys UI, Developer API UI, installer-seeded first setup values, in-app first-setup enforcement, bootstrap-password detection, password-strength guidance, in-process rate limiting, local auth audit logging, and privileged-change security audit logging exist. |
 | Phase 3: Camera adapters and test shot | Partial | Mock and rpicam/libcamera implemented and validated with an IMX290 on Raspberry Pi. Initial ZWO adapter exists with fake-SDK tests; real ZWO hardware validation is pending. gPhoto2, V4L2, INDI, custom command are placeholders. |
 | Phase 4: Capture daemon and realtime | Done | Scheduled daemon loop, shared capture service, persistent job claiming for test/single/scheduled/sequence captures, day/night profile selection, restart-safe per-mode interval and save policy, next-capture due visibility, latest-only day captures, saved night captures, end-of-night product queueing, graceful stop reporting, real-Pi validated rpicam hard-cancel, pause/resume/stop queue semantics, active-window checks and UI preview, lock-file duplicate-loop guard with stale lock recovery, heartbeat/activity reporting, interrupted job recovery, SSE endpoint, Pi reboot service startup acceptance, IMX290 capture after restart/reboot acceptance, and accelerated indoor Pi day/night acceptance exist. Real outdoor overnight field validation remains a hardening task. |
-| Phase 5: Image storage/gallery/latest/metadata | Done | Capture artifacts, metadata sidecars, thumbnails, stable latest copies, image rows, gallery, latest image, public latest endpoints gated by public-page settings, public sky page, image detail, basic file/image metadata extraction, and JSON-safe EXIF extraction exist. |
+| Phase 5: Image storage/gallery/latest/metadata | Done | Capture artifacts, metadata sidecars, thumbnails, stable latest copies, image rows, gallery, latest image, public latest/product endpoints gated by public-page settings, public sky page, image detail, basic file/image metadata extraction, and JSON-safe EXIF extraction exist. |
 | Phase 6: Processing worker/products/retention | Done | Worker claims jobs, thumbnail reprocess exists, keogram JPEG generation, ffmpeg timelapse/mini-timelapse generation, startrail generation, image/product retention cleanup, and product deletion exist, and product job progress is visible in the UI. Remote upload execution is intentionally tracked in Phase 9. |
 | Phase 7: Overlay/modules | Done | Trusted built-in overlay module seeding, API configuration, capture-time text rendering with variables, image metadata/flagging, expanded overlay editor, built-in post-capture module flow execution, external module manifest registration/listing/deletion, and Modules UI exist. Custom code upload/execution is intentionally disabled until a future sandbox/signing runtime is designed. |
 | Phase 8: Installer/systemd/support/docs | Partial | Scripts and units exist. Shellcheck CI, installer dry-run/idempotency tests, service-control sudoers generation, interactive first-setup prompts, ZWO `libasi`/SDK provisioning hooks, real Pi install, repeat install, service restart, and reboot verification exist. Nginx option and broader Pi camera verification are open. |
@@ -315,7 +316,7 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 
 - Add frontend route smoke tests.
 - Expand component tests beyond Dashboard, Settings, Gallery, and API Keys.
-- Add browser smoke coverage for public page enabled/disabled states and compact mobile layout.
+- Add browser smoke coverage for public page enabled/disabled states, public product archives, and compact mobile layout.
 - Add admin route auth tests.
 - Add backend tests for:
   - schedule calculation
@@ -348,7 +349,7 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 
 Most recent local checks on 2026-06-30:
 
-- `backend\\.venv\\Scripts\\python -m pytest -p no:cacheprovider --basetemp .tmp\\pytest-all backend\\tests`: passed with 69 tests.
+- `backend\\.venv\\Scripts\\python -m pytest -p no:cacheprovider --basetemp .tmp\\pytest-all backend\\tests`: passed with 70 tests.
 - `npm run lint`: passed with zero warnings.
 - `npm test`: passed with 13 tests.
 - `npm run build`: passed.

@@ -1,13 +1,15 @@
 import { useEffect, useState } from "react";
 import { format, formatDistanceToNow } from "date-fns";
-import { Camera, Clock, ImageOff, RefreshCw, Telescope } from "lucide-react";
+import { Camera, Clock, Film, ImageOff, RefreshCw, Telescope } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/StatusBadge";
-import { SkyApi, type PublicLatestImage } from "@/lib/api";
+import { SkyApi, type PublicLatestImage, type PublicProduct } from "@/lib/api";
 import sampleSky from "@/assets/sample-sky-1.jpg";
 
 export default function PublicSky() {
   const [latest, setLatest] = useState<PublicLatestImage | null>(null);
+  const [products, setProducts] = useState<PublicProduct[]>([]);
+  const [productDays, setProductDays] = useState<number | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "empty" | "disabled" | "error">("loading");
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
 
@@ -19,21 +21,45 @@ export default function PublicSky() {
   }, []);
 
   async function load() {
+    let disabled = false;
+    let latestLoaded = false;
+    let productsLoaded = false;
     try {
       const data = await SkyApi.publicLatest();
       setLatest(data);
-      setStatus("ready");
-      setUpdatedAt(new Date());
+      latestLoaded = true;
     } catch (error) {
       setLatest(null);
       const message = error instanceof Error ? error.message : "";
       if (message.toLowerCase().includes("public page is disabled")) {
-        setStatus("disabled");
-      } else {
-        setStatus((current) => (current === "ready" ? "error" : "empty"));
+        disabled = true;
       }
-      setUpdatedAt(new Date());
     }
+
+    try {
+      const data = await SkyApi.publicProducts();
+      setProducts(data.products);
+      setProductDays(data.configured_days);
+      productsLoaded = true;
+    } catch (error) {
+      setProducts([]);
+      setProductDays(null);
+      const message = error instanceof Error ? error.message : "";
+      if (message.toLowerCase().includes("public page is disabled")) {
+        disabled = true;
+      }
+    }
+
+    if (disabled) {
+      setStatus("disabled");
+    } else if (latestLoaded) {
+      setStatus("ready");
+    } else if (productsLoaded) {
+      setStatus("empty");
+    } else {
+      setStatus((current) => (current === "ready" ? "error" : "empty"));
+    }
+    setUpdatedAt(new Date());
   }
 
   const imageUrl = latest ? `${latest.download_url}?v=${encodeURIComponent(latest.id)}` : sampleSky;
@@ -41,7 +67,7 @@ export default function PublicSky() {
   return (
     <main className="min-h-screen bg-background text-foreground">
       <div className="starfield" />
-      <section className="relative z-10 min-h-screen grid grid-rows-[auto_1fr_auto]">
+      <section className="relative z-10 min-h-screen grid grid-rows-[auto_minmax(0,1fr)_auto_auto]">
         <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between px-4 py-4 sm:px-6 lg:px-8 border-b border-border/60 bg-background/70 backdrop-blur-md">
           <div className="flex items-center gap-3 min-w-0">
             <div className="h-10 w-10 rounded-md border border-primary/30 bg-primary/10 grid place-items-center shrink-0">
@@ -81,6 +107,34 @@ export default function PublicSky() {
           </div>
         </div>
 
+        {products.length > 0 && (
+          <section className="border-t border-border/60 bg-background/85 px-4 py-3 backdrop-blur-md sm:px-6 lg:px-8">
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Night products</h2>
+              <span className="font-mono-data text-[10px] uppercase tracking-wider text-muted-foreground">{productDays ? `${productDays} days` : "recent"}</span>
+            </div>
+            <div className="grid grid-flow-col auto-cols-[minmax(10rem,13rem)] gap-3 overflow-x-auto pb-1">
+              {products.map((product) => (
+                <a key={product.id} href={product.download_url} className="group rounded-md border border-border/60 bg-muted/20 p-2 transition-colors hover:border-primary/70" target="_blank" rel="noreferrer">
+                  <div className="aspect-video overflow-hidden rounded bg-black/70">
+                    {product.thumbnail_url ? (
+                      <img src={`${product.thumbnail_url}?v=${encodeURIComponent(product.id)}`} alt={`${productLabel(product.type)} preview`} className="h-full w-full object-cover transition-transform group-hover:scale-105" />
+                    ) : (
+                      <div className="grid h-full w-full place-items-center text-muted-foreground">
+                        <Film className="h-7 w-7" />
+                      </div>
+                    )}
+                  </div>
+                  <div className="mt-2 min-w-0">
+                    <p className="truncate text-sm font-medium">{productLabel(product.type)}</p>
+                    <p className="mt-0.5 truncate font-mono-data text-[11px] text-muted-foreground">{productSubtitle(product)}</p>
+                  </div>
+                </a>
+              ))}
+            </div>
+          </section>
+        )}
+
         <footer className="relative z-10 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between px-4 py-3 sm:px-6 lg:px-8 border-t border-border/60 bg-background/80 backdrop-blur-md text-xs text-muted-foreground font-mono-data">
           <span>{updatedAt ? `Checked ${formatDistanceToNow(updatedAt, { addSuffix: true })}` : "Checking latest image"}</span>
           <span>{latest?.day_key ?? "No day key"}</span>
@@ -97,6 +151,18 @@ function PublicStat({ label, value, icon }: { label: string; value: string; icon
       <p className="mt-0.5 font-mono-data text-xs text-foreground truncate sm:mt-1 sm:text-sm">{value}</p>
     </div>
   );
+}
+
+function productLabel(type: string) {
+  if (type === "mini-timelapse") return "Mini timelapse";
+  return type.replace(/(^|-)([a-z])/g, (_match, separator: string, letter: string) => `${separator ? " " : ""}${letter.toUpperCase()}`);
+}
+
+function productSubtitle(product: PublicProduct) {
+  const parts = [product.day_key];
+  if (product.metadata?.source_images) parts.push(`${product.metadata.source_images} frames`);
+  if (product.metadata?.fps) parts.push(`${product.metadata.fps} fps`);
+  return parts.join(" - ");
 }
 
 function statusLabel(status: "loading" | "ready" | "empty" | "disabled" | "error") {

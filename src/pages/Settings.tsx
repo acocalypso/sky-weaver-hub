@@ -78,6 +78,7 @@ export default function SettingsPage() {
       <Section icon={<Shield className="h-4 w-4 text-primary" />} title="Public and API">
         <Toggle label="Public page enabled" hint="Expose /public without admin controls." value={Boolean(publicPage.enabled)} onChange={(v) => updateGroup("public_page", { enabled: v })} />
         <Toggle label="Iframe mode enabled" hint="Allow an embeddable read-only public sky view." value={Boolean(publicPage.iframe_enabled)} onChange={(v) => updateGroup("public_page", { iframe_enabled: v })} />
+        <Field label="Public product days" type="number" min={1} max={3650} value={String(publicPage.product_days ?? 7)} onChange={(v) => updateGroup("public_page", { product_days: Number(v) })} />
         <Field label="CORS origins" value={(security.cors_origins ?? []).join(",")} onChange={(v) => updateGroup("security", { cors_origins: v.split(",").map((x) => x.trim()).filter(Boolean) })} />
         <Toggle label="First setup required" hint="Installer should force a password change before unattended use." value={Boolean(security.first_setup_required)} onChange={(v) => updateGroup("security", { first_setup_required: v })} />
       </Section>

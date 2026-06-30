@@ -356,7 +356,7 @@ def default_settings(settings: Settings | None = None) -> dict[str, Any]:
     return {
         "observatory": observatory,
         "storage": {"images": "./data/images", "videos": "./data/videos", "retention_days": 30, "min_free_gb": 2},
-        "public_page": {"enabled": settings.public_page_enabled if settings else True, "refresh_seconds": 30, "iframe_enabled": True},
+        "public_page": {"enabled": settings.public_page_enabled if settings else True, "refresh_seconds": 30, "iframe_enabled": True, "product_days": 7},
         "security": {"cors_origins": ["http://localhost:8080"], "first_setup_required": settings.first_setup_required if settings else True},
         "processing": {"thumbnails": True, "keogram": True, "startrails": True, "timelapse": True},
     }

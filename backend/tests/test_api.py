@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -373,6 +374,59 @@ def test_public_latest_endpoints_honor_public_page_setting(tmp_path):
     authed_latest = client.get("/api/v1/images/latest", headers=headers)
     assert authed_latest.status_code == 200
     assert authed_latest.json()["data"]["id"] == image["id"]
+
+
+def test_public_products_are_safe_unauthenticated_and_visibility_limited(tmp_path):
+    client = make_client(tmp_path)
+    token = login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+    products_dir = tmp_path / "data" / "products"
+    products_dir.mkdir(parents=True, exist_ok=True)
+    recent_file = products_dir / "keogram.jpg"
+    recent_thumbnail = products_dir / "keogram-thumb.jpg"
+    old_file = products_dir / "old-startrail.jpg"
+    recent_file.write_bytes(b"recent-product")
+    recent_thumbnail.write_bytes(b"recent-thumb")
+    old_file.write_bytes(b"old-product")
+
+    from skyweaver.db import json_dumps, session
+
+    recent_id = "public-product-recent"
+    old_id = "public-product-old"
+    recent_at = datetime.now(UTC).isoformat()
+    old_at = (datetime.now(UTC) - timedelta(days=10)).isoformat()
+    with session() as conn:
+        conn.execute(
+            "INSERT INTO night_products (id, type, day_key, file_path, thumbnail_path, status, metadata, created_at) VALUES (?, 'keogram', '20260630', ?, ?, 'completed', ?, ?)",
+            (recent_id, str(recent_file), str(recent_thumbnail), json_dumps({"source_images": 42, "private_path": "/secret"}), recent_at),
+        )
+        conn.execute(
+            "INSERT INTO night_products (id, type, day_key, file_path, thumbnail_path, status, metadata, created_at) VALUES (?, 'startrail', '20260620', ?, NULL, 'completed', ?, ?)",
+            (old_id, str(old_file), json_dumps({"source_images": 99}), old_at),
+        )
+    settings_res = client.patch("/api/v1/settings", headers=headers, json={"values": {"public_page": {"enabled": True, "iframe_enabled": True, "product_days": 7}}})
+    assert settings_res.status_code == 200, settings_res.text
+
+    public_products = client.get("/api/v1/public/products")
+    assert public_products.status_code == 200, public_products.text
+    payload = public_products.json()["data"]
+    assert payload["configured_days"] == 7
+    assert [item["id"] for item in payload["products"]] == [recent_id]
+    product = payload["products"][0]
+    assert product["download_url"] == f"/api/v1/public/products/{recent_id}/download"
+    assert product["thumbnail_url"] == f"/api/v1/public/products/{recent_id}/thumbnail"
+    assert product["metadata"] == {"source_images": 42}
+    assert "file_path" not in product
+    assert "thumbnail_path" not in product
+
+    assert client.get(f"/api/v1/public/products/{recent_id}/download").content == b"recent-product"
+    assert client.get(f"/api/v1/public/products/{recent_id}/thumbnail").content == b"recent-thumb"
+    assert client.get(f"/api/v1/public/products/{old_id}/download").status_code == 404
+
+    disable_res = client.patch("/api/v1/settings", headers=headers, json={"values": {"public_page": {"enabled": False, "iframe_enabled": True, "product_days": 7}}})
+    assert disable_res.status_code == 200, disable_res.text
+    assert client.get("/api/v1/public/products").status_code == 403
+    assert client.get(f"/api/v1/public/products/{recent_id}/download").status_code == 403
 
 
 def test_api_key_scopes(tmp_path):
