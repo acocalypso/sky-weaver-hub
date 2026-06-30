@@ -115,7 +115,20 @@ def _core_indexes(conn: sqlite3.Connection) -> None:
         conn.execute(statement)
 
 
+def _schedule_split_sun_angles(conn: sqlite3.Connection) -> None:
+    ensure_columns(
+        conn,
+        "capture_schedule",
+        {
+            "start_sun_angle": "REAL",
+            "end_sun_angle": "REAL",
+        },
+    )
+    conn.execute("UPDATE capture_schedule SET start_sun_angle=COALESCE(start_sun_angle, sun_angle), end_sun_angle=COALESCE(end_sun_angle, sun_angle)")
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(1, "capture_daemon_job_columns", _capture_daemon_columns),
     Migration(2, "core_query_indexes", _core_indexes),
+    Migration(3, "schedule_split_sun_angles", _schedule_split_sun_angles),
 )

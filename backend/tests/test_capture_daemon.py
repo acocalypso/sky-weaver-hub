@@ -1,5 +1,6 @@
 from pathlib import Path
 import asyncio
+from datetime import UTC, datetime, timedelta
 
 from test_api import login, make_client, run_queued_test_capture
 
@@ -513,6 +514,111 @@ def test_schedule_preview_reports_active_fixed_window(tmp_path: Path):
     assert preview["next_state"] == "inactive"
     assert preview["window_start"].startswith("2026-06-23T18:00:00")
     assert preview["window_end"].startswith("2026-06-24T06:00:00")
+
+
+def test_schedule_preview_supports_named_twilight_window(tmp_path: Path):
+    client = make_client(tmp_path)
+    token = login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    preview = client.post(
+        "/api/v1/schedule/preview-tonight",
+        headers=headers,
+        json={
+            "enabled": True,
+            "start_mode": "nautical_dusk",
+            "end_mode": "sunrise",
+            "timezone": "Europe/Berlin",
+            "latitude": 49.1012,
+            "longitude": 10.1210,
+            "now": "2026-06-30T01:00:00+02:00",
+        },
+    )
+
+    assert preview.status_code == 200, preview.text
+    data = preview.json()["data"]
+    assert data["active"] is True
+    assert data["window_start"].startswith("2026-06-29T")
+    assert data["window_end"].startswith("2026-06-30T")
+    assert data["timezone"] == "Europe/Berlin"
+
+
+def test_schedule_persists_independent_sun_angles(tmp_path: Path):
+    client = make_client(tmp_path)
+    token = login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    saved = client.put(
+        "/api/v1/schedule",
+        headers=headers,
+        json={
+            "enabled": True,
+            "start_mode": "sun_angle",
+            "end_mode": "sun_angle",
+            "sun_angle": -6,
+            "start_sun_angle": -8,
+            "end_sun_angle": -2,
+            "timezone": "Europe/Berlin",
+            "latitude": 49.1012,
+            "longitude": 10.1210,
+            "interval_seconds": 30,
+            "exposure_ramping_enabled": False,
+        },
+    )
+
+    assert saved.status_code == 200, saved.text
+    schedule = client.get("/api/v1/schedule", headers=headers).json()["data"]
+    assert schedule["start_sun_angle"] == -8
+    assert schedule["end_sun_angle"] == -2
+
+
+def test_scheduled_capture_due_uses_previous_start_time(tmp_path: Path):
+    client = make_client(tmp_path)
+    token = login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+    assert client.put(
+        "/api/v1/schedule",
+        headers=headers,
+        json={
+            "enabled": True,
+            "start_mode": "fixed",
+            "end_mode": "fixed",
+            "fixed_start_time": "00:00",
+            "fixed_end_time": "23:59",
+            "sun_angle": -6,
+            "timezone": "UTC",
+            "latitude": 0,
+            "longitude": 0,
+            "interval_seconds": 30,
+            "exposure_ramping_enabled": False,
+        },
+    ).status_code == 200
+
+    from skyweaver.db import json_dumps, new_id, session
+    from skyweaver.services.capture import scheduled_capture_timing
+
+    now = datetime(2026, 6, 30, 7, 13, 39, tzinfo=UTC)
+    with session() as conn:
+        camera = conn.execute("SELECT id FROM cameras WHERE is_primary=1 LIMIT 1").fetchone()
+        profile = conn.execute("SELECT id, settings FROM camera_profiles WHERE camera_id=? AND mode='nighttime'", (camera["id"],)).fetchone()
+        settings = {"capture_enabled": True, "save_enabled": True, "interval_seconds": 30}
+        conn.execute("UPDATE camera_profiles SET settings=? WHERE id=?", (json_dumps(settings), profile["id"]))
+        conn.execute(
+            """INSERT INTO capture_jobs (id, type, status, request, result, progress, created_at, completed_at)
+               VALUES (?, 'scheduled', 'completed', ?, ?, 1, ?, ?)""",
+            (
+                new_id(),
+                json_dumps({"mode": "night", "camera_id": camera["id"]}),
+                json_dumps({"image_id": new_id()}),
+                (now - timedelta(seconds=101)).isoformat(),
+                now.isoformat(),
+            ),
+        )
+
+    timing = scheduled_capture_timing("night", now, camera_id=camera["id"])
+    assert timing["capture_due"] is True
+    assert timing["last_scheduled_capture_at"] == now.isoformat()
+    assert timing["last_scheduled_capture_started_at"] == (now - timedelta(seconds=101)).isoformat()
 
 
 def test_daemon_heartbeat_is_reported_by_services(tmp_path: Path):

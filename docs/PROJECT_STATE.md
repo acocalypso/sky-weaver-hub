@@ -76,7 +76,7 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 ### Capture Daemon
 
 - `backend/skyweaver/capture_daemon.py` now owns a scheduled capture loop.
-- The daemon checks capture state, selects day or night mode from the configured active window, honors restart-safe per-profile capture intervals from persisted scheduled job completion times, claims pending capture jobs, and runs scheduled captures through the shared capture service.
+- The daemon checks capture state, selects day or night mode from the configured active window, honors restart-safe per-profile capture intervals from persisted scheduled job start times, claims pending capture jobs, and runs scheduled captures through the shared capture service.
 - Daytime and nighttime profiles can independently enable/disable capture and saving; unsaved scheduled captures update stable latest artifacts without creating permanent gallery rows.
 - Nighttime profiles can queue keogram, startrail, timelapse, and mini-timelapse jobs once when the daemon observes the night window ending.
 - A daemon lock file prevents duplicate daemon loops from running in the same data directory.
@@ -86,7 +86,7 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 - `/api/v1/capture/sequence` creates a persistent parent job that the daemon expands into child capture artifacts.
 - Pause holds queued automation capture jobs, resume releases them, test-shot jobs still run for manual verification, and stop cancels pending/claimed queued capture jobs while recording best-effort cancel intent for in-progress exposures. The rpicam/libcamera adapter can terminate its active capture subprocess from inside the daemon process; adapters without hard-cancel support still finish gracefully.
 - Capture daemon startup requeues interrupted claimed/running capture jobs after service restart.
-- `/api/v1/schedule/preview-tonight` returns a real active window, next transition, capture mode, interval, persisted last scheduled capture, and next capture due time for fixed or sun-angle schedules.
+- `/api/v1/schedule/preview-tonight` returns a real active window, next transition, capture mode, interval, persisted last scheduled capture, and next capture due time for fixed, named twilight, sunrise/sunset, or independent start/end sun-altitude schedules.
 - Successful captures publish stable local latest artifacts and unauthenticated public latest metadata/download endpoints when the public page is enabled.
 - Backend tests verify daemon-run scheduled capture creation, interval gating, latest-only unsaved day captures, end-of-night product queueing, queued test-shot completion while automation is stopped, queued single-capture completion, queued sequence completion, graceful stop reporting, best-effort hard-cancel intent, adapter hard-cancel handling, pause/resume/stop semantics, schedule preview, heartbeat/activity reporting, interrupted job recovery, schema migrations, and a mock overnight flow that checks latest/gallery updates.
 

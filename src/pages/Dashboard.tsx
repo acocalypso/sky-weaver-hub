@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { StatusBadge } from "@/components/StatusBadge";
 import { SkyApi, type CameraRow, type CaptureJob, type ImageRow, type PublicLatestImage, type SchedulePreview, type SkyStatus, type SystemMetrics } from "@/lib/api";
-import { getTonightTimeline, getSunAltitude } from "@/lib/sun";
+import { getTonightTimeline, getSunAltitude, isValidLatLon } from "@/lib/sun";
 import sampleSky from "@/assets/sample-sky-1.jpg";
 import { Play, Pause, Square, Camera, RefreshCw, Film, RotateCw, Cpu, MemoryStick, HardDrive, Thermometer, Activity, Clock } from "lucide-react";
 import { toast } from "sonner";
@@ -59,7 +59,7 @@ export default function Dashboard() {
   const captureStatus = status?.capture?.status ?? "idle";
   const latitude = Number(observatory.latitude);
   const longitude = Number(observatory.longitude);
-  const validLocation = Number.isFinite(latitude) && Number.isFinite(longitude);
+  const validLocation = isValidLatLon(latitude, longitude);
 
   const timeline = useMemo(() => getTonightTimeline(validLocation ? latitude : 0, validLocation ? longitude : 0), [latitude, longitude, validLocation]);
   const sunAlt = useMemo(() => validLocation ? getSunAltitude(latitude, longitude) : null, [latitude, longitude, validLocation]);

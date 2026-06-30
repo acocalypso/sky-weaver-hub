@@ -257,6 +257,8 @@ class SchedulePut(BaseModel):
     start_mode: str = "sun_angle"
     end_mode: str = "sun_angle"
     sun_angle: float = -6
+    start_sun_angle: float | None = None
+    end_sun_angle: float | None = None
     fixed_start_time: str | None = None
     fixed_end_time: str | None = None
     timezone: str = "UTC"
@@ -1099,15 +1101,17 @@ def get_schedule(_principal: Annotated[dict, Depends(require_scope("read:setting
 
 @router.put("/schedule")
 def put_schedule(body: SchedulePut, request: Request, principal: Annotated[dict, Depends(require_scope("write:settings"))]):
+    start_sun_angle = body.start_sun_angle if body.start_sun_angle is not None else body.sun_angle
+    end_sun_angle = body.end_sun_angle if body.end_sun_angle is not None else body.sun_angle
     with session() as conn:
         row = conn.execute("SELECT id FROM capture_schedule LIMIT 1").fetchone()
         schedule_id = row["id"] if row else new_id()
         conn.execute(
             """INSERT OR REPLACE INTO capture_schedule
-               (id, enabled, start_mode, end_mode, sun_angle, fixed_start_time, fixed_end_time, timezone, latitude, longitude,
+               (id, enabled, start_mode, end_mode, sun_angle, start_sun_angle, end_sun_angle, fixed_start_time, fixed_end_time, timezone, latitude, longitude,
                 interval_seconds, exposure_ramping_enabled, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE((SELECT created_at FROM capture_schedule WHERE id=?), ?), ?)""",
-            (schedule_id, int(body.enabled), body.start_mode, body.end_mode, body.sun_angle, body.fixed_start_time, body.fixed_end_time,
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE((SELECT created_at FROM capture_schedule WHERE id=?), ?), ?)""",
+            (schedule_id, int(body.enabled), body.start_mode, body.end_mode, body.sun_angle, start_sun_angle, end_sun_angle, body.fixed_start_time, body.fixed_end_time,
              body.timezone, body.latitude, body.longitude, body.interval_seconds, int(body.exposure_ramping_enabled), schedule_id, now_iso(), now_iso()),
         )
         event(conn, "schedule_updated", {"id": schedule_id})
@@ -1120,7 +1124,10 @@ def put_schedule(body: SchedulePut, request: Request, principal: Annotated[dict,
             principal,
             {"schedule_id": schedule_id, "changed_fields": field_names(body.model_dump()), "enabled": body.enabled, "timezone": body.timezone},
         )
-    return ok({"id": schedule_id, **body.model_dump()})
+    payload = body.model_dump()
+    payload["start_sun_angle"] = start_sun_angle
+    payload["end_sun_angle"] = end_sun_angle
+    return ok({"id": schedule_id, **payload})
 
 
 @router.post("/schedule/preview-tonight")
@@ -1141,6 +1148,7 @@ def preview_tonight(payload: dict[str, Any], _principal: Annotated[dict, Depends
             "save_enabled": False,
             "interval_seconds": None,
             "last_scheduled_capture_at": None,
+            "last_scheduled_capture_started_at": None,
             "next_capture_due_at": None,
             "capture_due": False,
             "seconds_until_due": None,

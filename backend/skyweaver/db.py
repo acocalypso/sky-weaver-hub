@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS system_settings (
 CREATE TABLE IF NOT EXISTS capture_schedule (
   id TEXT PRIMARY KEY, enabled INTEGER NOT NULL DEFAULT 0, start_mode TEXT NOT NULL DEFAULT 'sun_angle',
   end_mode TEXT NOT NULL DEFAULT 'sun_angle', sun_angle REAL NOT NULL DEFAULT -6,
+  start_sun_angle REAL, end_sun_angle REAL,
   fixed_start_time TEXT, fixed_end_time TEXT, timezone TEXT NOT NULL DEFAULT 'UTC',
   latitude REAL NOT NULL DEFAULT 0, longitude REAL NOT NULL DEFAULT 0,
   interval_seconds INTEGER NOT NULL DEFAULT 30, exposure_ramping_enabled INTEGER NOT NULL DEFAULT 0,
@@ -189,8 +190,8 @@ def seed_defaults(conn: sqlite3.Connection, settings: Settings) -> None:
     if conn.execute("SELECT COUNT(*) FROM capture_schedule").fetchone()[0] == 0:
         conn.execute(
             """INSERT INTO capture_schedule
-               (id, enabled, sun_angle, timezone, latitude, longitude, interval_seconds, created_at, updated_at)
-               VALUES (?, 0, -6, ?, ?, ?, 30, ?, ?)""",
+               (id, enabled, sun_angle, start_sun_angle, end_sun_angle, timezone, latitude, longitude, interval_seconds, created_at, updated_at)
+               VALUES (?, 0, -6, -6, -6, ?, ?, ?, 30, ?, ?)""",
             (new_id(), settings.observatory_timezone, settings.observatory_latitude, settings.observatory_longitude, ts, ts),
         )
     conn.execute(

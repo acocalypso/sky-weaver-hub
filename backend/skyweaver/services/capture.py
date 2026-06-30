@@ -648,24 +648,29 @@ def parse_timestamp(value: str | None) -> datetime | None:
     return parsed.astimezone(UTC)
 
 
-def latest_completed_scheduled_capture_at(mode: str | None = None) -> datetime | None:
+def latest_completed_scheduled_capture(mode: str | None = None) -> dict[str, datetime | None] | None:
     with session() as conn:
         rows = conn.execute(
-            "SELECT request, completed_at FROM capture_jobs WHERE type='scheduled' AND status='completed' AND completed_at IS NOT NULL ORDER BY completed_at DESC LIMIT 200"
+            "SELECT request, created_at, completed_at FROM capture_jobs WHERE type='scheduled' AND status='completed' AND completed_at IS NOT NULL ORDER BY created_at DESC LIMIT 200"
         ).fetchall()
     for row in rows:
         decoded = decode_row(row_to_dict(row)) or {}
         request = decoded.get("request") if isinstance(decoded.get("request"), dict) else {}
         if mode is None or request.get("mode") == mode:
-            return parse_timestamp(decoded.get("completed_at"))
+            return {
+                "created_at": parse_timestamp(decoded.get("created_at")),
+                "completed_at": parse_timestamp(decoded.get("completed_at")),
+            }
     return None
 
 
 def scheduled_capture_timing(mode: str, now: datetime | None = None, camera_id: str | None = None) -> dict[str, Any]:
     current = (now or datetime.now(UTC)).astimezone(UTC)
     interval = capture_interval_seconds(mode, camera_id)
-    last_capture_at = latest_completed_scheduled_capture_at(mode)
-    due_at = last_capture_at + timedelta(seconds=interval) if last_capture_at else current
+    last_capture = latest_completed_scheduled_capture(mode)
+    last_started_at = last_capture.get("created_at") if last_capture else None
+    last_completed_at = last_capture.get("completed_at") if last_capture else None
+    due_at = last_started_at + timedelta(seconds=interval) if last_started_at else current
     capture_enabled = scheduled_capture_enabled(mode, camera_id)
     command = schedule_command(camera_id, mode)
     save_enabled = bool(command.settings.get("save_enabled", True))
@@ -675,7 +680,8 @@ def scheduled_capture_timing(mode: str, now: datetime | None = None, camera_id: 
         "capture_enabled": capture_enabled,
         "save_enabled": save_enabled,
         "interval_seconds": interval,
-        "last_scheduled_capture_at": last_capture_at.isoformat() if last_capture_at else None,
+        "last_scheduled_capture_at": last_completed_at.isoformat() if last_completed_at else None,
+        "last_scheduled_capture_started_at": last_started_at.isoformat() if last_started_at else None,
         "next_capture_due_at": due_at.isoformat(),
         "capture_due": due,
         "seconds_until_due": max(0, int((due_at - current).total_seconds())),

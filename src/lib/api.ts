@@ -98,7 +98,7 @@ export interface ImageSkippedFile { path: string; status: "skipped"; reason?: st
 export interface ImageDeleteResult { deleted: string; deleted_files: string[]; missing_files: string[]; skipped_files: ImageSkippedFile[]; latest_republished?: PublicLatestImage | null; }
 export interface ImageRetentionResult { retention_days: number; cutoff: string; deleted_images: number; deleted_image_ids: string[]; deleted_files: string[]; missing_files: string[]; skipped_files: ImageSkippedFile[]; }
 export interface PublicLatestImage { id: string; captured_at: string; day_key: string; mode: string; format: string; width: number | null; height: number | null; size_bytes: number | null; exposure_ms?: number | null; gain?: number | null; camera_id?: string | null; download_url: string; metadata_url: string; thumbnail_url?: string | null; latest_file?: string; latest_thumbnail_file?: string; }
-export interface ScheduleRow { id?: string; enabled: boolean; start_mode: string; end_mode: string; sun_angle: number; fixed_start_time?: string | null; fixed_end_time?: string | null; timezone: string; latitude: number; longitude: number; interval_seconds: number; exposure_ramping_enabled: boolean; }
+export interface ScheduleRow { id?: string; enabled: boolean; start_mode: string; end_mode: string; sun_angle: number; start_sun_angle?: number | null; end_sun_angle?: number | null; fixed_start_time?: string | null; fixed_end_time?: string | null; timezone: string; latitude: number; longitude: number; interval_seconds: number; exposure_ramping_enabled: boolean; }
 export interface SchedulePreview {
   enabled: boolean;
   active: boolean;
@@ -113,6 +113,7 @@ export interface SchedulePreview {
   save_enabled?: boolean;
   interval_seconds?: number | null;
   last_scheduled_capture_at?: string | null;
+  last_scheduled_capture_started_at?: string | null;
   next_capture_due_at?: string | null;
   capture_due?: boolean;
   seconds_until_due?: number | null;

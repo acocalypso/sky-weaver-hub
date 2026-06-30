@@ -12,14 +12,36 @@ import { CalendarClock, Moon, Sunrise } from "lucide-react";
 import { toast } from "sonner";
 import { format, formatDistanceToNow } from "date-fns";
 
+const startModeOptions = [
+  { value: "sun_angle", label: "Sun altitude" },
+  { value: "sunset", label: "Sunset" },
+  { value: "civil_dusk", label: "Civil dusk" },
+  { value: "nautical_dusk", label: "Nautical dusk" },
+  { value: "astronomical_dusk", label: "Astronomical dusk" },
+  { value: "fixed", label: "Fixed clock time" },
+  { value: "manual", label: "Manual" },
+];
+
+const endModeOptions = [
+  { value: "sun_angle", label: "Sun altitude" },
+  { value: "sunrise", label: "Sunrise" },
+  { value: "civil_dawn", label: "Civil dawn" },
+  { value: "nautical_dawn", label: "Nautical dawn" },
+  { value: "astronomical_dawn", label: "Astronomical dawn" },
+  { value: "fixed", label: "Fixed clock time" },
+  { value: "manual", label: "Manual" },
+];
+
 export default function Schedule() {
   const [s, setS] = useState<ScheduleRow | null>(null);
   const [preview, setPreview] = useState<SchedulePreview | null>(null);
+  const [observatory, setObservatory] = useState<Record<string, any> | null>(null);
 
   useEffect(() => {
     document.title = "Schedule - Sky Weaver Hub";
-    SkyApi.schedule()
-      .then((schedule) => {
+    Promise.all([SkyApi.schedule(), SkyApi.settings()])
+      .then(([schedule, settings]) => {
+        setObservatory(settings.observatory ?? null);
         setS(schedule);
         return SkyApi.schedulePreview(schedule);
       })
@@ -73,15 +95,22 @@ export default function Schedule() {
         </div>
       </Card>
       <Card className="telemetry-card space-y-6">
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" size="sm" onClick={() => setS({ ...s, start_mode: "nautical_dusk", end_mode: "sunrise" })}>Nautical dusk to sunrise</Button>
+          <Button variant="outline" size="sm" onClick={() => setS({ ...s, start_mode: "sunset", end_mode: "sunrise" })}>Sunset to sunrise</Button>
+          <Button variant="outline" size="sm" onClick={() => setS({ ...s, start_mode: "astronomical_dusk", end_mode: "astronomical_dawn" })}>Astronomical night</Button>
+          {observatory && <Button variant="outline" size="sm" onClick={() => setS({ ...s, timezone: String(observatory.timezone ?? s.timezone), latitude: Number(observatory.latitude ?? s.latitude), longitude: Number(observatory.longitude ?? s.longitude) })}>Use observatory</Button>}
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <ModeSelect label="Start mode" value={s.start_mode} onChange={(v) => setS({ ...s, start_mode: v })} />
-          <ModeSelect label="End mode" value={s.end_mode} onChange={(v) => setS({ ...s, end_mode: v })} />
+          <ModeSelect label="Start mode" value={s.start_mode} options={startModeOptions} onChange={(v) => setS({ ...s, start_mode: v })} />
+          <ModeSelect label="End mode" value={s.end_mode} options={endModeOptions} onChange={(v) => setS({ ...s, end_mode: v })} />
           {s.start_mode === "fixed" && <Field label="Fixed start time" type="time" value={s.fixed_start_time ?? "18:00"} onChange={(v) => setS({ ...s, fixed_start_time: v })} />}
           {s.end_mode === "fixed" && <Field label="Fixed end time" type="time" value={s.fixed_end_time ?? "06:00"} onChange={(v) => setS({ ...s, fixed_end_time: v })} />}
+          {s.start_mode === "sun_angle" && <Field label="Start sun altitude" type="number" step="0.1" value={String(s.start_sun_angle ?? s.sun_angle)} onChange={(v) => setS({ ...s, start_sun_angle: Number(v), sun_angle: Number(v) })} />}
+          {s.end_mode === "sun_angle" && <Field label="End sun altitude" type="number" step="0.1" value={String(s.end_sun_angle ?? s.sun_angle)} onChange={(v) => setS({ ...s, end_sun_angle: Number(v) })} />}
           <Field label="Latitude" type="number" step="0.0001" value={String(s.latitude)} onChange={(v) => setS({ ...s, latitude: Number(v) })} />
           <Field label="Longitude" type="number" step="0.0001" value={String(s.longitude)} onChange={(v) => setS({ ...s, longitude: Number(v) })} />
           <Field label="Timezone" value={s.timezone} onChange={(v) => setS({ ...s, timezone: v })} />
-          <Field label="Sun angle" type="number" value={String(s.sun_angle)} onChange={(v) => setS({ ...s, sun_angle: Number(v) })} />
         </div>
         <div><Label>Interval between captures: <span className="font-mono-data text-foreground">{s.interval_seconds}s</span></Label><Slider min={5} max={600} step={5} value={[s.interval_seconds]} onValueChange={([v]) => setS({ ...s, interval_seconds: v })} className="mt-3" /></div>
         <div className="flex items-center justify-between p-3 rounded-md border border-border bg-muted/20"><div><p className="text-sm font-medium">Exposure ramping</p><p className="text-xs text-muted-foreground mt-0.5">Worker will smooth exposure changes during twilight.</p></div><Switch checked={s.exposure_ramping_enabled} onCheckedChange={(v) => setS({ ...s, exposure_ramping_enabled: v })} /></div>
@@ -91,8 +120,8 @@ export default function Schedule() {
   );
 }
 
-function ModeSelect({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
-  return <div className="space-y-2"><Label className="flex items-center gap-2"><CalendarClock className="h-4 w-4 text-primary" /> {label}</Label><Select value={value} onValueChange={onChange}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="sun_angle">Sun angle</SelectItem><SelectItem value="fixed">Fixed clock time</SelectItem><SelectItem value="manual">Manual</SelectItem></SelectContent></Select></div>;
+function ModeSelect({ label, value, options, onChange }: { label: string; value: string; options: { value: string; label: string }[]; onChange: (v: string) => void }) {
+  return <div className="space-y-2"><Label className="flex items-center gap-2"><CalendarClock className="h-4 w-4 text-primary" /> {label}</Label><Select value={value} onValueChange={onChange}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{options.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent></Select></div>;
 }
 
 function Field({ label, value, onChange, ...rest }: { label: string; value: string; onChange: (v: string) => void } & React.InputHTMLAttributes<HTMLInputElement>) {

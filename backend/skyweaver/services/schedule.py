@@ -2,8 +2,8 @@ from datetime import date, datetime, time, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from astral import Observer
-from astral.sun import SunDirection, time_at_elevation
+from astral import Depression, Observer
+from astral.sun import SunDirection, dawn, dusk, sunrise, sunset, time_at_elevation
 
 
 def _tz(name: str) -> ZoneInfo:
@@ -27,24 +27,69 @@ def _fixed_transition(day: date, value: str | None, tz: ZoneInfo, fallback: time
     return datetime.combine(day, _parse_clock(value, fallback), tzinfo=tz)
 
 
-def _sun_transition(day: date, schedule: dict[str, Any], direction: SunDirection, tz: ZoneInfo) -> datetime | None:
-    observer = Observer(latitude=float(schedule.get("latitude", 0)), longitude=float(schedule.get("longitude", 0)))
+def _observer(schedule: dict[str, Any]) -> Observer:
+    return Observer(latitude=float(schedule.get("latitude", 0)), longitude=float(schedule.get("longitude", 0)))
+
+
+def _sun_angle(schedule: dict[str, Any], key: str) -> float:
+    value = schedule.get(key)
+    if value is None:
+        value = schedule.get("sun_angle", -6)
+    return float(value)
+
+
+def _sun_transition(day: date, schedule: dict[str, Any], direction: SunDirection, tz: ZoneInfo, angle_key: str) -> datetime | None:
+    observer = _observer(schedule)
     try:
-        return time_at_elevation(observer, float(schedule.get("sun_angle", -6)), date=day, direction=direction, tzinfo=tz)
-    except ValueError:
+        return time_at_elevation(observer, _sun_angle(schedule, angle_key), date=day, direction=direction, tzinfo=tz)
+    except (TypeError, ValueError):
         return None
 
 
+def _event_transition(day: date, schedule: dict[str, Any], mode: str, tz: ZoneInfo) -> datetime | None:
+    observer = _observer(schedule)
+    try:
+        if mode == "sunset":
+            return sunset(observer, date=day, tzinfo=tz)
+        if mode == "sunrise":
+            return sunrise(observer, date=day, tzinfo=tz)
+        if mode == "civil_dusk":
+            return dusk(observer, date=day, depression=Depression.CIVIL, tzinfo=tz)
+        if mode == "nautical_dusk":
+            return dusk(observer, date=day, depression=Depression.NAUTICAL, tzinfo=tz)
+        if mode == "astronomical_dusk":
+            return dusk(observer, date=day, depression=Depression.ASTRONOMICAL, tzinfo=tz)
+        if mode == "civil_dawn":
+            return dawn(observer, date=day, depression=Depression.CIVIL, tzinfo=tz)
+        if mode == "nautical_dawn":
+            return dawn(observer, date=day, depression=Depression.NAUTICAL, tzinfo=tz)
+        if mode == "astronomical_dawn":
+            return dawn(observer, date=day, depression=Depression.ASTRONOMICAL, tzinfo=tz)
+    except (TypeError, ValueError):
+        return None
+    return None
+
+
 def _start_for(day: date, schedule: dict[str, Any], tz: ZoneInfo) -> datetime | None:
-    if schedule.get("start_mode") == "fixed":
+    mode = str(schedule.get("start_mode") or "sun_angle")
+    if mode == "manual":
+        return None
+    if mode == "fixed":
         return _fixed_transition(day, schedule.get("fixed_start_time"), tz, time(18, 0))
-    return _sun_transition(day, schedule, SunDirection.SETTING, tz)
+    if mode == "sun_angle":
+        return _sun_transition(day, schedule, SunDirection.SETTING, tz, "start_sun_angle")
+    return _event_transition(day, schedule, mode, tz)
 
 
 def _end_for(day: date, schedule: dict[str, Any], tz: ZoneInfo) -> datetime | None:
-    if schedule.get("end_mode") == "fixed":
+    mode = str(schedule.get("end_mode") or "sun_angle")
+    if mode == "manual":
+        return None
+    if mode == "fixed":
         return _fixed_transition(day, schedule.get("fixed_end_time"), tz, time(6, 0))
-    return _sun_transition(day, schedule, SunDirection.RISING, tz)
+    if mode == "sun_angle":
+        return _sun_transition(day, schedule, SunDirection.RISING, tz, "end_sun_angle")
+    return _event_transition(day, schedule, mode, tz)
 
 
 def active_window(schedule: dict[str, Any], now: datetime | None = None) -> dict[str, Any]:
