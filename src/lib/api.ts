@@ -53,6 +53,7 @@ export const SkyApi = {
   queueSequenceCapture: (body: any = {}) => api<CaptureJob>("/api/v1/capture/sequence", { method: "POST", body: JSON.stringify(body) }),
   captureJobs: () => api<CaptureJob[]>("/api/v1/capture/jobs"),
   images: (query = "") => api<ImageRow[]>(`/api/v1/images${query}`),
+  imageDetail: (id: string) => api<ImageRow>(`/api/v1/images/${id}`),
   deleteImage: (id: string) => api<ImageDeleteResult>(`/api/v1/images/${id}`, { method: "DELETE" }),
   runImageRetention: (days?: number) => api<ImageRetentionResult>(`/api/v1/images/retention/run${days === undefined ? "" : `?days=${encodeURIComponent(days)}`}`, { method: "POST" }),
   publicLatest: () => api<PublicLatestImage>("/api/v1/public/latest"),

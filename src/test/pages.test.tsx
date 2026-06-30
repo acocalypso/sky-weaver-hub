@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import Dashboard from "@/pages/Dashboard";
@@ -12,6 +12,7 @@ import PublicSky from "@/pages/PublicSky";
 import Modules from "@/pages/Modules";
 import RemoteUpload from "@/pages/RemoteUpload";
 import Migration from "@/pages/Migration";
+import ImageDetail from "@/pages/ImageDetail";
 import { SkyApi } from "@/lib/api";
 
 vi.mock("sonner", () => ({
@@ -39,6 +40,7 @@ vi.mock("@/lib/api", async () => {
       schedulePreview: vi.fn(),
       captureJobs: vi.fn(),
       apiKeys: vi.fn(),
+      imageDetail: vi.fn(),
       patchSettings: vi.fn(),
       createApiKey: vi.fn(),
       patchApiKey: vi.fn(),
@@ -154,6 +156,7 @@ beforeEach(() => {
     latest_image: mockImage,
   } as any);
   vi.mocked(SkyApi.images).mockResolvedValue([mockImage] as any);
+  vi.mocked(SkyApi.imageDetail).mockResolvedValue(mockImage as any);
   vi.mocked(SkyApi.settings).mockResolvedValue(mockSettings);
   vi.mocked(SkyApi.metrics).mockResolvedValue({ cpu_percent: 12, memory_percent: 34, disk_percent: 45, disk_free_gb: 12.3, temperature_c: 41, uptime_seconds: 7200 });
   vi.mocked(SkyApi.systemServices).mockResolvedValue([
@@ -484,6 +487,33 @@ describe("main pages", () => {
     expect(await screen.findByRole("heading", { name: /image gallery/i })).toBeInTheDocument();
     expect(screen.getByText("1 image")).toBeInTheDocument();
     expect(screen.getByText(/mean 0.42 - night/i)).toBeInTheDocument();
+  });
+
+  it("renders routable image detail", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(new Blob(["image-bytes"], { type: "image/jpeg" })));
+    const originalCreateObjectUrl = URL.createObjectURL;
+    const originalRevokeObjectUrl = URL.revokeObjectURL;
+    Object.defineProperty(URL, "createObjectURL", { configurable: true, value: vi.fn(() => "blob:skyweaver-image") });
+    Object.defineProperty(URL, "revokeObjectURL", { configurable: true, value: vi.fn() });
+
+    render(
+      <MemoryRouter initialEntries={["/gallery/img-1"]}>
+        <Routes>
+          <Route path="/gallery/:imageId" element={<ImageDetail />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole("heading", { name: /image detail/i })).toBeInTheDocument();
+    expect(SkyApi.imageDetail).toHaveBeenCalledWith("img-1");
+    expect(screen.getAllByText(/img-1/).length).toBeGreaterThan(0);
+    expect(screen.getByText("1280 x 960")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("img", { name: /all-sky capture img-1/i })).toHaveAttribute("src", "blob:skyweaver-image"));
+    expect(fetchMock).toHaveBeenCalledWith("/api/v1/images/img-1/download", { headers: undefined });
+
+    fetchMock.mockRestore();
+    Object.defineProperty(URL, "createObjectURL", { configurable: true, value: originalCreateObjectUrl });
+    Object.defineProperty(URL, "revokeObjectURL", { configurable: true, value: originalRevokeObjectUrl });
   });
 
   it("renders settings groups from backend settings", async () => {

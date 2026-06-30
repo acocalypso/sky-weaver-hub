@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -112,6 +113,9 @@ export default function Gallery() {
                 </div>
                 <Button type="button" variant="destructive" className="w-full" onClick={deleteSelected} disabled={deleting}>
                   <Trash2 className="h-4 w-4 mr-2" />{deleting ? "Deleting..." : "Delete image"}
+                </Button>
+                <Button asChild type="button" variant="outline" className="w-full">
+                  <Link to={`/gallery/${selected.id}`}>Open detail page</Link>
                 </Button>
               </div>
             </div>

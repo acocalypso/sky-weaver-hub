@@ -14,6 +14,7 @@ const NotFound = lazy(() => import("@/pages/NotFound"));
 const Cameras = lazy(() => import("@/pages/Cameras"));
 const Schedule = lazy(() => import("@/pages/Schedule"));
 const Gallery = lazy(() => import("@/pages/Gallery"));
+const ImageDetail = lazy(() => import("@/pages/ImageDetail"));
 const Timelapses = lazy(() => import("@/pages/Timelapses"));
 const Health = lazy(() => import("@/pages/Health"));
 const Logs = lazy(() => import("@/pages/Logs"));
@@ -46,6 +47,7 @@ const App = () => (
                 <Route path="/cameras" element={<Cameras />} />
                 <Route path="/schedule" element={<Schedule />} />
                 <Route path="/gallery" element={<Gallery />} />
+                <Route path="/gallery/:imageId" element={<ImageDetail />} />
                 <Route path="/timelapses" element={<Timelapses />} />
                 <Route path="/health" element={<Health />} />
                 <Route path="/logs" element={<Logs />} />
