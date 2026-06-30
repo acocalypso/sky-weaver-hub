@@ -387,6 +387,7 @@ describe("main pages", () => {
     expect(screen.getByText("live")).toBeInTheDocument();
     expect(screen.getByText("night")).toBeInTheDocument();
     expect(screen.getByText("1280 x 960")).toBeInTheDocument();
+    expect(screen.getByTestId("public-stats")).toHaveClass("overflow-x-auto");
     expect(screen.getByAltText("Latest public all-sky capture")).toHaveAttribute("src", "/api/v1/public/latest/download?v=img-1");
     await waitFor(() => expect(SkyApi.publicLatest).toHaveBeenCalled());
   });

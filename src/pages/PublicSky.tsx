@@ -70,8 +70,8 @@ export default function PublicSky() {
               </div>
             </div>
           )}
-          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-background/95 via-background/50 to-transparent p-4 sm:p-6 lg:p-8">
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-background/95 via-background/45 to-transparent p-2.5 sm:p-4 lg:p-6">
+            <div data-testid="public-stats" className="grid grid-flow-col auto-cols-[minmax(8.5rem,1fr)] gap-2 overflow-x-auto pb-1 sm:grid-flow-row sm:grid-cols-3 sm:overflow-visible lg:grid-cols-5">
               <PublicStat icon={<Clock className="h-4 w-4" />} label="Captured" value={latest ? formatRelative(latest.captured_at) : "-"} />
               <PublicStat icon={<Camera className="h-4 w-4" />} label="Mode" value={latest?.mode ?? "-"} />
               <PublicStat label="Format" value={latest?.format?.toUpperCase() ?? "-"} />
@@ -92,9 +92,9 @@ export default function PublicSky() {
 
 function PublicStat({ label, value, icon }: { label: string; value: string; icon?: React.ReactNode }) {
   return (
-    <div className="rounded-md border border-border/60 bg-background/70 px-3 py-2 backdrop-blur-sm min-h-16">
-      <p className="text-[10px] uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">{icon}{label}</p>
-      <p className="mt-1 font-mono-data text-sm text-foreground truncate">{value}</p>
+    <div className="min-w-0 rounded-md border border-border/50 bg-background/65 px-2.5 py-1.5 backdrop-blur-sm sm:px-3 sm:py-2">
+      <p className="text-[9px] uppercase tracking-wider text-muted-foreground flex items-center gap-1 min-w-0 sm:text-[10px]">{icon}{label}</p>
+      <p className="mt-0.5 font-mono-data text-xs text-foreground truncate sm:mt-1 sm:text-sm">{value}</p>
     </div>
   );
 }
