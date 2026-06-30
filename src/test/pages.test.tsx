@@ -47,6 +47,7 @@ vi.mock("@/lib/api", async () => {
       createCamera: vi.fn(),
       publicLatest: vi.fn(),
       modules: vi.fn(),
+      registerModule: vi.fn(),
       patchModule: vi.fn(),
       moduleFlows: vi.fn(),
       patchModuleFlow: vi.fn(),
@@ -215,6 +216,20 @@ beforeEach(() => {
     created_at: "2026-06-23T12:00:00+00:00",
     updated_at: "2026-06-23T12:00:00+00:00",
   }) as any);
+  vi.mocked(SkyApi.registerModule).mockImplementation(async (body) => ({
+    id: body.id,
+    name: body.name,
+    description: body.description ?? null,
+    version: body.version ?? "0.1.0",
+    author: body.author ?? null,
+    module_path: `external:${body.id}`,
+    enabled: false,
+    trusted: false,
+    settings_schema: body.settings_schema ?? {},
+    settings: body.settings ?? {},
+    created_at: "2026-06-23T12:00:00+00:00",
+    updated_at: "2026-06-23T12:00:00+00:00",
+  }));
   vi.mocked(SkyApi.moduleFlows).mockResolvedValue([
     {
       id: "builtin.post_capture",
@@ -313,6 +328,10 @@ describe("main pages", () => {
     expect(await screen.findByText("Post-capture processing")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /validate/i }));
     await waitFor(() => expect(SkyApi.runModuleFlow).toHaveBeenCalledWith("builtin.post_capture"));
+    fireEvent.change(screen.getByPlaceholderText("external.my-module"), { target: { value: "external.test-module" } });
+    fireEvent.change(screen.getByPlaceholderText("My module"), { target: { value: "Test module" } });
+    fireEvent.click(screen.getByRole("button", { name: /register manifest/i }));
+    await waitFor(() => expect(SkyApi.registerModule).toHaveBeenCalled());
   });
 
   it("runs service controls from health", async () => {

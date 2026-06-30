@@ -67,6 +67,7 @@ export const SkyApi = {
   deleteProduct: (id: string) => api<ProductDeleteResult>(`/api/v1/products/${id}`, { method: "DELETE" }),
   runProductRetention: (days?: number) => api<ProductRetentionResult>(`/api/v1/products/retention/run${days === undefined ? "" : `?days=${encodeURIComponent(days)}`}`, { method: "POST" }),
   modules: () => api<ModuleRow[]>("/api/v1/modules"),
+  registerModule: (body: ModuleManifest) => api<ModuleRow>("/api/v1/modules/register", { method: "POST", body: JSON.stringify(body) }),
   patchModule: (id: string, body: { enabled?: boolean; settings?: Record<string, any> }) => api<ModuleRow>(`/api/v1/modules/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   moduleFlows: () => api<ModuleFlowRow[]>("/api/v1/module-flows"),
   patchModuleFlow: (id: string, body: { enabled?: boolean; module_order?: string[] }) => api<ModuleFlowRow>(`/api/v1/module-flows/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
@@ -125,6 +126,7 @@ export interface ProductRow { id: string; type: string; day_key: string; file_pa
 export interface ProductDeleteResult { deleted: string; deleted_files: string[]; missing_files: string[]; skipped_files: ImageSkippedFile[]; }
 export interface ProductRetentionResult { retention_days: number; cutoff: string; deleted_products: number; deleted_product_ids: string[]; deleted_files: string[]; missing_files: string[]; skipped_files: ImageSkippedFile[]; }
 export interface ModuleRow { id: string; name: string; description?: string | null; version?: string | null; author?: string | null; module_path?: string | null; enabled: boolean; trusted: boolean; settings_schema: any; settings: any; created_at: string; updated_at: string; }
+export interface ModuleManifest { id: string; name: string; description?: string; version?: string; author?: string; capabilities?: string[]; settings_schema?: Record<string, any>; settings?: Record<string, any>; }
 export interface ModuleFlowRow { id: string; name: string; trigger: string; enabled: boolean; module_order: string[]; created_at: string; updated_at: string; }
 export interface ModuleFlowRunResult { id: string; trigger: string; status: string; enabled: boolean; modules: { id: string; name: string; enabled: boolean; trusted: boolean; status: string }[]; }
 export interface ProcessingJob { id: string; type: string; status: string; input: any; output?: any; error?: string | null; progress: number; created_at: string; started_at?: string | null; completed_at?: string | null; }

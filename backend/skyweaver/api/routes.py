@@ -19,7 +19,7 @@ from ..db import default_profile, event, json_dumps, json_loads, log, new_id, no
 from ..rate_limit import InMemoryRateLimiter, RateLimitStatus
 from ..security import create_api_key, hash_password, make_token, verify_password
 from ..services.capture import CaptureCommand, all_rows, cleanup_images_by_retention, configured_image_retention_days, count_files, create_capture_job, current_schedule, decode_row, delete_image_files, enqueue_capture, get_primary_camera, public_latest_payload, publish_latest_image, read_latest_payload, scheduled_capture_timing, system_metrics
-from ..services.modules import run_flow_preview, validate_module_order
+from ..services.modules import register_external_module, run_flow_preview, validate_module_order
 from ..services.processing import cleanup_products_by_retention, delete_product_files
 from ..services.schedule import active_window
 from .deps import current_principal, require_scope
@@ -1420,6 +1420,17 @@ def modules(_principal: Annotated[dict, Depends(require_scope("read:settings"))]
 @router.post("/modules/upload")
 def upload_module(_principal: Annotated[dict, Depends(require_scope("admin"))]):
     return ok({"status": "disabled", "note": "Custom module uploads are disabled until sandboxing and signing are implemented."})
+
+
+@router.post("/modules/register")
+def register_module(payload: dict[str, Any], _principal: Annotated[dict, Depends(require_scope("admin"))]):
+    with session() as conn:
+        try:
+            module = register_external_module(conn, payload)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        event(conn, "module_registered", {"module_id": module["id"], "trusted": False, "enabled": False})
+    return ok(module)
 
 
 @router.patch("/modules/{module_id}")

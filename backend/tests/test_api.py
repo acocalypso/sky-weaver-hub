@@ -266,6 +266,48 @@ def test_post_capture_flow_controls_overlay_application(tmp_path):
     assert invalid.status_code == 404
 
 
+def test_external_module_manifest_registers_but_cannot_execute(tmp_path):
+    client = make_client(tmp_path)
+    token = login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    registered = client.post(
+        "/api/v1/modules/register",
+        headers=headers,
+        json={
+            "id": "external.sample-overlay",
+            "name": "Sample external overlay",
+            "description": "Manifest-only module package.",
+            "version": "0.1.0",
+            "author": "Sky Weaver Test",
+            "capabilities": ["post_capture"],
+            "settings_schema": {"type": "object"},
+            "settings": {"example": True},
+        },
+    )
+
+    assert registered.status_code == 200, registered.text
+    module = registered.json()["data"]
+    assert module["id"] == "external.sample-overlay"
+    assert module["enabled"] is False
+    assert module["trusted"] is False
+    assert module["module_path"] == "external:external.sample-overlay"
+
+    enable_res = client.patch("/api/v1/modules/external.sample-overlay", headers=headers, json={"enabled": True})
+    assert enable_res.status_code == 403
+
+    flow_res = client.patch(
+        "/api/v1/module-flows/builtin.post_capture",
+        headers=headers,
+        json={"module_order": ["builtin.overlay", "external.sample-overlay"]},
+    )
+    assert flow_res.status_code == 403
+
+    deleted = client.delete("/api/v1/modules/external.sample-overlay", headers=headers)
+    assert deleted.status_code == 200, deleted.text
+    assert deleted.json()["data"]["deleted"] == "external.sample-overlay"
+
+
 def test_deleting_latest_republishes_next_newest_image(tmp_path):
     client = make_client(tmp_path)
     token = login(client)

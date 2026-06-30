@@ -19,6 +19,7 @@ export default function Modules() {
   const [overlayEnabled, setOverlayEnabled] = useState(false);
   const [saving, setSaving] = useState(false);
   const [runningFlowId, setRunningFlowId] = useState<string | null>(null);
+  const [manifest, setManifest] = useState({ id: "", name: "", version: "0.1.0", author: "" });
 
   useEffect(() => {
     document.title = "Modules - Sky Weaver Hub";
@@ -106,6 +107,25 @@ export default function Modules() {
       toast.error(e.message ?? "Flow run failed");
     } finally {
       setRunningFlowId(null);
+    }
+  }
+
+  async function registerManifest() {
+    try {
+      const registered = await SkyApi.registerModule({
+        id: manifest.id,
+        name: manifest.name,
+        version: manifest.version,
+        author: manifest.author,
+        capabilities: ["post_capture"],
+        settings_schema: { type: "object" },
+        settings: {},
+      });
+      setModules([registered, ...modules.filter((row) => row.id !== registered.id)]);
+      setManifest({ id: "", name: "", version: "0.1.0", author: "" });
+      toast.success("Module manifest registered");
+    } catch (e: any) {
+      toast.error(e.message ?? "Manifest registration failed");
     }
   }
 
@@ -206,6 +226,21 @@ export default function Modules() {
             <StatusBadge variant={module.enabled ? "active" : "idle"}>{module.enabled ? "enabled" : "disabled"}</StatusBadge>
           </div>
         ))}
+      </Card>
+
+      <Card className="telemetry-card space-y-4">
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">External module manifest</h2>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <Field label="Module id" value={manifest.id} placeholder="external.my-module" onChange={(value) => setManifest({ ...manifest, id: value })} />
+          <Field label="Name" value={manifest.name} placeholder="My module" onChange={(value) => setManifest({ ...manifest, name: value })} />
+          <Field label="Version" value={manifest.version} onChange={(value) => setManifest({ ...manifest, version: value })} />
+          <Field label="Author" value={manifest.author} onChange={(value) => setManifest({ ...manifest, author: value })} />
+        </div>
+        <div className="flex justify-end">
+          <Button variant="outline" onClick={registerManifest} disabled={!manifest.id.trim() || !manifest.name.trim()}>
+            <Plus className="h-4 w-4 mr-2" />Register manifest
+          </Button>
+        </div>
       </Card>
     </div>
   );
