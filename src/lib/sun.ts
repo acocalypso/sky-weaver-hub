@@ -50,7 +50,7 @@ export function getTonightTimeline(lat: number, lon: number, date = new Date()):
 export function getSunAltitude(lat: number, lon: number, date = new Date()): number | null {
   if (!isValidLatLon(lat, lon) || !validDate(date)) return null;
   const pos = SunCalc.getPosition(date, lat, lon);
-  const altitude = (pos.altitude * 180) / Math.PI;
+  const altitude = pos.altitude;
   if (!Number.isFinite(altitude) || altitude < -90.1 || altitude > 90.1) return null;
   return Math.max(-90, Math.min(90, altitude));
 }
