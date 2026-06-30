@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { CloudUpload, FolderSync, RefreshCw, Send, TestTube2 } from "lucide-react";
+import { useEffect, useId, useState } from "react";
+import { CloudUpload, FolderSync, Loader2, RefreshCw, Send, TestTube2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -25,26 +25,40 @@ export default function RemoteUpload() {
   const [passive, setPassive] = useState(true);
   const [enabled, setEnabled] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const [selectedJobLoading, setSelectedJobLoading] = useState<string | null>(null);
 
   useEffect(() => {
     document.title = "Remote upload - Sky Weaver Hub";
-    load();
+    let ignore = false;
+    void load({ shouldUpdate: () => !ignore });
+    return () => {
+      ignore = true;
+    };
   }, []);
 
-  async function load() {
-    setLoading(true);
+  async function load(options: { quiet?: boolean; shouldUpdate?: () => boolean } = {}) {
+    if (!options.quiet) setLoading(true);
+    setLoadError(null);
     try {
       const [nextTargets, nextJobs] = await Promise.all([SkyApi.remoteTargets(), SkyApi.uploadJobs()]);
+      if (options.shouldUpdate && !options.shouldUpdate()) return;
       setTargets(nextTargets);
       setJobs(nextJobs);
     } catch (e: any) {
-      toast.error(e.message ?? "Remote upload load failed");
+      if (options.shouldUpdate && !options.shouldUpdate()) return;
+      const message = e.message ?? "Remote upload load failed";
+      setLoadError(message);
+      toast.error(message);
     } finally {
-      setLoading(false);
+      if (!options.shouldUpdate || options.shouldUpdate()) setLoading(false);
     }
   }
 
   async function addTarget() {
+    if (!canAddTarget) return;
+    setPendingAction("add-target");
     try {
       const config = targetType === "filesystem"
         ? { destination_path: destination }
@@ -56,54 +70,84 @@ export default function RemoteUpload() {
       toast.success("Remote target saved");
     } catch (e: any) {
       toast.error(e.message ?? "Create target failed");
+    } finally {
+      setPendingAction(null);
     }
   }
 
   async function toggleTarget(target: RemoteTarget, nextEnabled: boolean) {
+    const action = `toggle:${target.id}`;
+    setPendingAction(action);
     try {
       const updated = await SkyApi.patchRemoteTarget(target.id, { name: target.name, type: target.type as RemoteTargetType, enabled: nextEnabled });
       setTargets(targets.map((item) => (item.id === target.id ? updated : item)));
     } catch (e: any) {
       toast.error(e.message ?? "Update target failed");
+    } finally {
+      setPendingAction(null);
     }
   }
 
   async function testTarget(target: RemoteTarget) {
+    const action = `test:${target.id}`;
+    setPendingAction(action);
     try {
       const result = await SkyApi.testRemoteTarget(target.id);
       toast.success(`Target ${result.status}`);
     } catch (e: any) {
       toast.error(e.message ?? "Target test failed");
+    } finally {
+      setPendingAction(null);
     }
   }
 
   async function queueLatest(target?: RemoteTarget) {
+    const action = target ? `queue:${target.id}` : "queue:latest";
+    setPendingAction(action);
     try {
       await SkyApi.queueUpload({ source_type: "latest", target_id: target?.id });
       toast.success("Upload queued");
-      await load();
+      await load({ quiet: true });
     } catch (e: any) {
       toast.error(e.message ?? "Queue upload failed");
+    } finally {
+      setPendingAction(null);
     }
   }
 
   async function retryFailed() {
+    setPendingAction("retry");
     try {
       const result = await SkyApi.retryUploads();
       toast.success(result.upload_job_ids.length ? "Retry queued" : "No failed uploads");
-      await load();
+      await load({ quiet: true });
     } catch (e: any) {
       toast.error(e.message ?? "Retry failed");
+    } finally {
+      setPendingAction(null);
     }
   }
 
   async function showJob(job: UploadJob) {
+    setSelectedJobLoading(job.id);
     try {
       setSelectedJob(await SkyApi.uploadJob(job.id));
     } catch (e: any) {
       toast.error(e.message ?? "Upload job detail failed");
+    } finally {
+      setSelectedJobLoading(null);
     }
   }
+
+  const failedJobs = jobs.filter((job) => job.status === "failed").length;
+  const activeJobs = jobs.filter((job) => ["pending", "running"].includes(job.status)).length;
+  const enabledTargets = targets.filter((target) => target.enabled).length;
+  const validPort = Number.isInteger(Number(port)) && Number(port) > 0 && Number(port) <= 65535;
+  const canAddTarget = Boolean(
+    name.trim()
+    && validPort
+    && (targetType === "filesystem" ? destination.trim() : host.trim() && username.trim() && remotePath.trim())
+  );
 
   return (
     <div className="space-y-6">
@@ -114,12 +158,32 @@ export default function RemoteUpload() {
             <CloudUpload className="h-7 w-7 text-primary" /> Remote upload
           </h1>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={load} disabled={loading}><RefreshCw className="h-4 w-4 mr-2" />Refresh</Button>
-          <Button variant="outline" onClick={retryFailed}><FolderSync className="h-4 w-4 mr-2" />Retry failed</Button>
-          <Button onClick={() => queueLatest()}><Send className="h-4 w-4 mr-2" />Queue latest</Button>
+        <div className="grid grid-cols-1 gap-2 min-[420px]:grid-cols-3 sm:flex sm:flex-wrap sm:justify-end">
+          <Button variant="outline" onClick={() => load()} disabled={loading} className="w-full sm:w-auto">
+            {loading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}Refresh
+          </Button>
+          <Button variant="outline" onClick={retryFailed} disabled={pendingAction === "retry"} className="w-full sm:w-auto">
+            {pendingAction === "retry" ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <FolderSync className="h-4 w-4 mr-2" />}Retry failed
+          </Button>
+          <Button onClick={() => queueLatest()} disabled={pendingAction === "queue:latest"} className="w-full sm:w-auto">
+            {pendingAction === "queue:latest" ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Send className="h-4 w-4 mr-2" />}Queue latest
+          </Button>
         </div>
       </div>
+
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Summary label="Targets" value={String(targets.length)} />
+        <Summary label="Enabled" value={String(enabledTargets)} />
+        <Summary label="Active jobs" value={String(activeJobs)} />
+        <Summary label="Failed jobs" value={String(failedJobs)} tone={failedJobs ? "error" : "default"} />
+      </div>
+
+      {(loading || loadError) && (
+        <Card className="telemetry-card flex items-center gap-3 text-sm text-muted-foreground">
+          {loading && <Loader2 className="h-4 w-4 animate-spin text-primary" />}
+          <span>{loading ? "Loading remote targets and upload jobs" : loadError}</span>
+        </Card>
+      )}
 
       <Card className="telemetry-card space-y-4">
         <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Upload target</h2>
@@ -164,7 +228,13 @@ export default function RemoteUpload() {
             </div>
           </div>
         )}
-        <Button onClick={addTarget}>Add target</Button>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-xs text-muted-foreground">{canAddTarget ? "Target configuration is ready to save." : "Enter the required target details before saving."}</p>
+          <Button onClick={addTarget} disabled={!canAddTarget || pendingAction === "add-target"} className="w-full sm:w-auto">
+            {pendingAction === "add-target" && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+            Add target
+          </Button>
+        </div>
       </Card>
 
       <Card className="telemetry-card space-y-3">
@@ -179,9 +249,16 @@ export default function RemoteUpload() {
               <p className="mt-1 font-mono-data text-xs text-muted-foreground truncate">{target.type} - {formatTargetDestination(target)}</p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button variant="outline" size="sm" onClick={() => testTarget(target)}><TestTube2 className="h-4 w-4 mr-2" />Test</Button>
-              <Button variant="outline" size="sm" onClick={() => queueLatest(target)}><Send className="h-4 w-4 mr-2" />Queue latest</Button>
-              <Button variant="outline" size="sm" onClick={() => toggleTarget(target, !target.enabled)}>{target.enabled ? "Disable" : "Enable"}</Button>
+              <Button variant="outline" size="sm" onClick={() => testTarget(target)} disabled={pendingAction === `test:${target.id}`}>
+                {pendingAction === `test:${target.id}` ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <TestTube2 className="h-4 w-4 mr-2" />}Test
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => queueLatest(target)} disabled={pendingAction === `queue:${target.id}`}>
+                {pendingAction === `queue:${target.id}` ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Send className="h-4 w-4 mr-2" />}Queue latest
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => toggleTarget(target, !target.enabled)} disabled={pendingAction === `toggle:${target.id}`}>
+                {pendingAction === `toggle:${target.id}` && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                {target.enabled ? "Disable" : "Enable"}
+              </Button>
             </div>
           </div>
         ))}
@@ -199,7 +276,10 @@ export default function RemoteUpload() {
             <p className="mt-1 text-xs text-muted-foreground">{job.target_name ?? job.target_id} {job.target_type ? `(${job.target_type})` : ""} - attempts {job.attempts}</p>
             <p className="mt-1 font-mono-data text-xs text-muted-foreground truncate">{job.destination_path ?? job.source_path}</p>
             {job.last_error && <p className="mt-2 text-xs text-destructive">{job.last_error}</p>}
-            <Button className="mt-3" variant="outline" size="sm" onClick={() => showJob(job)}>Details</Button>
+            <Button className="mt-3" variant="outline" size="sm" onClick={() => showJob(job)} disabled={selectedJobLoading === job.id}>
+              {selectedJobLoading === job.id && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Details
+            </Button>
           </div>
         ))}
         {jobs.length === 0 && <p className="text-sm text-muted-foreground">No upload jobs yet.</p>}
@@ -243,6 +323,15 @@ function formatDate(value?: string | null) {
   return value ? new Date(value).toLocaleString() : "-";
 }
 
+function Summary({ label, value, tone = "default" }: { label: string; value: string; tone?: "default" | "error" }) {
+  return (
+    <div className="rounded-md border border-border bg-muted/20 p-3" data-testid={`remote-summary-${label.toLowerCase().replaceAll(" ", "-")}`}>
+      <p className="text-xs uppercase tracking-wider text-muted-foreground">{label}</p>
+      <p className={`mt-1 font-mono-data text-xl font-semibold ${tone === "error" ? "text-destructive" : ""}`}>{value}</p>
+    </div>
+  );
+}
+
 function Detail({ label, value }: { label: string; value: string }) {
   return (
     <div className="min-w-0 rounded-md border border-border bg-muted/20 p-3">
@@ -253,10 +342,12 @@ function Detail({ label, value }: { label: string; value: string }) {
 }
 
 function Field({ label, value, onChange, ...rest }: { label: string; value: string; onChange: (value: string) => void } & React.InputHTMLAttributes<HTMLInputElement>) {
+  const generatedId = useId();
+  const inputId = rest.id ?? generatedId;
   return (
     <div className="space-y-2">
-      <Label>{label}</Label>
-      <Input value={value} onChange={(event) => onChange(event.target.value)} {...rest} />
+      <Label htmlFor={inputId}>{label}</Label>
+      <Input id={inputId} value={value} onChange={(event) => onChange(event.target.value)} {...rest} />
     </div>
   );
 }

@@ -530,6 +530,10 @@ describe("main pages", () => {
     render(<RemoteUpload />);
 
     expect(await screen.findByRole("heading", { name: /remote upload/i })).toBeInTheDocument();
+    expect(screen.getByTestId("remote-summary-targets")).toHaveTextContent("5");
+    expect(screen.getByTestId("remote-summary-enabled")).toHaveTextContent("5");
+    expect(screen.getByTestId("remote-summary-active-jobs")).toHaveTextContent("0");
+    expect(screen.getByTestId("remote-summary-failed-jobs")).toHaveTextContent("0");
     expect(screen.getByText("Local mirror")).toBeInTheDocument();
     expect(screen.getAllByText(/\/tmp\/skyweaver-upload/).length).toBeGreaterThan(0);
     expect(screen.getByText(/skyweaver@allsky.example:\/srv\/allsky/)).toBeInTheDocument();
@@ -544,6 +548,9 @@ describe("main pages", () => {
     fireEvent.click(screen.getByRole("button", { name: /details/i }));
     expect(await screen.findByText("Job detail")).toBeInTheDocument();
     expect(screen.getByText("processing-1")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /add target/i })).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("Destination path"), { target: { value: "/mnt/public-sky" } });
+    expect(screen.getByRole("button", { name: /add target/i })).toBeEnabled();
     fireEvent.click(screen.getAllByRole("button", { name: /queue latest/i })[0]);
     await waitFor(() => expect(SkyApi.queueUpload).toHaveBeenCalledWith({ source_type: "latest", target_id: undefined }));
   });
