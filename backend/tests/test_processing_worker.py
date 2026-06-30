@@ -324,13 +324,29 @@ def test_worker_imports_and_rolls_back_allsky_files(tmp_path: Path):
     Image.new("RGB", (64, 48), "navy").save(image_source)
     Image.new("RGB", (64, 12), "white").save(keogram_source)
     timelapse_source.write_bytes(b"fake-mp4")
-    config_source.write_text("LATITUDE=49.1\n", encoding="utf-8")
+    config_source.write_text(
+        "\n".join([
+            "LATITUDE=49.1",
+            "LONGITUDE=10.12",
+            "LOCATION='Garden Allsky'",
+            "TIMEZONE=Europe/Berlin",
+            "ANGLE=-12",
+            "CAMERA_TYPE=IMX290",
+            "USEWEBSITE=true",
+            "UNSUPPORTED_FOO=bar",
+        ]),
+        encoding="utf-8",
+    )
 
     preview = client.post("/api/v1/migration/allsky/preview", headers=headers, json={"path": str(allsky)})
     assert preview.status_code == 200, preview.text
     preview_data = preview.json()["data"]
     assert preview_data["counts"] == {"images": 1, "timelapses": 1, "keograms": 1, "startrails": 0}
     assert preview_data["unsupported_settings"][0]["path"] == str(config_source)
+    assert preview_data["settings"]["observatory"]["name"] == "Garden Allsky"
+    assert preview_data["settings"]["observatory"]["latitude"] == 49.1
+    assert preview_data["settings"]["schedule"]["sun_angle"] == -12
+    assert any(item.get("key") == "UNSUPPORTED_FOO" for item in preview_data["unsupported_settings"])
     assert preview_data["will_delete_original"] is False
 
     queued = client.post("/api/v1/migration/allsky/import", headers=headers, json={"path": str(allsky)})
@@ -344,6 +360,7 @@ def test_worker_imports_and_rolls_back_allsky_files(tmp_path: Path):
     assert completed["status"] == "completed"
     assert completed["output"]["imported_images"] == 1
     assert completed["output"]["imported_products"] == 2
+    assert completed["output"]["settings"]["applied"]["camera_hints"]["hint"] == "IMX290"
     assert image_source.exists()
     assert keogram_source.exists()
     assert timelapse_source.exists()
@@ -357,13 +374,26 @@ def test_worker_imports_and_rolls_back_allsky_files(tmp_path: Path):
     assert {item["type"] for item in imported_products} == {"keogram", "timelapse"}
     copied_paths = [Path(imported_image["file_path"]), *(Path(item["file_path"]) for item in imported_products)]
     assert all(path.exists() for path in copied_paths)
+    settings_after_import = client.get("/api/v1/settings", headers=headers).json()["data"]
+    assert settings_after_import["observatory"]["name"] == "Garden Allsky"
+    assert settings_after_import["observatory"]["latitude"] == 49.1
+    assert settings_after_import["observatory"]["longitude"] == 10.12
+    assert settings_after_import["allsky_camera_hints"]["hint"] == "IMX290"
+    schedule_after_import = client.get("/api/v1/schedule", headers=headers).json()["data"]
+    assert schedule_after_import["sun_angle"] == -12
 
     rollback = client.post(f"/api/v1/migration/jobs/{job_id}/rollback", headers=headers)
     assert rollback.status_code == 200, rollback.text
     rollback_data = rollback.json()["data"]
     assert rollback_data["deleted_images"] == 1
     assert rollback_data["deleted_products"] == 2
+    assert rollback_data["settings_restored"]["restored"] is True
     assert all(not path.exists() for path in copied_paths)
     assert image_source.exists()
     assert keogram_source.exists()
     assert timelapse_source.exists()
+    settings_after_rollback = client.get("/api/v1/settings", headers=headers).json()["data"]
+    assert settings_after_rollback["observatory"]["name"] == "Sky Weaver Observatory"
+    assert "allsky_camera_hints" not in settings_after_rollback
+    schedule_after_rollback = client.get("/api/v1/schedule", headers=headers).json()["data"]
+    assert schedule_after_rollback["sun_angle"] == -6

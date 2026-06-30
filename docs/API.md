@@ -56,7 +56,7 @@ Remote upload endpoints require authenticated admin or processing scopes. The fi
 - `POST /api/v1/uploads/queue` queues latest, image, or product upload work for enabled targets.
 - `POST /api/v1/uploads/retry` requeues failed upload jobs.
 
-Allsky migration endpoints require admin scope. Detection and preview do not modify source data. Import runs through the processing worker, copies recognized files into Sky Weaver-owned storage, and records provenance under `metadata.migration`. Rollback only removes Sky Weaver-created rows/files for the selected import job:
+Allsky migration endpoints require admin scope. Detection and preview do not modify source data. Import runs through the processing worker, copies recognized files into Sky Weaver-owned storage, records provenance under `metadata.migration`, and applies a conservative subset of settings with a rollback snapshot. Rollback only removes Sky Weaver-created rows/files and restores settings for the selected import job:
 
 - `GET /api/v1/migration/allsky/detect`
 - `POST /api/v1/migration/allsky/preview`

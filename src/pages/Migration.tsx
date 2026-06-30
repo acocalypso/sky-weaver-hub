@@ -103,6 +103,19 @@ export default function Migration() {
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
             {Object.entries(preview.counts).map(([key, value]) => <Stat key={key} label={key} value={String(value)} />)}
           </div>
+          {Object.keys(preview.settings ?? {}).length > 0 && (
+            <div>
+              <h3 className="text-sm font-medium">Settings to apply</h3>
+              <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
+                {Object.entries(preview.settings).map(([key, value]) => (
+                  <div key={key} className="rounded-md border border-border bg-muted/20 p-3">
+                    <p className="text-xs uppercase tracking-wider text-muted-foreground">{key}</p>
+                    <p className="mt-1 font-mono-data text-xs text-foreground break-words">{formatSettingValue(value)}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           {preview.unsupported_settings.length > 0 && (
             <div>
               <h3 className="text-sm font-medium">Unsupported settings</h3>
@@ -141,6 +154,12 @@ export default function Migration() {
       )}
     </div>
   );
+}
+
+function formatSettingValue(value: any) {
+  if (value === null || value === undefined) return "-";
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
 }
 
 function Stat({ label, value }: { label: string; value: string }) {

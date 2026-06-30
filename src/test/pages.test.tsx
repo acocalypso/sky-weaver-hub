@@ -350,6 +350,7 @@ beforeEach(() => {
     path: "/home/pi/allsky",
     exists: true,
     counts: { images: 3, timelapses: 1, keograms: 1, startrails: 1 },
+    settings: { observatory: { name: "Garden Allsky", latitude: 49.1 }, schedule: { sun_angle: -12 } },
     unsupported_settings: [{ path: "/home/pi/allsky/config.sh", reason: "settings_translation_not_implemented" }],
     will_delete_original: false,
     import_plan: { copy_files: true, preserve_originals: true, rollback_supported: true },
@@ -476,6 +477,8 @@ describe("main pages", () => {
     expect(await screen.findByRole("heading", { name: /allsky migration/i })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /preview/i }));
     expect(await screen.findByText("Unsupported settings")).toBeInTheDocument();
+    expect(screen.getByText("Settings to apply")).toBeInTheDocument();
+    expect(screen.getByText(/Garden Allsky/)).toBeInTheDocument();
     expect(screen.getByText("3")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /queue import/i }));
     await waitFor(() => expect(SkyApi.migrationImport).toHaveBeenCalledWith({ path: "/home/pi/allsky" }));
