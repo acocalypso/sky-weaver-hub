@@ -11,7 +11,7 @@ from typing import Any, Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse, StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from ..camera.registry import adapters, get_adapter
 from ..config import get_settings
@@ -113,6 +113,40 @@ class CaptureBody(BaseModel):
 
 class SettingsPatch(BaseModel):
     values: dict[str, Any]
+
+
+class ObservatorySettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=120)
+    latitude: float = Field(ge=-90, le=90)
+    longitude: float = Field(ge=-180, le=180)
+    timezone: str = Field(min_length=1, max_length=120)
+
+
+class StorageSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    images: str = Field(min_length=1, max_length=500)
+    videos: str = Field(min_length=1, max_length=500)
+    retention_days: int = Field(ge=0, le=36500)
+    min_free_gb: float = Field(ge=0, le=100000)
+
+
+class PublicPageSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = True
+    refresh_seconds: int = Field(default=30, ge=5, le=3600)
+    iframe_enabled: bool = True
+    product_days: int = Field(default=7, ge=1, le=3650)
+
+
+class SecuritySettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    cors_origins: list[str] = Field(default_factory=list, max_length=100)
+    first_setup_required: bool = True
 
 
 class SetupComplete(BaseModel):
@@ -235,6 +269,36 @@ def profile_settings_keys(payload: dict[str, Any]) -> list[str]:
     if isinstance(settings, dict):
         return field_names(settings)
     return []
+
+
+SETTING_MODELS: dict[str, type[BaseModel]] = {
+    "observatory": ObservatorySettings,
+    "storage": StorageSettings,
+    "public_page": PublicPageSettings,
+    "security": SecuritySettings,
+}
+
+
+def validate_settings_patch(values: dict[str, Any], current: dict[str, Any]) -> dict[str, Any]:
+    validated: dict[str, Any] = {}
+    for key, value in values.items():
+        if not isinstance(key, str) or not key.strip():
+            raise HTTPException(400, "Setting keys must be non-empty strings")
+        if not isinstance(value, dict):
+            raise HTTPException(400, f"Setting group '{key}' must be an object")
+        model = SETTING_MODELS.get(key)
+        if model is None:
+            validated[key] = value
+            continue
+        merged = {**(current.get(key) if isinstance(current.get(key), dict) else {}), **value}
+        try:
+            validated[key] = model.model_validate(merged).model_dump()
+        except ValidationError as exc:
+            first = exc.errors()[0] if exc.errors() else {}
+            loc = ".".join(str(part) for part in first.get("loc", []) if part is not None)
+            message = str(first.get("msg") or "Invalid value")
+            raise HTTPException(422, f"Invalid settings for '{key}'{f'.{loc}' if loc else ''}: {message}") from exc
+    return validated
 
 
 def raise_rate_limited(retry_after_seconds: int) -> None:
@@ -962,10 +1026,13 @@ def get_settings_rows(_principal: Annotated[dict, Depends(require_scope("read:se
 @router.patch("/settings")
 def patch_settings(body: SettingsPatch, request: Request, principal: Annotated[dict, Depends(require_scope("write:settings"))]):
     with session() as conn:
-        for key, value in body.values.items():
+        rows = all_rows(conn, "SELECT * FROM system_settings ORDER BY key")
+        current = {row["key"]: row["value"] for row in rows}
+        values = validate_settings_patch(body.values, current)
+        for key, value in values.items():
             conn.execute("INSERT OR REPLACE INTO system_settings (key, value, updated_at) VALUES (?, ?, ?)", (key, json_dumps(value), now_iso()))
-        audit_security_event(conn, "info", "settings_updated", "Settings updated", request, principal, {"settings_keys": settings_keys(body.values)})
-    return ok(body.values)
+        audit_security_event(conn, "info", "settings_updated", "Settings updated", request, principal, {"settings_keys": settings_keys(values)})
+    return ok(values)
 
 
 @router.get("/camera-profiles")

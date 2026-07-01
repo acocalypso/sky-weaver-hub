@@ -645,6 +645,52 @@ def test_setup_environment_seeds_admin_camera_schedule_and_settings(tmp_path, mo
     assert settings["security"]["first_setup_required"] is False
 
 
+def test_settings_patch_validates_known_groups_and_preserves_extension_groups(tmp_path):
+    client = make_client(tmp_path)
+    token = login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    valid = client.patch(
+        "/api/v1/settings",
+        headers=headers,
+        json={
+            "values": {
+                "observatory": {"latitude": 49.1012, "longitude": 10.121, "timezone": "Europe/Berlin"},
+                "storage": {"retention_days": 45, "min_free_gb": 5},
+                "public_page": {"enabled": True, "product_days": 14},
+                "security": {"cors_origins": ["http://allsky.local"], "first_setup_required": True},
+                "allsky_camera_hints": {"adapter": "rpicam", "model": "imx290"},
+            },
+        },
+    )
+    assert valid.status_code == 200, valid.text
+    payload = valid.json()["data"]
+    assert payload["observatory"]["name"] == "Sky Weaver Observatory"
+    assert payload["observatory"]["latitude"] == 49.1012
+    assert payload["storage"]["retention_days"] == 45
+    assert payload["public_page"]["refresh_seconds"] == 30
+    assert payload["security"]["cors_origins"] == ["http://allsky.local"]
+    assert payload["allsky_camera_hints"]["model"] == "imx290"
+
+    stored = client.get("/api/v1/settings", headers=headers).json()["data"]
+    assert stored["observatory"]["longitude"] == 10.121
+    assert stored["storage"]["min_free_gb"] == 5.0
+    assert stored["public_page"]["product_days"] == 14
+    assert stored["allsky_camera_hints"]["adapter"] == "rpicam"
+
+    invalid_latitude = client.patch("/api/v1/settings", headers=headers, json={"values": {"observatory": {"latitude": 120}}})
+    assert invalid_latitude.status_code == 422
+    assert "Invalid settings for 'observatory'.latitude" in invalid_latitude.json()["error"]["message"]
+
+    invalid_shape = client.patch("/api/v1/settings", headers=headers, json={"values": {"storage": "not-an-object"}})
+    assert invalid_shape.status_code == 400
+    assert "must be an object" in invalid_shape.json()["error"]["message"]
+
+    invalid_extra = client.patch("/api/v1/settings", headers=headers, json={"values": {"public_page": {"enabled": True, "unexpected": True}}})
+    assert invalid_extra.status_code == 422
+    assert "Invalid settings for 'public_page'.unexpected" in invalid_extra.json()["error"]["message"]
+
+
 def test_created_camera_gets_day_and_night_profiles(tmp_path):
     client = make_client(tmp_path)
     token = login(client)
