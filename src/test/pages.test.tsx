@@ -13,6 +13,7 @@ import Modules from "@/pages/Modules";
 import RemoteUpload from "@/pages/RemoteUpload";
 import Migration from "@/pages/Migration";
 import ImageDetail from "@/pages/ImageDetail";
+import Deployment from "@/pages/Deployment";
 import { SkyApi } from "@/lib/api";
 
 vi.mock("sonner", () => ({
@@ -535,6 +536,17 @@ describe("main pages", () => {
     fetchMock.mockRestore();
     Object.defineProperty(URL, "createObjectURL", { configurable: true, value: originalCreateObjectUrl });
     Object.defineProperty(URL, "revokeObjectURL", { configurable: true, value: originalRevokeObjectUrl });
+  });
+
+  it("renders deployment operator commands and install paths", () => {
+    render(<Deployment />);
+
+    expect(screen.getByRole("heading", { name: /deployment/i })).toBeInTheDocument();
+    expect(screen.getByText("sudo ./install.sh")).toBeInTheDocument();
+    expect(screen.getByText("git pull --ff-only && sudo ./upgrade.sh")).toBeInTheDocument();
+    expect(screen.getByText("/etc/skyweaver/skyweaver.env")).toBeInTheDocument();
+    expect(screen.getByText("skyweaver-capture.service")).toBeInTheDocument();
+    expect(screen.getByText(/skips backend pip install/i)).toBeInTheDocument();
   });
 
   it("renders settings groups from backend settings", async () => {

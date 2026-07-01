@@ -26,7 +26,7 @@ const RemoteUpload = lazy(() => import("@/pages/RemoteUpload"));
 const Migration = lazy(() => import("@/pages/Migration"));
 const Setup = lazy(() => import("@/pages/Setup"));
 const PublicSky = lazy(() => import("@/pages/PublicSky"));
-const Deployment = lazy(() => import("@/pages/Placeholder").then((module) => ({ default: module.Deployment })));
+const Deployment = lazy(() => import("@/pages/Deployment"));
 
 const queryClient = new QueryClient();
 
