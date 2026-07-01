@@ -83,6 +83,12 @@ jobs:
       - name: Build frontend
         run: npm run build
 
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run public page smoke tests
+        run: npm run test:smoke
+
   shellcheck:
     name: Shell scripts
     runs-on: ubuntu-latest
