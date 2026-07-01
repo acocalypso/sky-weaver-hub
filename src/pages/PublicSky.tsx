@@ -156,8 +156,8 @@ function PublicStat({ label, value, icon }: { label: string; value: string; icon
 }
 
 function productLabel(type: string) {
-  if (type === "mini-timelapse") return "Mini timelapse";
-  return type.replace(/(^|-)([a-z])/g, (_match, separator: string, letter: string) => `${separator ? " " : ""}${letter.toUpperCase()}`);
+  const label = type.replace(/[_-]+/g, " ");
+  return label.charAt(0).toUpperCase() + label.slice(1);
 }
 
 function productSubtitle(product: PublicProduct) {

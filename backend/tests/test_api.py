@@ -443,14 +443,17 @@ def test_public_products_are_safe_unauthenticated_and_visibility_limited(tmp_pat
     products_dir.mkdir(parents=True, exist_ok=True)
     recent_file = products_dir / "keogram.jpg"
     recent_thumbnail = products_dir / "keogram-thumb.jpg"
+    mini_file = products_dir / "mini-timelapse.mp4"
     old_file = products_dir / "old-startrail.jpg"
     recent_file.write_bytes(b"recent-product")
     recent_thumbnail.write_bytes(b"recent-thumb")
+    mini_file.write_bytes(b"mini-product")
     old_file.write_bytes(b"old-product")
 
     from skyweaver.db import json_dumps, session
 
     recent_id = "public-product-recent"
+    mini_id = "public-product-mini"
     old_id = "public-product-old"
     recent_at = datetime.now(UTC).isoformat()
     old_at = (datetime.now(UTC) - timedelta(days=10)).isoformat()
@@ -458,6 +461,10 @@ def test_public_products_are_safe_unauthenticated_and_visibility_limited(tmp_pat
         conn.execute(
             "INSERT INTO night_products (id, type, day_key, file_path, thumbnail_path, status, metadata, created_at) VALUES (?, 'keogram', '20260630', ?, ?, 'completed', ?, ?)",
             (recent_id, str(recent_file), str(recent_thumbnail), json_dumps({"source_images": 42, "private_path": "/secret"}), recent_at),
+        )
+        conn.execute(
+            "INSERT INTO night_products (id, type, day_key, file_path, thumbnail_path, status, metadata, created_at) VALUES (?, 'mini_timelapse', '20260630', ?, NULL, 'completed', ?, ?)",
+            (mini_id, str(mini_file), json_dumps({"source_images": 42, "used_images": 12, "fps": 10}), recent_at),
         )
         conn.execute(
             "INSERT INTO night_products (id, type, day_key, file_path, thumbnail_path, status, metadata, created_at) VALUES (?, 'startrail', '20260620', ?, NULL, 'completed', ?, ?)",
@@ -470,16 +477,21 @@ def test_public_products_are_safe_unauthenticated_and_visibility_limited(tmp_pat
     assert public_products.status_code == 200, public_products.text
     payload = public_products.json()["data"]
     assert payload["configured_days"] == 7
-    assert [item["id"] for item in payload["products"]] == [recent_id]
-    product = payload["products"][0]
+    assert {item["id"] for item in payload["products"]} == {recent_id, mini_id}
+    product = next(item for item in payload["products"] if item["id"] == recent_id)
     assert product["download_url"] == f"/api/v1/public/products/{recent_id}/download"
     assert product["thumbnail_url"] == f"/api/v1/public/products/{recent_id}/thumbnail"
     assert product["metadata"] == {"source_images": 42}
     assert "file_path" not in product
     assert "thumbnail_path" not in product
+    mini_product = next(item for item in payload["products"] if item["id"] == mini_id)
+    assert mini_product["type"] == "mini_timelapse"
+    assert mini_product["download_url"] == f"/api/v1/public/products/{mini_id}/download"
+    assert mini_product["metadata"] == {"source_images": 42, "used_images": 12, "fps": 10}
 
     assert client.get(f"/api/v1/public/products/{recent_id}/download").content == b"recent-product"
     assert client.get(f"/api/v1/public/products/{recent_id}/thumbnail").content == b"recent-thumb"
+    assert client.get(f"/api/v1/public/products/{mini_id}/download").content == b"mini-product"
     assert client.get(f"/api/v1/public/products/{old_id}/download").status_code == 404
 
     disable_res = client.patch("/api/v1/settings", headers=headers, json={"values": {"public_page": {"enabled": False, "iframe_enabled": True, "product_days": 7}}})

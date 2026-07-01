@@ -1292,7 +1292,7 @@ def run_image_retention(
     return ok(result)
 
 
-PUBLIC_PRODUCT_TYPES = {"keogram", "startrail", "timelapse", "mini-timelapse"}
+PUBLIC_PRODUCT_TYPES = {"keogram", "startrail", "timelapse", "mini_timelapse", "mini-timelapse"}
 PUBLIC_PRODUCT_DEFAULT_DAYS = 7
 
 

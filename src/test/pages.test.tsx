@@ -138,12 +138,32 @@ const mockPublicProducts = {
     },
     {
       id: "product-2",
-      type: "mini-timelapse",
+      type: "startrail",
       day_key: "20260623",
       status: "completed",
       created_at: "2026-06-24T05:05:00+00:00",
-      metadata: { fps: 10 },
+      metadata: { source_images: 42 },
       download_url: "/api/v1/public/products/product-2/download",
+      thumbnail_url: null,
+    },
+    {
+      id: "product-3",
+      type: "timelapse",
+      day_key: "20260623",
+      status: "completed",
+      created_at: "2026-06-24T05:10:00+00:00",
+      metadata: { fps: 24, source_images: 42 },
+      download_url: "/api/v1/public/products/product-3/download",
+      thumbnail_url: "/api/v1/public/products/product-3/thumbnail",
+    },
+    {
+      id: "product-4",
+      type: "mini_timelapse",
+      day_key: "20260623",
+      status: "completed",
+      created_at: "2026-06-24T05:15:00+00:00",
+      metadata: { fps: 10, used_images: 12 },
+      download_url: "/api/v1/public/products/product-4/download",
       thumbnail_url: null,
     },
   ],
@@ -688,12 +708,25 @@ describe("main pages", () => {
     expect(screen.getByText("1280 x 960")).toBeInTheDocument();
     expect(screen.getByText("Night products")).toBeInTheDocument();
     expect(screen.getByText("Keogram")).toBeInTheDocument();
+    expect(screen.getByText("Startrail")).toBeInTheDocument();
+    expect(screen.getByText("Timelapse")).toBeInTheDocument();
     expect(screen.getByText("Mini timelapse")).toBeInTheDocument();
-    expect(screen.getByText("20260623 - 42 frames")).toBeInTheDocument();
+    expect(screen.getAllByText("20260623 - 42 frames")).toHaveLength(2);
+    expect(screen.getByText("20260623 - 42 frames - 24 fps")).toBeInTheDocument();
+    expect(screen.getByText("20260623 - 10 fps")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /keogram/i })).toHaveAttribute("href", "/api/v1/public/products/product-1/download");
+    expect(screen.getByRole("link", { name: /startrail/i })).toHaveAttribute("href", "/api/v1/public/products/product-2/download");
+    expect(screen.getByRole("link", { name: /^Timelapse/i })).toHaveAttribute("href", "/api/v1/public/products/product-3/download");
+    expect(screen.getByRole("link", { name: /^Mini timelapse/i })).toHaveAttribute("href", "/api/v1/public/products/product-4/download");
     expect(screen.getByTestId("public-stats")).toHaveClass("grid-cols-2");
+    expect(screen.getByTestId("public-stats")).toHaveClass("min-[420px]:grid-cols-3");
+    expect(screen.getByTestId("public-stats")).toHaveClass("lg:grid-cols-5");
     expect(screen.getByTestId("public-products")).toHaveClass("grid-cols-2");
+    expect(screen.getByTestId("public-products")).toHaveClass("min-[460px]:grid-cols-3");
+    expect(screen.getByTestId("public-products")).toHaveClass("sm:overflow-x-auto");
     expect(screen.getByAltText("Latest public all-sky capture")).toHaveAttribute("src", "/api/v1/public/latest/download?v=img-1");
+    expect(screen.getByAltText("Keogram preview")).toHaveAttribute("src", "/api/v1/public/products/product-1/thumbnail?v=product-1");
+    expect(screen.getByAltText("Timelapse preview")).toHaveAttribute("src", "/api/v1/public/products/product-3/thumbnail?v=product-3");
     await waitFor(() => expect(SkyApi.publicLatest).toHaveBeenCalled());
     await waitFor(() => expect(SkyApi.publicProducts).toHaveBeenCalled());
   });
