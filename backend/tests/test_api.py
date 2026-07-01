@@ -501,6 +501,89 @@ def test_api_key_scope_boundaries_for_endpoint_groups(tmp_path):
         assert denied.json()["error"]["message"] == f"Missing scope: {scope}"
 
 
+def test_admin_endpoint_families_require_admin_scope(tmp_path):
+    client = make_client(tmp_path)
+    admin_token = login(client)
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+    admin_key = create_scoped_api_key(client, admin_token, ["admin"], "admin-route-reader")
+    no_scope_key = create_scoped_api_key(client, admin_token, [], "admin-route-denied")
+
+    user_res = client.post(
+        "/api/v1/users",
+        headers=admin_headers,
+        json={"username": "route-auth-user", "password": "Route-auth-secret-2026!"},
+    )
+    assert user_res.status_code == 200, user_res.text
+    user_id = user_res.json()["data"]["id"]
+
+    key_res = client.post("/api/v1/api-keys", headers=admin_headers, json={"name": "route-auth-key", "scopes": ["read:status"]})
+    assert key_res.status_code == 200, key_res.text
+    key_id = key_res.json()["data"]["id"]
+
+    module_res = client.post(
+        "/api/v1/modules/register",
+        headers=admin_headers,
+        json={"id": "external.route-auth", "name": "Route Auth Module", "settings_schema": {}, "settings": {}},
+    )
+    assert module_res.status_code == 200, module_res.text
+    module_id = module_res.json()["data"]["id"]
+
+    target_res = client.post(
+        "/api/v1/remote-targets",
+        headers=admin_headers,
+        json={"name": "Route auth target", "type": "filesystem", "enabled": True, "config": {"destination_path": str(tmp_path / "upload-target")}},
+    )
+    assert target_res.status_code == 200, target_res.text
+    target_id = target_res.json()["data"]["id"]
+
+    migration_job_id = "route-auth-migration-job"
+    from skyweaver.db import json_dumps, now_iso, session
+
+    with session() as conn:
+        conn.execute(
+            "INSERT INTO processing_jobs (id, type, status, input, output, progress, created_at) VALUES (?, 'allsky_import', 'completed', ?, ?, 1, ?)",
+            (migration_job_id, json_dumps({"path": str(tmp_path)}), json_dumps({}), now_iso()),
+        )
+
+    admin_cases = [
+        ("GET", "/api/v1/setup/status", None, 200),
+        ("POST", "/api/v1/setup/complete", {}, 200),
+        ("GET", "/api/v1/users", None, 200),
+        ("POST", "/api/v1/users", {"username": "route-auth-created-user", "password": "Route-auth-secret-2027!"}, 200),
+        ("PATCH", f"/api/v1/users/{user_id}", {"role": "viewer"}, 200),
+        ("DELETE", f"/api/v1/users/{user_id}", None, 200),
+        ("GET", "/api/v1/api-keys", None, 200),
+        ("POST", "/api/v1/api-keys", {"name": "route-auth-created-key", "scopes": ["read:status"]}, 200),
+        ("PATCH", f"/api/v1/api-keys/{key_id}", {"enabled": False}, 200),
+        ("DELETE", f"/api/v1/api-keys/{key_id}", None, 200),
+        ("POST", "/api/v1/modules/upload", None, 200),
+        ("POST", "/api/v1/modules/register", {"id": "external.route-auth-created", "name": "Route Auth Created"}, 200),
+        ("PATCH", "/api/v1/modules/builtin.overlay", {"enabled": True, "settings": {"lines": []}}, 200),
+        ("DELETE", f"/api/v1/modules/{module_id}", None, 200),
+        ("PATCH", "/api/v1/module-flows/builtin.post_capture", {"enabled": True, "module_order": ["builtin.overlay"]}, 200),
+        ("POST", "/api/v1/remote-targets", {"name": "Route auth created target", "type": "filesystem", "enabled": True, "config": {"destination_path": str(tmp_path / "created-target")}}, 200),
+        ("PATCH", f"/api/v1/remote-targets/{target_id}", {"enabled": False}, 200),
+        ("POST", f"/api/v1/remote-targets/{target_id}/test", None, 200),
+        ("DELETE", f"/api/v1/remote-targets/{target_id}", None, 200),
+        ("GET", "/api/v1/migration/allsky/detect", None, 200),
+        ("POST", "/api/v1/migration/allsky/preview", {"path": str(tmp_path)}, 200),
+        ("POST", "/api/v1/migration/allsky/import", {"path": str(tmp_path)}, 200),
+        ("GET", f"/api/v1/migration/jobs/{migration_job_id}", None, 200),
+        ("POST", f"/api/v1/migration/jobs/{migration_job_id}/rollback", None, 200),
+    ]
+
+    for method, path, payload, expected_status in admin_cases:
+        unauthenticated = client.request(method, path, json=payload)
+        assert unauthenticated.status_code == 401, (method, path, unauthenticated.status_code, unauthenticated.text)
+
+        denied = client.request(method, path, headers={"Authorization": f"Bearer {no_scope_key}"}, json=payload)
+        assert denied.status_code == 403, (method, path, denied.status_code, denied.text)
+        assert denied.json()["error"]["message"] == "Missing scope: admin"
+
+        allowed = client.request(method, path, headers={"Authorization": f"Bearer {admin_key}"}, json=payload)
+        assert allowed.status_code == expected_status, (method, path, allowed.status_code, allowed.text)
+
+
 def test_private_download_routes_require_read_images_scope(tmp_path):
     client = make_client(tmp_path)
     admin_token = login(client)
