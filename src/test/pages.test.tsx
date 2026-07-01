@@ -14,6 +14,10 @@ import RemoteUpload from "@/pages/RemoteUpload";
 import Migration from "@/pages/Migration";
 import ImageDetail from "@/pages/ImageDetail";
 import Deployment from "@/pages/Deployment";
+import Schedule from "@/pages/Schedule";
+import Logs from "@/pages/Logs";
+import DeveloperApi from "@/pages/DeveloperApi";
+import Timelapses from "@/pages/Timelapses";
 import { SkyApi } from "@/lib/api";
 
 vi.mock("sonner", () => ({
@@ -31,8 +35,11 @@ vi.mock("@/lib/api", async () => {
     SkyApi: {
       status: vi.fn(),
       images: vi.fn(),
+      logs: vi.fn(),
       settings: vi.fn(),
       metrics: vi.fn(),
+      schedule: vi.fn(),
+      putSchedule: vi.fn(),
       systemServices: vi.fn(),
       serviceDetail: vi.fn(),
       diagnostics: vi.fn(),
@@ -52,6 +59,10 @@ vi.mock("@/lib/api", async () => {
       createCamera: vi.fn(),
       publicLatest: vi.fn(),
       publicProducts: vi.fn(),
+      products: vi.fn(),
+      processingJobs: vi.fn(),
+      createProduct: vi.fn(),
+      deleteProduct: vi.fn(),
       modules: vi.fn(),
       registerModule: vi.fn(),
       patchModule: vi.fn(),
@@ -169,6 +180,22 @@ const mockPublicProducts = {
   ],
 };
 
+const mockSchedule = {
+  enabled: true,
+  start_mode: "sun_angle",
+  end_mode: "sun_angle",
+  sun_angle: -6,
+  start_sun_angle: -6,
+  end_sun_angle: -4,
+  fixed_start_time: "22:00",
+  fixed_end_time: "06:00",
+  timezone: "Europe/Berlin",
+  latitude: 47.1,
+  longitude: 15.4,
+  interval_seconds: 30,
+  exposure_ramping_enabled: false,
+};
+
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(SkyApi.status).mockResolvedValue({
@@ -178,7 +205,13 @@ beforeEach(() => {
   } as any);
   vi.mocked(SkyApi.images).mockResolvedValue([mockImage] as any);
   vi.mocked(SkyApi.imageDetail).mockResolvedValue(mockImage as any);
+  vi.mocked(SkyApi.logs).mockResolvedValue([
+    { id: "log-1", created_at: "2026-06-23T22:16:00+00:00", level: "info", source: "api", message: "API started" },
+    { id: "log-2", created_at: "2026-06-23T22:17:00+00:00", level: "warning", source: "capture", message: "Camera warming" },
+  ] as any);
   vi.mocked(SkyApi.settings).mockResolvedValue(mockSettings);
+  vi.mocked(SkyApi.schedule).mockResolvedValue(mockSchedule as any);
+  vi.mocked(SkyApi.putSchedule).mockImplementation(async (body) => body as any);
   vi.mocked(SkyApi.metrics).mockResolvedValue({ cpu_percent: 12, memory_percent: 34, disk_percent: 45, disk_free_gb: 12.3, temperature_c: 41, uptime_seconds: 7200 });
   vi.mocked(SkyApi.systemServices).mockResolvedValue([
     { name: "skyweaver", unit: "skyweaver.target", status: "running", managed_by: "systemd", actions: ["start", "stop", "restart"] },
@@ -248,6 +281,50 @@ beforeEach(() => {
   vi.mocked(SkyApi.createCamera).mockResolvedValue({ id: "cam-2" });
   vi.mocked(SkyApi.publicLatest).mockResolvedValue(mockPublicLatest);
   vi.mocked(SkyApi.publicProducts).mockResolvedValue(mockPublicProducts);
+  vi.mocked(SkyApi.processingJobs).mockResolvedValue([
+    {
+      id: "processing-1",
+      type: "timelapse",
+      status: "running",
+      input: { day_key: "20260623" },
+      output: null,
+      error: null,
+      progress: 0.5,
+      created_at: "2026-06-24T05:00:00+00:00",
+      started_at: "2026-06-24T05:00:01+00:00",
+      completed_at: null,
+    },
+  ] as any);
+  vi.mocked(SkyApi.products).mockResolvedValue([
+    {
+      id: "product-1",
+      type: "keogram",
+      day_key: "20260623",
+      file_path: "/data/products/keogram.jpg",
+      thumbnail_path: null,
+      status: "completed",
+      metadata: { source_images: 42 },
+      created_at: "2026-06-24T05:00:00+00:00",
+    },
+  ] as any);
+  vi.mocked(SkyApi.createProduct).mockResolvedValue({
+    id: "processing-queued",
+    type: "timelapse",
+    status: "pending",
+    input: { day_key: "20260623", fps: 30, codec: "h264" },
+    output: null,
+    error: null,
+    progress: 0,
+    created_at: "2026-06-24T05:05:00+00:00",
+    started_at: null,
+    completed_at: null,
+  } as any);
+  vi.mocked(SkyApi.deleteProduct).mockResolvedValue({
+    deleted: "product-1",
+    deleted_files: ["/data/products/keogram.jpg"],
+    missing_files: [],
+    skipped_files: [],
+  } as any);
   vi.mocked(SkyApi.modules).mockResolvedValue([
     {
       id: "builtin.overlay",
@@ -567,6 +644,59 @@ describe("main pages", () => {
     expect(screen.getByText("/etc/skyweaver/skyweaver.env")).toBeInTheDocument();
     expect(screen.getByText("skyweaver-capture.service")).toBeInTheDocument();
     expect(screen.getByText(/skips backend pip install/i)).toBeInTheDocument();
+  });
+
+  it("renders schedule preview and saves schedule presets", async () => {
+    render(<Schedule />);
+
+    expect(await screen.findByRole("heading", { name: /capture schedule/i })).toBeInTheDocument();
+    expect(screen.getByText("capturing window")).toBeInTheDocument();
+    expect(screen.getByText("Europe/Berlin")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("47.1")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("15.4")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /nautical dusk to sunrise/i }));
+    fireEvent.click(screen.getByRole("button", { name: /save schedule/i }));
+    await waitFor(() =>
+      expect(SkyApi.putSchedule).toHaveBeenCalledWith(expect.objectContaining({
+        start_mode: "nautical_dusk",
+        end_mode: "sunrise",
+      })),
+    );
+  });
+
+  it("renders logs and applies source filters", async () => {
+    render(<Logs />);
+
+    expect(await screen.findByRole("heading", { name: /logs/i })).toBeInTheDocument();
+    expect(screen.getByText("API started")).toBeInTheDocument();
+    expect(screen.getByText("Camera warming")).toBeInTheDocument();
+    fireEvent.change(screen.getByPlaceholderText("camera, scheduler, api"), { target: { value: "capture" } });
+    await waitFor(() => expect(SkyApi.logs).toHaveBeenCalledWith("?source=capture"));
+  });
+
+  it("renders developer API examples and public endpoints", () => {
+    render(<DeveloperApi />);
+
+    expect(screen.getByRole("heading", { name: /developer api/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /openapi docs/i })).toHaveAttribute("href", "/api/docs");
+    expect(screen.getByText("/api/v1/public/latest")).toBeInTheDocument();
+    expect(screen.getByText("/api/v1/public/products")).toBeInTheDocument();
+    expect(screen.getByText(/Authorization: Bearer/)).toBeInTheDocument();
+  });
+
+  it("renders night products and queues product regeneration", async () => {
+    render(<Timelapses />);
+
+    expect(await screen.findByRole("heading", { name: /night products/i })).toBeInTheDocument();
+    expect(screen.getByText("Processing queue")).toBeInTheDocument();
+    expect(screen.getByText("day 20260623 - job processing-1")).toBeInTheDocument();
+    expect(screen.getByText("Generated products")).toBeInTheDocument();
+    expect(screen.getByText("day 20260623 - 42 source images")).toBeInTheDocument();
+    fireEvent.change(screen.getByPlaceholderText("20260623"), { target: { value: "20260624" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Timelapse$/i }));
+    await waitFor(() => expect(SkyApi.createProduct).toHaveBeenCalledWith("timelapse", { day_key: "20260624", fps: 30, codec: "h264" }));
+    fireEvent.click(screen.getByRole("button", { name: /delete/i }));
+    await waitFor(() => expect(SkyApi.deleteProduct).toHaveBeenCalledWith("product-1"));
   });
 
   it("renders settings groups from backend settings", async () => {
