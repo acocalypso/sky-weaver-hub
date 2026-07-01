@@ -216,7 +216,7 @@ save_previous_backend_requirements
 grant_hardware_groups
 install_zwo_sdk
 install_service_controls
-rsync -a --delete --exclude .git --exclude node_modules --exclude data --exclude logs "$ROOT_DIR/" "$INSTALL_DIR/"
+rsync -a --delete --exclude .git --exclude node_modules --exclude backend/.venv --exclude data --exclude logs "$ROOT_DIR/" "$INSTALL_DIR/"
 install_backend_dependencies
 npm ci --prefix "$INSTALL_DIR"
 npm run build --prefix "$INSTALL_DIR"
