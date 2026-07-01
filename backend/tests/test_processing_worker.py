@@ -68,6 +68,82 @@ def test_worker_activity_is_reported_by_system_services(tmp_path: Path):
     assert worker["last_success_at"]
 
 
+def test_thumbnail_processing_job_lifecycle_updates_status_and_output(tmp_path: Path):
+    client = make_client(tmp_path)
+    token = login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    _queued, _job, image = run_queued_test_capture(client, headers, {"exposure_ms": 250, "gain": 1, "format": "jpg", "mode": "night"})
+    original_thumbnail = Path(image["thumbnail_path"])
+    assert original_thumbnail.exists()
+    original_thumbnail.unlink()
+
+    queue_res = client.post(f"/api/v1/images/{image['id']}/reprocess", headers=headers)
+    assert queue_res.status_code == 200, queue_res.text
+    queued = queue_res.json()["data"]
+    assert queued["status"] == "pending"
+
+    pending_job = client.get(f"/api/v1/processing/jobs/{queued['id']}", headers=headers).json()["data"]
+    assert pending_job["status"] == "pending"
+    assert pending_job["progress"] == 0
+    assert pending_job["started_at"] is None
+    assert pending_job["completed_at"] is None
+    assert pending_job["output"] is None
+    assert pending_job["error"] is None
+
+    from skyweaver.services.processing import claim_next_processing_job, execute_processing_job
+
+    claimed = claim_next_processing_job()
+    assert claimed is not None
+    assert claimed["id"] == queued["id"]
+    running_job = client.get(f"/api/v1/processing/jobs/{queued['id']}", headers=headers).json()["data"]
+    assert running_job["status"] == "running"
+    assert running_job["progress"] == 0.05
+    assert running_job["started_at"]
+    assert running_job["completed_at"] is None
+
+    result = asyncio.run(execute_processing_job(claimed))
+    completed_job = client.get(f"/api/v1/processing/jobs/{queued['id']}", headers=headers).json()["data"]
+    assert completed_job["status"] == "completed"
+    assert completed_job["progress"] == 1
+    assert completed_job["completed_at"]
+    assert completed_job["output"] == result
+    assert completed_job["output"]["image_id"] == image["id"]
+    assert Path(completed_job["output"]["thumbnail_path"]).exists()
+    assert completed_job["error"] is None
+
+
+def test_failed_processing_job_records_error_and_completion_time(tmp_path: Path):
+    client = make_client(tmp_path)
+    token = login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    _queued, _job, image = run_queued_test_capture(client, headers, {"exposure_ms": 250, "gain": 1, "format": "jpg", "mode": "night"})
+    Path(image["file_path"]).unlink()
+    queue_res = client.post(f"/api/v1/images/{image['id']}/reprocess", headers=headers)
+    assert queue_res.status_code == 200, queue_res.text
+    queued = queue_res.json()["data"]
+
+    from skyweaver.services.processing import claim_next_processing_job, execute_processing_job
+
+    claimed = claim_next_processing_job()
+    assert claimed is not None
+    assert claimed["id"] == queued["id"]
+
+    import pytest
+
+    with pytest.raises(FileNotFoundError):
+        asyncio.run(execute_processing_job(claimed))
+
+    failed_job = client.get(f"/api/v1/processing/jobs/{queued['id']}", headers=headers).json()["data"]
+    assert failed_job["status"] == "failed"
+    assert failed_job["progress"] == 0.05
+    assert failed_job["started_at"]
+    assert failed_job["completed_at"]
+    assert failed_job["output"] is None
+    assert image["file_path"] in failed_job["error"]
+
+
 def test_delete_product_removes_files_and_row(tmp_path: Path):
     client = make_client(tmp_path)
     token = login(client)
