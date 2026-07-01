@@ -12,6 +12,7 @@ SYSTEMCTL_BIN="${SKYWEAVER_SYSTEMCTL_BIN:-/usr/bin/systemctl}"
 ZWO_SDK_INSTALL="${SKYWEAVER_INSTALL_ZWO_SDK:-auto}"
 ZWO_SDK_URL="${SKYWEAVER_ZWO_SDK_URL:-}"
 ZWO_SDK_DIR="${SKYWEAVER_ZWO_SDK_DIR:-/opt/skyweaver/vendor/zwo}"
+PREVIOUS_REQUIREMENTS_FILE="$BACKUP_DIR/backend-requirements.txt"
 
 env_line() {
   local escaped
@@ -181,18 +182,42 @@ install_service_controls() {
   mv "$sudoers_tmp" "$sudoers_file"
 }
 
+save_previous_backend_requirements() {
+  local requirements="$INSTALL_DIR/backend/requirements.txt"
+  if [[ -f "$requirements" ]]; then
+    cp -a "$requirements" "$PREVIOUS_REQUIREMENTS_FILE"
+  fi
+}
+
+backend_requirements_unchanged() {
+  local requirements="$INSTALL_DIR/backend/requirements.txt"
+  [[ "${SKYWEAVER_FORCE_PIP_INSTALL:-0}" != "1" ]] || return 1
+  [[ -x "$INSTALL_DIR/backend/.venv/bin/pip" ]] || return 1
+  [[ -f "$PREVIOUS_REQUIREMENTS_FILE" && -f "$requirements" ]] || return 1
+  cmp -s "$PREVIOUS_REQUIREMENTS_FILE" "$requirements"
+}
+
+install_backend_dependencies() {
+  if backend_requirements_unchanged; then
+    echo "Backend requirements unchanged; skipping pip install."
+    return
+  fi
+  python3 -m venv "$INSTALL_DIR/backend/.venv"
+  "$INSTALL_DIR/backend/.venv/bin/pip" install --upgrade pip
+  "$INSTALL_DIR/backend/.venv/bin/pip" install -r "$INSTALL_DIR/backend/requirements.txt"
+}
+
 if [[ "${EUID}" -ne 0 ]]; then echo "Please run with sudo"; exit 1; fi
 mkdir -p "$BACKUP_DIR"
 systemctl stop skyweaver.target || true
 cp -a /etc/skyweaver "$BACKUP_DIR/config" 2>/dev/null || true
 cp -a /var/lib/skyweaver/skyweaver.db "$BACKUP_DIR/skyweaver.db" 2>/dev/null || true
+save_previous_backend_requirements
 grant_hardware_groups
 install_zwo_sdk
 install_service_controls
 rsync -a --delete --exclude .git --exclude node_modules --exclude data --exclude logs "$ROOT_DIR/" "$INSTALL_DIR/"
-python3 -m venv "$INSTALL_DIR/backend/.venv"
-"$INSTALL_DIR/backend/.venv/bin/pip" install --upgrade pip
-"$INSTALL_DIR/backend/.venv/bin/pip" install -r "$INSTALL_DIR/backend/requirements.txt"
+install_backend_dependencies
 npm ci --prefix "$INSTALL_DIR"
 npm run build --prefix "$INSTALL_DIR"
 rsync -a --delete "$INSTALL_DIR/dist/" /var/lib/skyweaver/web/
