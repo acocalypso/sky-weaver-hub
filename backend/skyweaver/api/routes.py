@@ -1010,10 +1010,10 @@ async def camera_settings_schema(camera_id: str, _principal: Annotated[dict, Dep
 
 
 @router.post("/cameras/{camera_id}/test")
-async def camera_test(camera_id: str, body: CaptureBody | None = None, principal: dict = Depends(require_scope("write:capture"))):
+async def camera_test(camera_id: str, body: CaptureBody | None = None, _principal: dict = Depends(require_scope("write:capture"))):
     payload = body or CaptureBody(camera_id=camera_id)
     payload.camera_id = camera_id
-    return await capture_image(payload, principal, job_type="test")
+    return ok(enqueue_capture(CaptureCommand.from_mapping(payload.model_dump()), "test"))
 
 
 @router.get("/settings")

@@ -550,6 +550,89 @@ def test_api_key_scope_boundaries_for_endpoint_groups(tmp_path):
         assert denied.json()["error"]["message"] == f"Missing scope: {scope}"
 
 
+def test_mutating_api_key_scope_boundaries_for_non_admin_endpoint_groups(tmp_path):
+    client = make_client(tmp_path)
+    admin_token = login(client)
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+    no_scope_key = create_scoped_api_key(client, admin_token, [], "mutating-no-scope")
+    write_capture_key = create_scoped_api_key(client, admin_token, ["write:capture"], "mutating-write-capture")
+    write_settings_key = create_scoped_api_key(client, admin_token, ["write:settings"], "mutating-write-settings")
+    write_processing_key = create_scoped_api_key(client, admin_token, ["write:processing"], "mutating-write-processing")
+
+    def assert_scope_boundary(scope: str, token: str, method: str, path: str, payload: dict | None = None, expected_status: int = 200):
+        denied = client.request(method, path, headers={"Authorization": f"Bearer {no_scope_key}"}, json=payload)
+        assert denied.status_code == 403, (method, path, denied.status_code, denied.text)
+        assert denied.json()["error"]["message"] == f"Missing scope: {scope}"
+
+        allowed = client.request(method, path, headers={"Authorization": f"Bearer {token}"}, json=payload)
+        assert allowed.status_code == expected_status, (method, path, allowed.status_code, allowed.text)
+        return allowed
+
+    cameras = client.get("/api/v1/cameras", headers=admin_headers).json()["data"]
+    camera_id = cameras[0]["id"]
+    _queued, _job, image = run_queued_test_capture(client, admin_headers, {"exposure_ms": 250, "gain": 1, "format": "jpg", "mode": "night"})
+
+    assert_scope_boundary("write:capture", write_capture_key, "POST", "/api/v1/capture/start")
+    assert_scope_boundary("write:capture", write_capture_key, "POST", "/api/v1/capture/pause")
+    assert_scope_boundary("write:capture", write_capture_key, "POST", "/api/v1/capture/resume")
+    assert_scope_boundary("write:capture", write_capture_key, "POST", "/api/v1/capture/test-shot", {"exposure_ms": 250, "gain": 1, "format": "jpg", "mode": "manual"})
+    assert_scope_boundary("write:capture", write_capture_key, "POST", "/api/v1/capture/single", {"exposure_ms": 250, "gain": 1, "format": "jpg", "mode": "manual"})
+    assert_scope_boundary("write:capture", write_capture_key, "POST", "/api/v1/capture/sequence", {"frames": 1, "delay_seconds": 1})
+    assert_scope_boundary("write:capture", write_capture_key, "POST", "/api/v1/dark-frames/capture")
+    assert_scope_boundary("write:capture", write_capture_key, "POST", f"/api/v1/cameras/{camera_id}/test", {"exposure_ms": 250, "gain": 1, "format": "jpg", "mode": "manual"})
+    assert_scope_boundary("write:capture", write_capture_key, "POST", "/api/v1/capture/stop")
+
+    created_camera = assert_scope_boundary(
+        "write:settings",
+        write_settings_key,
+        "POST",
+        "/api/v1/cameras",
+        {"name": "Scoped settings camera", "adapter": "mock", "enabled": True},
+    ).json()["data"]
+    scoped_camera_id = created_camera["id"]
+    assert_scope_boundary("write:settings", write_settings_key, "PATCH", f"/api/v1/cameras/{scoped_camera_id}", {"enabled": False})
+    assert_scope_boundary("write:settings", write_settings_key, "PATCH", "/api/v1/settings", {"values": {"public_page": {"enabled": True, "refresh_seconds": 30, "iframe_enabled": True, "product_days": 7}}})
+    profile_id = assert_scope_boundary(
+        "write:settings",
+        write_settings_key,
+        "POST",
+        "/api/v1/camera-profiles",
+        {"camera_id": camera_id, "name": "Scoped night", "mode": "night", "settings": {"gain": 2}},
+    ).json()["data"]["id"]
+    assert_scope_boundary("write:settings", write_settings_key, "PATCH", f"/api/v1/camera-profiles/{profile_id}", {"settings": {"gain": 3}})
+    assert_scope_boundary("write:settings", write_settings_key, "PUT", "/api/v1/schedule", {"enabled": True, "start_mode": "fixed_time", "end_mode": "fixed_time", "fixed_start_time": "22:00", "fixed_end_time": "06:00", "timezone": "UTC", "latitude": 0, "longitude": 0, "interval_seconds": 60})
+    assert_scope_boundary("write:settings", write_settings_key, "POST", "/api/v1/schedule/recalculate")
+    assert_scope_boundary("write:settings", write_settings_key, "DELETE", f"/api/v1/camera-profiles/{profile_id}")
+    assert_scope_boundary("write:settings", write_settings_key, "DELETE", f"/api/v1/cameras/{scoped_camera_id}")
+
+    from skyweaver.db import json_dumps, now_iso, session
+
+    product_file = tmp_path / "scoped-product.jpg"
+    product_file.write_bytes(b"product")
+    dark_frame_file = tmp_path / "scoped-dark.jpg"
+    dark_frame_file.write_bytes(b"dark")
+    with session() as conn:
+        conn.execute(
+            "INSERT INTO night_products (id, type, day_key, file_path, thumbnail_path, status, metadata, created_at) VALUES ('scoped-product', 'keogram', ?, ?, NULL, 'completed', ?, ?)",
+            (image["day_key"], str(product_file), json_dumps({}), now_iso()),
+        )
+        conn.execute(
+            """INSERT INTO dark_frames
+               (id, camera_id, captured_at, day_key, file_path, thumbnail_path, format, width, height, size_bytes, metadata, created_at)
+               VALUES ('scoped-dark', ?, ?, ?, ?, NULL, 'jpg', 1, 1, 4, ?, ?)""",
+            (camera_id, now_iso(), image["day_key"], str(dark_frame_file), json_dumps({}), now_iso()),
+        )
+
+    assert_scope_boundary("write:processing", write_processing_key, "POST", f"/api/v1/images/{image['id']}/reprocess")
+    assert_scope_boundary("write:processing", write_processing_key, "POST", "/api/v1/products/retention/run?days=3650")
+    assert_scope_boundary("write:processing", write_processing_key, "POST", "/api/v1/products/keogram", {"day_key": image["day_key"]})
+    assert_scope_boundary("write:processing", write_processing_key, "POST", "/api/v1/module-flows/builtin.post_capture/run")
+    assert_scope_boundary("write:processing", write_processing_key, "POST", "/api/v1/uploads/retry")
+    assert_scope_boundary("write:processing", write_processing_key, "DELETE", "/api/v1/dark-frames/scoped-dark")
+    assert_scope_boundary("write:processing", write_processing_key, "DELETE", "/api/v1/products/scoped-product")
+    assert_scope_boundary("write:processing", write_processing_key, "DELETE", f"/api/v1/images/{image['id']}")
+
+
 def test_admin_endpoint_families_require_admin_scope(tmp_path):
     client = make_client(tmp_path)
     admin_token = login(client)
