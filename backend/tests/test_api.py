@@ -170,6 +170,55 @@ def test_delete_image_removes_files_row_and_matching_latest(tmp_path):
     assert client.get("/api/v1/public/latest").status_code == 404
 
 
+def test_delete_image_skips_files_outside_storage_roots(tmp_path):
+    client = make_client(tmp_path)
+    token = login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+    _queued, _job, image = run_queued_test_capture(client, headers, {"exposure_ms": 500, "gain": 1, "format": "jpg", "mode": "manual"})
+
+    outside_file = tmp_path / "outside-storage.jpg"
+    outside_file.write_bytes(b"do not delete")
+
+    from skyweaver.db import session
+
+    with session() as conn:
+        conn.execute("UPDATE images SET file_path=? WHERE id=?", (str(outside_file), image["id"]))
+
+    delete_res = client.delete(f"/api/v1/images/{image['id']}", headers=headers)
+    assert delete_res.status_code == 200, delete_res.text
+    payload = delete_res.json()["data"]
+    assert payload["deleted"] == image["id"]
+    assert outside_file.exists()
+    assert str(outside_file) not in payload["deleted_files"]
+    assert any(item["path"] == str(outside_file) and item["reason"] == "outside_storage_roots" for item in payload["skipped_files"])
+    assert client.get(f"/api/v1/images/{image['id']}", headers=headers).status_code == 404
+
+
+def test_delete_latest_image_republishes_previous_image(tmp_path):
+    client = make_client(tmp_path)
+    token = login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+    _queued_old, _job_old, old_image = run_queued_test_capture(client, headers, {"exposure_ms": 500, "gain": 1, "format": "jpg", "mode": "manual"})
+    _queued_new, _job_new, new_image = run_queued_test_capture(client, headers, {"exposure_ms": 500, "gain": 1, "format": "jpg", "mode": "manual"})
+
+    latest_before = client.get("/api/v1/public/latest")
+    assert latest_before.status_code == 200
+    assert latest_before.json()["data"]["id"] == new_image["id"]
+
+    delete_res = client.delete(f"/api/v1/images/{new_image['id']}", headers=headers)
+    assert delete_res.status_code == 200, delete_res.text
+    payload = delete_res.json()["data"]
+    assert payload["deleted"] == new_image["id"]
+    assert payload["latest_republished"]["id"] == old_image["id"]
+
+    latest_after = client.get("/api/v1/public/latest")
+    assert latest_after.status_code == 200
+    assert latest_after.json()["data"]["id"] == old_image["id"]
+    assert Path(old_image["file_path"]).exists()
+    latest_json = tmp_path / "data" / "latest" / "latest.json"
+    assert json.loads(latest_json.read_text(encoding="utf-8"))["id"] == old_image["id"]
+
+
 def test_image_retention_cleanup_removes_old_images_only(tmp_path):
     client = make_client(tmp_path)
     token = login(client)
