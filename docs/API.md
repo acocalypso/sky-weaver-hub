@@ -30,6 +30,23 @@ Successful captures also publish stable latest artifacts under the local data di
 
 Image row `metadata` includes capture context, environment readings, analysis values, adapter metadata, and `storage` metadata. `metadata.storage` contains JSON-safe file details, image format/mode/dimensions, and readable EXIF tags when the source image provides them. Large binary EXIF values such as maker notes are not stored.
 
+`GET /api/v1/images` remains the legacy offset-based image list and returns a data array. New mobile clients should prefer `GET /api/v1/images/page?limit=50`, which returns:
+
+```json
+{
+  "data": {
+    "items": [],
+    "next_cursor": null,
+    "has_more": false,
+    "limit": 50,
+    "filters": { "day_key": null, "mode": null, "camera_id": null, "bad_image": null }
+  },
+  "meta": { "request_id": "...", "timestamp": "..." }
+}
+```
+
+Pass `cursor=<next_cursor>` to fetch the next page. Supported filters are `day_key`, `mode`, `camera_id`, and `bad_image`. Cursors are opaque client tokens and should not be parsed by mobile apps.
+
 Image and product cleanup endpoints use the same success envelope and require `write:processing`. `DELETE /api/v1/images/{image_id}` removes the database row plus the owned image file, thumbnail, JSON sidecar, and matching latest artifacts; if an older image remains it republishes that image as latest. `POST /api/v1/images/retention/run?days=30` removes image rows and owned artifacts older than the cutoff. Generated night products have matching lifecycle endpoints: `DELETE /api/v1/products/{product_id}` removes the product row and owned product/thumbnail files, and `POST /api/v1/products/retention/run?days=30` removes old generated products.
 
 `GET /api/v1/modules` lists built-in and installed modules. The trusted built-in overlay module (`builtin.overlay`) can be enabled and configured with `PATCH /api/v1/modules/builtin.overlay`; custom code uploads stay disabled. External module packages can register a manifest with `POST /api/v1/modules/register`, but registered external modules are forced disabled/untrusted and cannot run until a future sandbox/signing runtime exists. Overlay settings include up to eight text lines, text/background colors, font size, margin, padding, and nine placement options. `GET /api/v1/module-flows` exposes the built-in `post_capture` flow, `PATCH /api/v1/module-flows/builtin.post_capture` can enable/disable it or update its validated built-in module order, and `POST /api/v1/module-flows/builtin.post_capture/run` validates the runnable module list. When the overlay module and post-capture flow are enabled, overlay metadata is recorded on image rows under `metadata.overlay` and `overlay_applied`.

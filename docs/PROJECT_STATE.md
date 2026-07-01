@@ -22,7 +22,7 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 | Camera abstraction | `CameraAdapter` base class plus working `mock` adapter, initial `rpicam`/`libcamera` adapter, and initial ZWO ASI adapter using the native `libASICamera2` SDK library from Debian `libasi` or a vendor SDK install. Other adapters are placeholders with actionable errors. |
 | UI/API integration | Public Sky, Dashboard, Cameras, Schedule, Gallery, Night Products, Logs, Settings, API Keys, Modules, Remote Upload, Migration, Deployment, and Developer API call the local backend. |
 | Deployment | `install.sh`, `upgrade.sh`, `uninstall.sh`, `support.sh`, and systemd units exist. Fresh interactive installs prompt for first-setup values. Installer/upgrade can provision Debian `libasi`, ZWO USB rules, and optional vendor SDK library support when ZWO is configured. Upgrade skips backend `pip install` when requirements are unchanged and the virtualenv exists. |
-| Tests | Backend pytest coverage for health/status, login, diagnostics redaction and file-permission reporting, subprocess safety scanning, auth audit logs, API keys, admin-route auth boundaries, settings validation, schedule calculation, mock capture, image/product/dark-frame delete and cleanup policy, retention cleanup, first-setup hardening, system service controls, scheduled daemon capture, day/night profile scheduling, latest-only unsaved captures, end-of-night product queuing, queued test/single/sequence capture execution, pause/resume/stop queue semantics, schedule preview, daemon heartbeat/activity, interrupted job recovery, mock overnight acceptance flow, night product generation, public product archive visibility including mini timelapses, filesystem, rsync-over-SSH, SCP-over-SSH, SFTP-over-SSH, FTP/FTPS upload execution/retry with encrypted target configs, Allsky migration preview/import/rollback/settings restore including dark frames, overlay assets, and camera profiles, module/overlay flows, external module manifests, mock adapter, and fake-SDK ZWO adapter behavior. Frontend component tests cover Public Sky latest/disabled/product archive/mobile-compact states, Dashboard, Schedule, Gallery, Night Products, Health, Logs, Settings, API Keys, Developer API, Modules, Remote Upload, Migration, Deployment, and first setup, with route smoke coverage for public, auth, protected, and setup-required flows. Playwright browser smoke tests cover `/public` enabled, disabled, product archive, mobile compact layout states, authenticated Migration preview/import flow, and authenticated Remote Upload target/job/action flow against mocked API responses. Shell tests cover installer dry-run, service-control sudoers generation, and repeat-install idempotency with mocked system commands. |
+| Tests | Backend pytest coverage for health/status, login, diagnostics redaction and file-permission reporting, subprocess safety scanning, auth audit logs, API keys, admin-route auth boundaries, settings validation, schedule calculation, mock capture, image cursor pagination, image/product/dark-frame delete and cleanup policy, retention cleanup, first-setup hardening, system service controls, scheduled daemon capture, day/night profile scheduling, latest-only unsaved captures, end-of-night product queuing, queued test/single/sequence capture execution, pause/resume/stop queue semantics, schedule preview, daemon heartbeat/activity, interrupted job recovery, mock overnight acceptance flow, night product generation, public product archive visibility including mini timelapses, filesystem, rsync-over-SSH, SCP-over-SSH, SFTP-over-SSH, FTP/FTPS upload execution/retry with encrypted target configs, Allsky migration preview/import/rollback/settings restore including dark frames, overlay assets, and camera profiles, module/overlay flows, external module manifests, mock adapter, and fake-SDK ZWO adapter behavior. Frontend component tests cover Public Sky latest/disabled/product archive/mobile-compact states, Dashboard, Schedule, Gallery, Night Products, Health, Logs, Settings, API Keys, Developer API, Modules, Remote Upload, Migration, Deployment, and first setup, with route smoke coverage for public, auth, protected, and setup-required flows. Playwright browser smoke tests cover `/public` enabled, disabled, product archive, mobile compact layout states, authenticated Migration preview/import flow, and authenticated Remote Upload target/job/action flow against mocked API responses. Shell tests cover installer dry-run, service-control sudoers generation, and repeat-install idempotency with mocked system commands. |
 
 ## Implemented Capabilities
 
@@ -48,6 +48,7 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 - Capture state/start/stop/pause/resume/test-shot/single/sequence/jobs
 - Schedule get/put/preview/recalculate
 - Image list/latest/detail/download/delete/reprocess/days/day and retention cleanup
+- Cursor-paged authenticated image feed for mobile clients at `/api/v1/images/page`
 - Public latest and public product metadata/download/thumbnail endpoints gated by `public_page.enabled`
 - Products list/detail/queue/download/delete and retention cleanup
 - Dark-frame list/delete endpoints; capture and processing/subtraction are still planned
@@ -171,7 +172,7 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 | Phase 7: Overlay/modules | Done | Trusted built-in overlay module seeding, API configuration, capture-time text rendering with variables, image metadata/flagging, expanded overlay editor, built-in post-capture module flow execution, external module manifest registration/listing/deletion, and Modules UI exist. Custom code upload/execution is intentionally disabled until a future sandbox/signing runtime is designed. |
 | Phase 8: Installer/systemd/support/docs | Partial | Scripts and units exist. Shellcheck CI, installer dry-run/idempotency tests, service-control sudoers generation, interactive first-setup prompts, ZWO `libasi`/SDK provisioning hooks, real Pi install, repeat install, service restart, and reboot verification exist. Nginx option and broader Pi camera verification are open. |
 | Phase 9: Allsky migration/remote upload | Done | Allsky detection, dry-run count preview, compact unsupported-setting report, worker-backed recognized image/product/dark-frame/overlay-asset import with progress/import-log output, selected observatory/schedule/public/storage/processing/profile settings import, basic overlay text import with rollback restore, camera hint capture, rollback of Sky Weaver-created rows/files/settings/profile changes, Migration UI loading/job polling, and asset-tree exclusion for Allsky HTML/docs/config/overlay files from gallery imports exist. Filesystem, rsync-over-SSH, SCP-over-SSH, SFTP-over-SSH, FTP, and FTPS remote targets, encrypted local target configs, upload queue/retry, worker-backed upload execution, upload job listing/detail views, credential redaction, and Remote Upload UI exist. Full Allsky setting parity and rendering imported overlay image assets remain future polish, not Phase 9 blockers. |
-| Phase 10: Polish/mobile/tests/hardening | Partial | Mobile API docs, latest/status/gallery endpoints, route bundle splitting, image detail route, system health diagnostics/service detail UI with failure analysis and unit history, diagnostics file-permission reporting, subprocess safety regression tests, worker heartbeat/activity reporting, private download auth hardening, authenticated admin thumbnails, mobile gallery dialog scroll/close behavior, Deployment operator page, frontend route smoke tests, admin-route auth tests, settings validation tests, schedule calculation tests, destructive image delete policy tests, processing job lifecycle tests, expanded API-key scope-boundary tests for read, write, admin, private-download, and service-control routes, public product archive/compact-layout tests, Playwright public-page, Migration, and Remote Upload browser smoke tests, Remote Upload operator UX polish, expanded frontend component tests, and CI workflow exist. Broader UX polish, performance, security hardening, and real-field validation remain. |
+| Phase 10: Polish/mobile/tests/hardening | Partial | Mobile API docs, latest/status/gallery endpoints, cursor-paged authenticated image feed, route bundle splitting, image detail route, system health diagnostics/service detail UI with failure analysis and unit history, diagnostics file-permission reporting, subprocess safety regression tests, worker heartbeat/activity reporting, private download auth hardening, authenticated admin thumbnails, mobile gallery dialog scroll/close behavior, Deployment operator page, frontend route smoke tests, admin-route auth tests, settings validation tests, schedule calculation tests, destructive image delete policy tests, processing job lifecycle tests, expanded API-key scope-boundary tests for read, write, admin, private-download, and service-control routes, public product archive/compact-layout tests, Playwright public-page, Migration, and Remote Upload browser smoke tests, Remote Upload operator UX polish, expanded frontend component tests, and CI workflow exist. Broader UX polish, performance, security hardening, and real-field validation remain. |
 
 ## Open Topics
 
@@ -240,7 +241,7 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 
 ### API and Mobile Readiness
 
-- Add cursor pagination where useful.
+- Cursor pagination exists for authenticated images; add it to additional large collections where useful.
 - Expand filters:
   - date range
   - camera
@@ -328,12 +329,12 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 
 Most recent local checks on 2026-07-01:
 
-- `backend\\.venv\\Scripts\\python -m pytest -p no:cacheprovider --basetemp .tmp\\pytest-all backend\\tests`: passed with 97 tests and 1 Windows-only POSIX-permission skip.
+- `backend\\.venv\\Scripts\\python -m pytest -p no:cacheprovider --basetemp .tmp\\pytest-all backend\\tests`: passed with 99 tests and 1 Windows-only POSIX-permission skip.
 - `npm run lint`: passed with zero warnings.
 - `npm test`: passed with 26 tests.
 - `npm run test:smoke`: passed with 9 tests and 1 expected desktop skip for the mobile-only assertion.
 - `npm run build`: passed.
-- `git diff --check`: passed for the current Phase 10 operator-page browser smoke test changes.
+- `git diff --check`: passed for the current Phase 10 image cursor pagination changes.
 - `shellcheck install.sh scripts/test_install.sh upgrade.sh uninstall.sh support.sh`: not run locally because ShellCheck is not installed on this Windows host; CI installs ShellCheck on Ubuntu.
 
 Raspberry Pi acceptance on 2026-06-23:
@@ -379,5 +380,5 @@ Suggested next tasks:
 
 1. Run real outdoor overnight field validation once the Pi/camera can be placed outside.
 2. Add optional nginx reverse proxy and broader installer smoke coverage for fresh Pi OS Bookworm images.
-3. Add cursor pagination and richer filters for mobile clients.
+3. Add cursor pagination to additional large collections and richer filters for mobile clients.
 4. Expand product-processing progress detail and image-quality hardening.

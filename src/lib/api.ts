@@ -53,6 +53,7 @@ export const SkyApi = {
   queueSequenceCapture: (body: any = {}) => api<CaptureJob>("/api/v1/capture/sequence", { method: "POST", body: JSON.stringify(body) }),
   captureJobs: () => api<CaptureJob[]>("/api/v1/capture/jobs"),
   images: (query = "") => api<ImageRow[]>(`/api/v1/images${query}`),
+  imagesPage: (query = "") => api<ImagePage>(`/api/v1/images/page${query}`),
   imageDetail: (id: string) => api<ImageRow>(`/api/v1/images/${id}`),
   deleteImage: (id: string) => api<ImageDeleteResult>(`/api/v1/images/${id}`, { method: "DELETE" }),
   runImageRetention: (days?: number) => api<ImageRetentionResult>(`/api/v1/images/retention/run${days === undefined ? "" : `?days=${encodeURIComponent(days)}`}`, { method: "POST" }),
@@ -114,6 +115,7 @@ export interface CameraRow { id: string; name: string; adapter: string; device_i
 export interface DetectedCamera { id: string; name: string; backend: string; model?: string | null; serial?: string | null; metadata?: any; }
 export interface CameraProfile { id: string; camera_id: string; name: string; mode: string; settings: Record<string, any>; }
 export interface ImageRow { id: string; camera_id: string | null; captured_at: string; day_key: string; mode: string; file_path: string; public_url: string | null; thumbnail_path: string | null; format: string; width: number | null; height: number | null; size_bytes: number | null; exposure_ms: number | null; gain: number | null; temperature_c: number | null; mean_brightness: number | null; star_count: number | null; cloud_score: number | null; bad_image: boolean; overlay_applied?: boolean; metadata: any; }
+export interface ImagePage { items: ImageRow[]; next_cursor: string | null; has_more: boolean; limit: number; filters: { day_key: string | null; mode: string | null; camera_id: string | null; bad_image: boolean | null; }; }
 export interface ImageSkippedFile { path: string; status: "skipped"; reason?: string; }
 export interface ImageDeleteResult { deleted: string; deleted_files: string[]; missing_files: string[]; skipped_files: ImageSkippedFile[]; latest_republished?: PublicLatestImage | null; }
 export interface ImageRetentionResult { retention_days: number; cutoff: string; deleted_images: number; deleted_image_ids: string[]; deleted_files: string[]; missing_files: string[]; skipped_files: ImageSkippedFile[]; }

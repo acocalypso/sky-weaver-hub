@@ -1,4 +1,6 @@
 import asyncio
+import base64
+import binascii
 import json
 import os
 import platform
@@ -1335,6 +1337,72 @@ def images(limit: int = Query(50, le=500), offset: int = 0, day_key: str | None 
     with session() as conn:
         rows = all_rows(conn, f"SELECT * FROM images {where} ORDER BY captured_at DESC LIMIT ? OFFSET ?", (*params, limit, offset))
     return ok(rows, extra_meta={"limit": limit, "offset": offset})
+
+
+@router.get("/images/page")
+def images_page(
+    limit: int = Query(50, ge=1, le=200),
+    cursor: Annotated[str | None, Query(min_length=1, max_length=500)] = None,
+    day_key: str | None = None,
+    mode: str | None = None,
+    camera_id: str | None = None,
+    bad_image: bool | None = None,
+    _principal: dict = Depends(require_scope("read:images")),
+):
+    clauses: list[str] = []
+    params: list[Any] = []
+    if day_key:
+        clauses.append("day_key=?")
+        params.append(day_key)
+    if mode:
+        clauses.append("mode=?")
+        params.append(mode)
+    if camera_id:
+        clauses.append("camera_id=?")
+        params.append(camera_id)
+    if bad_image is not None:
+        clauses.append("bad_image=?")
+        params.append(1 if bad_image else 0)
+    if cursor:
+        captured_at, image_id = decode_image_cursor(cursor)
+        clauses.append("(captured_at < ? OR (captured_at = ? AND id < ?))")
+        params.extend([captured_at, captured_at, image_id])
+    where = "WHERE " + " AND ".join(clauses) if clauses else ""
+    with session() as conn:
+        rows = all_rows(conn, f"SELECT * FROM images {where} ORDER BY captured_at DESC, id DESC LIMIT ?", (*params, limit + 1))
+    items = rows[:limit]
+    has_more = len(rows) > limit
+    next_cursor = encode_image_cursor(items[-1]) if has_more and items else None
+    return ok({
+        "items": items,
+        "next_cursor": next_cursor,
+        "has_more": has_more,
+        "limit": limit,
+        "filters": {
+            "day_key": day_key,
+            "mode": mode,
+            "camera_id": camera_id,
+            "bad_image": bad_image,
+        },
+    })
+
+
+def encode_image_cursor(row: dict[str, Any]) -> str:
+    payload = json.dumps({"captured_at": row["captured_at"], "id": row["id"]}, separators=(",", ":")).encode("utf-8")
+    return base64.urlsafe_b64encode(payload).decode("ascii").rstrip("=")
+
+
+def decode_image_cursor(cursor: str) -> tuple[str, str]:
+    try:
+        padded = cursor + "=" * (-len(cursor) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8"))
+    except (binascii.Error, UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+        raise HTTPException(400, "Invalid image cursor") from exc
+    captured_at = payload.get("captured_at") if isinstance(payload, dict) else None
+    image_id = payload.get("id") if isinstance(payload, dict) else None
+    if not isinstance(captured_at, str) or not captured_at or not isinstance(image_id, str) or not image_id:
+        raise HTTPException(400, "Invalid image cursor")
+    return captured_at, image_id
 
 
 @router.get("/images/latest")

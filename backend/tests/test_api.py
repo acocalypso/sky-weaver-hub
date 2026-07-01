@@ -112,6 +112,84 @@ def test_mock_capture_creates_image(tmp_path):
     assert sidecar["storage"]["image"]["format"] == "JPEG"
 
 
+def insert_image_row(
+    *,
+    image_id: str,
+    captured_at: str,
+    day_key: str = "20260701",
+    mode: str = "night",
+    camera_id: str = "cam-1",
+    bad_image: bool = False,
+):
+    from skyweaver.db import json_dumps, session
+
+    with session() as conn:
+        conn.execute(
+            """INSERT INTO images
+               (id, camera_id, captured_at, day_key, mode, file_path, format, bad_image, metadata, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, 'jpg', ?, ?, ?)""",
+            (
+                image_id,
+                camera_id,
+                captured_at,
+                day_key,
+                mode,
+                f"/tmp/{image_id}.jpg",
+                int(bad_image),
+                json_dumps({"test": True}),
+                captured_at,
+            ),
+        )
+
+
+def test_images_page_cursor_paginates_without_changing_legacy_list_contract(tmp_path):
+    client = make_client(tmp_path)
+    token = login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+    insert_image_row(image_id="img-a", captured_at="2026-07-01T03:00:00+00:00")
+    insert_image_row(image_id="img-b", captured_at="2026-07-01T02:00:00+00:00")
+    insert_image_row(image_id="img-c", captured_at="2026-07-01T01:00:00+00:00")
+
+    legacy = client.get("/api/v1/images?limit=2", headers=headers)
+    assert legacy.status_code == 200, legacy.text
+    assert isinstance(legacy.json()["data"], list)
+    assert legacy.json()["meta"]["limit"] == 2
+
+    first = client.get("/api/v1/images/page?limit=2", headers=headers)
+    assert first.status_code == 200, first.text
+    first_page = first.json()["data"]
+    assert [row["id"] for row in first_page["items"]] == ["img-a", "img-b"]
+    assert first_page["has_more"] is True
+    assert first_page["next_cursor"]
+    assert first_page["limit"] == 2
+
+    second = client.get(f"/api/v1/images/page?limit=2&cursor={first_page['next_cursor']}", headers=headers)
+    assert second.status_code == 200, second.text
+    second_page = second.json()["data"]
+    assert [row["id"] for row in second_page["items"]] == ["img-c"]
+    assert second_page["has_more"] is False
+    assert second_page["next_cursor"] is None
+
+
+def test_images_page_filters_and_invalid_cursor(tmp_path):
+    client = make_client(tmp_path)
+    token = login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+    insert_image_row(image_id="night-good", captured_at="2026-07-01T03:00:00+00:00", mode="night", camera_id="cam-a")
+    insert_image_row(image_id="day-bad", captured_at="2026-07-01T02:00:00+00:00", mode="day", camera_id="cam-a", bad_image=True)
+    insert_image_row(image_id="night-other-camera", captured_at="2026-07-01T01:00:00+00:00", mode="night", camera_id="cam-b")
+
+    filtered = client.get("/api/v1/images/page?mode=night&camera_id=cam-a&bad_image=false", headers=headers)
+    assert filtered.status_code == 200, filtered.text
+    payload = filtered.json()["data"]
+    assert [row["id"] for row in payload["items"]] == ["night-good"]
+    assert payload["filters"] == {"day_key": None, "mode": "night", "camera_id": "cam-a", "bad_image": False}
+
+    invalid = client.get("/api/v1/images/page?cursor=not-a-valid-cursor", headers=headers)
+    assert invalid.status_code == 400
+    assert invalid.json()["error"]["message"] == "Invalid image cursor"
+
+
 def test_extract_image_metadata_reads_exif_and_basic_file_data(tmp_path):
     from PIL import ExifTags, Image
     from skyweaver.services.capture import extract_image_metadata
@@ -538,6 +616,7 @@ def test_api_key_scope_boundaries_for_endpoint_groups(tmp_path):
         ("read:settings", "GET", "/api/v1/module-flows", None),
         ("read:settings", "GET", "/api/v1/remote-targets", None),
         ("read:images", "GET", "/api/v1/images", None),
+        ("read:images", "GET", "/api/v1/images/page", None),
         ("read:images", "GET", "/api/v1/images/latest", None),
         ("read:images", "GET", "/api/v1/images/days", None),
         ("read:images", "GET", "/api/v1/processing/jobs", None),
