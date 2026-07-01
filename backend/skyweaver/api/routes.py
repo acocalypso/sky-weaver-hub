@@ -3,6 +3,7 @@ import json
 import os
 import platform
 import shutil
+import stat
 import subprocess
 import sys
 from datetime import UTC, datetime, timedelta
@@ -596,12 +597,75 @@ def diagnostics(_principal: Annotated[dict, Depends(require_scope("read:status")
             "database": str(db_path),
         },
         "database": {"exists": db_path.exists(), "size_bytes": db_path.stat().st_size if db_path.exists() else 0},
+        "security": {
+            "file_permissions": {
+                "config_dir": file_permission_status(settings.config_dir, expected="directory"),
+                "database": file_permission_status(db_path, expected="file"),
+            },
+        },
         "metrics": system_metrics(),
         "services": service_rows(),
         "counts": counts,
         "recent_logs": recent_logs,
         "redaction": "Secrets, password hashes, API-key hashes, and remote credentials are not included.",
     })
+
+
+def file_permission_status(path: Path, expected: str) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        "path": str(path),
+        "exists": path.exists(),
+        "expected": expected,
+        "status": "missing",
+        "warnings": [],
+    }
+    if not path.exists():
+        result["warnings"].append("Path does not exist.")
+        return result
+
+    try:
+        st = path.stat()
+    except OSError as exc:
+        result["status"] = "unknown"
+        result["warnings"].append(f"Could not stat path: {exc}")
+        return result
+
+    mode = stat.S_IMODE(st.st_mode)
+    result.update({
+        "type": "directory" if path.is_dir() else "file" if path.is_file() else "other",
+        "mode_octal": oct(mode),
+        "owner_read": bool(mode & stat.S_IRUSR),
+        "owner_write": bool(mode & stat.S_IWUSR),
+        "owner_execute": bool(mode & stat.S_IXUSR),
+        "group_read": bool(mode & stat.S_IRGRP),
+        "group_write": bool(mode & stat.S_IWGRP),
+        "other_read": bool(mode & stat.S_IROTH),
+        "other_write": bool(mode & stat.S_IWOTH),
+        "platform": platform.system(),
+    })
+
+    if result["type"] != expected:
+        result["warnings"].append(f"Expected {expected}, found {result['type']}.")
+    if platform.system() == "Windows":
+        result["status"] = "unknown" if result["warnings"] else "ok"
+        result["note"] = "POSIX mode bits do not fully describe Windows ACLs."
+        return result
+
+    if not result["owner_read"]:
+        result["warnings"].append("Owner read bit is not set.")
+    if not result["owner_write"]:
+        result["warnings"].append("Owner write bit is not set.")
+    if result["group_write"]:
+        result["warnings"].append("Group write bit is set.")
+    if result["other_write"]:
+        result["warnings"].append("Other write bit is set.")
+    if expected == "file" and result["other_read"]:
+        result["warnings"].append("Database file is world-readable.")
+    if expected == "directory" and result["other_write"]:
+        result["warnings"].append("Config directory is world-writable.")
+
+    result["status"] = "warning" if result["warnings"] else "ok"
+    return result
 
 
 def systemctl_command() -> list[str] | None:

@@ -1169,9 +1169,36 @@ def test_system_diagnostics_export_is_redacted(tmp_path):
     assert data["metrics"]["disk_free_gb"] >= 0
     assert any(service["name"] == "skyweaver-api" for service in data["services"])
     assert "counts" in data
+    permissions = data["security"]["file_permissions"]
+    assert permissions["config_dir"]["exists"] is True
+    assert permissions["config_dir"]["expected"] == "directory"
+    assert permissions["config_dir"]["path"] == data["paths"]["config_dir"]
+    assert permissions["database"]["exists"] is True
+    assert permissions["database"]["expected"] == "file"
+    assert permissions["database"]["path"] == data["paths"]["database"]
+    assert "mode_octal" in permissions["database"]
     assert "password_hash" not in res.text
     assert "key_hash" not in res.text
     assert "dev-change-me" not in res.text
+
+
+def test_file_permission_status_flags_world_readable_database_on_posix(tmp_path):
+    if os.name == "nt":
+        import pytest
+
+        pytest.skip("POSIX mode-bit diagnostics are not authoritative on Windows")
+
+    from skyweaver.api.routes import file_permission_status
+
+    db_path = tmp_path / "skyweaver.db"
+    db_path.write_text("sqlite", encoding="utf-8")
+    db_path.chmod(0o644)
+
+    status = file_permission_status(db_path, expected="file")
+
+    assert status["status"] == "warning"
+    assert status["mode_octal"] == "0o644"
+    assert "Database file is world-readable." in status["warnings"]
 
 
 def test_system_service_control_runs_allowlisted_actions(tmp_path, monkeypatch):
