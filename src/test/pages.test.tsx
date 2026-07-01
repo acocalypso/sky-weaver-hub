@@ -489,6 +489,27 @@ describe("main pages", () => {
     expect(screen.getByText(/mean 0.42 - night/i)).toBeInTheDocument();
   });
 
+  it("opens gallery images in a scrollable dialog with an explicit close action", async () => {
+    render(
+      <MemoryRouter>
+        <Gallery />
+      </MemoryRouter>,
+    );
+
+    const tile = (await screen.findByText(/mean 0.42 - night/i)).closest("button");
+    expect(tile).not.toBeNull();
+    fireEvent.click(tile!);
+
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toHaveClass("overflow-y-auto");
+    expect(screen.getByRole("link", { name: /open detail page/i })).toHaveAttribute("href", "/gallery/img-1");
+
+    const closeButtons = screen.getAllByRole("button", { name: /close/i });
+    expect(closeButtons.length).toBeGreaterThan(0);
+    fireEvent.click(closeButtons[closeButtons.length - 1]);
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
   it("renders routable image detail", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(new Blob(["image-bytes"], { type: "image/jpeg" })));
     const originalCreateObjectUrl = URL.createObjectURL;

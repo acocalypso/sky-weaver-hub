@@ -1,16 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Card } from "@/components/ui/card";
+import { AuthenticatedImage } from "@/components/AuthenticatedImage";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { StatusBadge } from "@/components/StatusBadge";
 import { SkyApi, type ImageRow } from "@/lib/api";
-import sampleSky from "@/assets/sample-sky-1.jpg";
 import { format } from "date-fns";
-import { Images, Tag, Trash2 } from "lucide-react";
+import { Images, Tag, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 
 export default function Gallery() {
@@ -79,7 +79,7 @@ export default function Gallery() {
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
         {images.map((img) => (
           <button key={img.id} onClick={() => setSelected(img)} className="group relative aspect-square rounded-md overflow-hidden border border-border bg-muted/40">
-            <img src={img.public_url ?? sampleSky} loading="lazy" alt="" className="w-full h-full object-cover opacity-90 group-hover:opacity-100 group-hover:scale-105 transition" />
+            <AuthenticatedImage src={`/api/v1/images/${img.id}/thumbnail`} loading="lazy" alt="" className="w-full h-full object-cover opacity-90 group-hover:opacity-100 group-hover:scale-105 transition" />
             <div className="absolute bottom-0 left-0 right-0 p-1.5 bg-gradient-to-t from-background/95 to-transparent">
               <p className="text-[10px] font-mono-data">{format(new Date(img.captured_at), "MM-dd HH:mm")}</p>
               <p className="text-[9px] text-muted-foreground">mean {img.mean_brightness ?? "-"} - {img.mode}</p>
@@ -90,11 +90,13 @@ export default function Gallery() {
       </div>
 
       <Dialog open={!!selected} onOpenChange={(o) => !o && setSelected(null)}>
-        <DialogContent className="max-w-4xl">
-          <DialogHeader><DialogTitle className="font-mono-data text-sm">{selected && format(new Date(selected.captured_at), "yyyy-MM-dd HH:mm:ss")}</DialogTitle></DialogHeader>
+        <DialogContent className="max-h-[calc(100vh-1rem)] max-w-4xl overflow-y-auto p-4 sm:p-6">
+          <DialogHeader className="pr-8">
+            <DialogTitle className="font-mono-data text-sm">{selected && format(new Date(selected.captured_at), "yyyy-MM-dd HH:mm:ss")}</DialogTitle>
+          </DialogHeader>
           {selected && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="aspect-square rounded-md overflow-hidden bg-black"><img src={selected.public_url ?? sampleSky} alt="" className="w-full h-full object-cover" /></div>
+              <div className="aspect-square rounded-md overflow-hidden bg-black"><AuthenticatedImage src={selected.public_url} alt="" className="w-full h-full object-contain" /></div>
               <div className="space-y-3 text-sm">
                 <div className="flex flex-wrap gap-2">
                   <StatusBadge variant="active"><Tag className="h-3 w-3 mr-1" />{selected.mode}</StatusBadge>
@@ -117,6 +119,9 @@ export default function Gallery() {
                 <Button asChild type="button" variant="outline" className="w-full">
                   <Link to={`/gallery/${selected.id}`}>Open detail page</Link>
                 </Button>
+                <DialogClose asChild>
+                  <Button type="button" variant="outline" className="w-full"><X className="h-4 w-4 mr-2" />Close</Button>
+                </DialogClose>
               </div>
             </div>
           )}

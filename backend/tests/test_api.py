@@ -521,8 +521,9 @@ def test_private_download_routes_require_read_images_scope(tmp_path):
         )
 
     private_image_path = f"/api/v1/images/{image['id']}/download"
+    private_thumbnail_path = f"/api/v1/images/{image['id']}/thumbnail"
     private_product_path = f"/api/v1/products/{product_id}/download"
-    for path in (private_image_path, private_product_path):
+    for path in (private_image_path, private_thumbnail_path, private_product_path):
         assert client.get(path).status_code == 401
         denied = client.get(path, headers={"Authorization": f"Bearer {no_scope_key}"})
         assert denied.status_code == 403

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
+import { AuthenticatedImage } from "@/components/AuthenticatedImage";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -240,7 +241,7 @@ export default function Dashboard() {
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
           {images.map((img) => (
             <div key={img.id} className="group relative aspect-square rounded-md overflow-hidden border border-border bg-muted/40">
-              <img src={img.public_url ?? sampleSky} loading="lazy" alt="" className="w-full h-full object-cover opacity-90 group-hover:opacity-100 group-hover:scale-105 transition" />
+              <AuthenticatedImage src={`/api/v1/images/${img.id}/thumbnail`} loading="lazy" alt="" className="w-full h-full object-cover opacity-90 group-hover:opacity-100 group-hover:scale-105 transition" />
               <div className="absolute bottom-0 left-0 right-0 p-1.5 bg-gradient-to-t from-background/95 to-transparent">
                 <p className="text-[10px] font-mono-data text-foreground">{format(new Date(img.captured_at), "HH:mm")}</p>
                 <p className="text-[9px] text-muted-foreground">{formatDistanceToNow(new Date(img.captured_at), { addSuffix: true })}</p>

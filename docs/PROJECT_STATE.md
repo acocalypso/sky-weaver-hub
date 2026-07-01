@@ -170,7 +170,7 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 | Phase 7: Overlay/modules | Done | Trusted built-in overlay module seeding, API configuration, capture-time text rendering with variables, image metadata/flagging, expanded overlay editor, built-in post-capture module flow execution, external module manifest registration/listing/deletion, and Modules UI exist. Custom code upload/execution is intentionally disabled until a future sandbox/signing runtime is designed. |
 | Phase 8: Installer/systemd/support/docs | Partial | Scripts and units exist. Shellcheck CI, installer dry-run/idempotency tests, service-control sudoers generation, interactive first-setup prompts, ZWO `libasi`/SDK provisioning hooks, real Pi install, repeat install, service restart, and reboot verification exist. Nginx option and broader Pi camera verification are open. |
 | Phase 9: Allsky migration/remote upload | Done | Allsky detection, dry-run count preview, compact unsupported-setting report, worker-backed recognized image/product/dark-frame/overlay-asset import with progress/import-log output, selected observatory/schedule/public/storage/processing/profile settings import, basic overlay text import with rollback restore, camera hint capture, rollback of Sky Weaver-created rows/files/settings/profile changes, Migration UI loading/job polling, and asset-tree exclusion for Allsky HTML/docs/config/overlay files from gallery imports exist. Filesystem, rsync-over-SSH, SCP-over-SSH, SFTP-over-SSH, FTP, and FTPS remote targets, encrypted local target configs, upload queue/retry, worker-backed upload execution, upload job listing/detail views, credential redaction, and Remote Upload UI exist. Full Allsky setting parity and rendering imported overlay image assets remain future polish, not Phase 9 blockers. |
-| Phase 10: Polish/mobile/tests/hardening | Partial | Mobile API docs, latest/status/gallery endpoints, route bundle splitting, image detail route, system health diagnostics/service detail UI with failure analysis and unit history, worker heartbeat/activity reporting, private download auth hardening, expanded API-key scope tests, Remote Upload operator UX polish, initial frontend component tests, and CI workflow exist. Broader tests, UX polish, performance, and security hardening remain. |
+| Phase 10: Polish/mobile/tests/hardening | Partial | Mobile API docs, latest/status/gallery endpoints, route bundle splitting, image detail route, system health diagnostics/service detail UI with failure analysis and unit history, worker heartbeat/activity reporting, private download auth hardening, authenticated admin thumbnails, mobile gallery dialog scroll/close behavior, expanded API-key scope tests, Remote Upload operator UX polish, initial frontend component tests, and CI workflow exist. Broader tests, UX polish, performance, and security hardening remain. |
 
 ## Open Topics
 
@@ -233,7 +233,7 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 - Add remote upload page.
 - Expand system health views with deeper unit history, failure classification, and recovery guidance after more real Pi failures are observed.
 - Allsky migration page exists with preview loading and job polling; richer historical job browsing remains future UI polish.
-- Add deployment/installer docs page.
+- Add deployment/installer docs page; the current Deployment route is still an operator placeholder, but no longer references stale phase timing.
 - Improve mobile layouts after real data flows are in place.
 - Route-level bundle splitting is enabled; keep watching bundle size as large pages and dependencies are added.
 
@@ -326,7 +326,7 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 - Phase 7 has a trusted built-in overlay module, module-flow execution, and external manifest registration. Arbitrary custom code execution is intentionally not enabled without sandboxing/signing.
 - ZWO ASI support is adapter-backed with native-SDK fake tests, but it has not yet been validated with real ZWO hardware in this environment.
 - Remote upload supports filesystem, rsync-over-SSH, SCP-over-SSH, SFTP-over-SSH, FTP, and FTPS targets. SSH-based targets use key/agent auth only. Remote target configs are encrypted locally and API responses redact secret fields.
-- Private image/product download routes require `read:images`; unauthenticated downloads are limited to `/api/v1/public/...` routes and remain gated by the public-page setting.
+- Private image/product download routes and private image thumbnails require `read:images`; admin Dashboard/Gallery thumbnails are fetched with the current bearer token. Unauthenticated downloads remain limited to `/api/v1/public/...` routes and remain gated by the public-page setting.
 - Allsky migration imports images, dark frames, keograms, startrails, timelapses, overlay assets, selected settings, camera profile settings, basic overlay text settings, and camera hints by copying files into Sky Weaver storage and applying a restorable settings snapshot. Full Allsky setting parity and rendering imported overlay images remain future work.
 - API server no longer performs camera capture inline for test shots; test-shot requests enqueue daemon-owned `test` jobs so manual verification still works while automation is stopped.
 - Tailwind 4 is enabled through the official Vite plugin while preserving the existing theme config and shadcn animation utilities.
@@ -335,13 +335,13 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 
 ## Recent Verification
 
-Most recent local checks on 2026-06-30:
+Most recent local checks on 2026-07-01:
 
 - `backend\\.venv\\Scripts\\python -m pytest -p no:cacheprovider --basetemp .tmp\\pytest-all backend\\tests`: passed with 83 tests.
 - `npm run lint`: passed with zero warnings.
-- `npm test`: passed with 16 tests.
+- `npm test`: passed with 17 tests.
 - `npm run build`: passed.
-- `git diff --check`: passed for the current Phase 10 image detail route changes.
+- `git diff --check`: passed for the current Phase 10 mobile image/auth changes.
 - `shellcheck install.sh scripts/test_install.sh upgrade.sh uninstall.sh support.sh`: not run locally because ShellCheck is not installed on this Windows host; CI installs ShellCheck on Ubuntu.
 
 Raspberry Pi acceptance on 2026-06-23:

@@ -1416,6 +1416,18 @@ def image_download(image_id: str, _principal: Annotated[dict, Depends(require_sc
     return FileResponse(row["file_path"])
 
 
+@router.get("/images/{image_id}/thumbnail")
+def image_thumbnail(image_id: str, _principal: Annotated[dict, Depends(require_scope("read:images"))]):
+    with session() as conn:
+        row = conn.execute("SELECT thumbnail_path, file_path FROM images WHERE id=?", (image_id,)).fetchone()
+    if not row:
+        raise HTTPException(404, "Image not found")
+    path = Path(row["thumbnail_path"]) if row["thumbnail_path"] else Path(row["file_path"])
+    if not path.exists():
+        raise HTTPException(404, "Image thumbnail not found")
+    return FileResponse(path)
+
+
 def republish_latest_from_database(conn) -> dict[str, Any] | None:
     row = decode_row(row_to_dict(conn.execute("SELECT * FROM images ORDER BY captured_at DESC LIMIT 1").fetchone()))
     if not row or not row.get("file_path") or not Path(row["file_path"]).exists():

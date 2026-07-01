@@ -13,7 +13,7 @@ export function Placeholder({ title, description }: { title: string; description
           <Construction className="h-5 w-5 text-accent" />
         </div>
         <div>
-          <p className="text-sm font-medium">Coming in Phase 2</p>
+          <p className="text-sm font-medium">Planned operational page</p>
           <p className="text-sm text-muted-foreground mt-1">{description}</p>
         </div>
       </Card>
