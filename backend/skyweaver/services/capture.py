@@ -1052,8 +1052,53 @@ def update_daemon_heartbeat(pid: int | None = None) -> None:
 def analyze_image(path: Path) -> dict[str, Any]:
     with Image.open(path) as img:
         gray = img.convert("L")
-        mean = ImageStat.Stat(gray).mean[0] / 255
-    return {"mean_brightness": round(mean, 4), "star_count": None, "cloud_score": None, "bad_image": mean < 0.01 or mean > 0.98}
+        stat = ImageStat.Stat(gray)
+        mean = stat.mean[0] / 255
+        star_count = estimate_star_count(gray)
+    return {"mean_brightness": round(mean, 4), "star_count": star_count, "cloud_score": None, "bad_image": mean < 0.01 or mean > 0.98}
+
+
+def estimate_star_count(gray: Image.Image) -> int:
+    image = gray.convert("L")
+    max_dimension = max(image.size)
+    if max_dimension > 512:
+        scale = 512 / max_dimension
+        image = image.resize((max(1, int(image.width * scale)), max(1, int(image.height * scale))), Image.Resampling.BILINEAR)
+
+    stat = ImageStat.Stat(image)
+    mean = stat.mean[0]
+    stddev = stat.stddev[0]
+    threshold = min(250, max(180, int(mean + max(30, stddev * 2.8))))
+    flattened_data = getattr(image, "get_flattened_data", None)
+    pixels = list(flattened_data() if flattened_data else image.getdata())
+    width, height = image.size
+    visited = bytearray(width * height)
+    stars = 0
+
+    for index, value in enumerate(pixels):
+        if visited[index] or value < threshold:
+            continue
+        stack = [index]
+        visited[index] = 1
+        count = 0
+        peak = value
+        while stack:
+            current = stack.pop()
+            count += 1
+            peak = max(peak, pixels[current])
+            x = current % width
+            y = current // width
+            for ny in range(max(0, y - 1), min(height, y + 2)):
+                base = ny * width
+                for nx in range(max(0, x - 1), min(width, x + 2)):
+                    neighbor = base + nx
+                    if visited[neighbor] or pixels[neighbor] < threshold:
+                        continue
+                    visited[neighbor] = 1
+                    stack.append(neighbor)
+        if 1 <= count <= 24 and peak >= threshold:
+            stars += 1
+    return stars
 
 
 def metadata_value(value: Any) -> Any:

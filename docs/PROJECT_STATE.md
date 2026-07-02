@@ -8,7 +8,7 @@ This document tracks the current implementation state against the all-sky platfo
 
 Sky Weaver Hub has moved from a mock dashboard toward a local-first Raspberry Pi/Linux all-sky platform. The repository now has a FastAPI backend, SQLite persistence, a camera adapter interface, mock capture with real image artifacts, Raspberry Pi camera support, initial native ZWO ASI support, a daemon-owned scheduled capture loop, API-key authentication, systemd and installer support, and a React UI wired to the local API.
 
-The product is not yet Allsky feature-complete. The main missing areas are longer real outdoor overnight soak validation, richer image-product options, full Allsky settings parity, overlay image rendering, temperature-aware dark-frame matching controls, and broader validated camera adapter coverage beyond Raspberry Pi libcamera hardware.
+The product is not yet Allsky feature-complete. The main missing areas are longer real outdoor overnight soak validation, richer image-product options, full Allsky settings parity, overlay image rendering, temperature-aware dark-frame matching controls, richer cloud/quality scoring, and broader validated camera adapter coverage beyond Raspberry Pi libcamera hardware.
 
 ## Repo Map
 
@@ -212,7 +212,6 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 - Add configurable bad image thresholds.
 - Expand dark-frame matching with temperature-aware tolerances and richer UI guidance.
 - Add overlay live preview and preset import/export.
-- Add star count placeholder or simple implementation.
 - Add cloud score placeholder or simple heuristic.
 
 ### Night Products
@@ -327,7 +326,7 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 
 Most recent local checks on 2026-07-02:
 
-- `backend\\.venv\\Scripts\\python -m pytest -p no:cacheprovider --basetemp .tmp\\pytest-all backend\\tests`: passed with 104 tests and 1 Windows-only POSIX-permission skip.
+- `backend\\.venv\\Scripts\\python -m pytest -p no:cacheprovider --basetemp .tmp\\pytest-all backend\\tests`: passed with 107 tests and 1 Windows-only POSIX-permission skip.
 - `npm run lint`: passed with zero warnings.
 - `npm test`: passed with 26 tests.
 - `npm run test:smoke`: passed with 9 tests and 1 expected desktop skip for the mobile-only assertion.

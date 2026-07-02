@@ -1,6 +1,8 @@
-from pathlib import Path
 import asyncio
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
+
+from PIL import Image, ImageDraw
 
 from test_api import login, make_client, run_queued_test_capture
 
@@ -20,6 +22,38 @@ def test_daemon_run_once_creates_scheduled_capture(tmp_path: Path):
     assert len(images) == 1
     assert images[0]["mode"] == "night"
     assert Path(images[0]["file_path"]).exists()
+
+
+def test_analyze_image_estimates_star_count(tmp_path: Path):
+    from skyweaver.services.capture import analyze_image
+
+    image_path = tmp_path / "stars.png"
+    image = Image.new("RGB", (96, 64), (5, 6, 9))
+    draw = ImageDraw.Draw(image)
+    for x, y in [(12, 12), (42, 20), (70, 50)]:
+        draw.point((x, y), fill=(255, 255, 255))
+        draw.point((x + 1, y), fill=(230, 230, 230))
+    image.save(image_path)
+
+    analysis = analyze_image(image_path)
+
+    assert analysis["star_count"] == 3
+    assert analysis["mean_brightness"] > 0
+
+
+def test_analyze_image_ignores_large_bright_blobs_for_star_count(tmp_path: Path):
+    from skyweaver.services.capture import analyze_image
+
+    image_path = tmp_path / "blob.png"
+    image = Image.new("RGB", (96, 64), (5, 6, 9))
+    draw = ImageDraw.Draw(image)
+    draw.rectangle((10, 10, 40, 40), fill=(255, 255, 255))
+    draw.point((80, 50), fill=(255, 255, 255))
+    image.save(image_path)
+
+    analysis = analyze_image(image_path)
+
+    assert analysis["star_count"] == 1
 
 
 def test_daemon_respects_interval(tmp_path: Path):
