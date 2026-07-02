@@ -71,7 +71,7 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
   - capture state update
   - realtime event
 - When enabled, capture-time dark-frame calibration selects a matching master by camera/exposure/gain/resolution/pixel format and subtracts it before overlay, metadata analysis, thumbnails, latest publishing, and downstream processing.
-- `rpicam`/`libcamera` adapter can detect and capture through command-line tools when available, uses headless preview mode, maps common libcamera controls such as AWB/white-balance gains, JPEG quality, denoise, tuning file, sensor mode, flips, rotation, ROI, and basic image adjustments, and keeps a persistent `rpicam-still --signal` session for repeated compatible captures to avoid restarting the camera stack for every frame.
+- `rpicam`/`libcamera` adapter can detect and capture through command-line tools when available, parses camera list output into sensor/device/mode metadata, uses headless preview mode, maps common libcamera controls such as AWB/white-balance gains, JPEG quality, denoise, tuning file, sensor mode, flips, rotation, ROI, and basic image adjustments, and keeps a persistent `rpicam-still --signal` session for repeated compatible captures to avoid restarting the camera stack for every frame.
 - `zwo` adapter can detect and capture through the native ZWO ASI SDK when `libASICamera2` is installed.
 - Subprocess calls use argv lists instead of shell string interpolation.
 
@@ -197,12 +197,9 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 ### Camera Hardware
 
 - Expand `rpicam`/`libcamera` adapter:
-  - AWB controls
-  - quality/compression
-  - tuning file
+  - additional camera-specific controls as operator needs are discovered
   - rotation/flip/crop/resize where supported
   - capture command compatibility across Bookworm naming
-  - better parsing of camera list output
 - Implement V4L2/webcam capture through ffmpeg or OpenCV.
 - Implement gPhoto2 detection/capture for DSLR/mirrorless.
 - Validate the ZWO native-SDK backend on real ZWO ASI hardware and expand control coverage.

@@ -99,6 +99,8 @@ echo -----------------
 echo 0 : imx290 [1920x1080 12-bit RGGB] (/base/soc/i2c0mux/i2c@1/imx290@1a)
 echo     Modes: 'SRGGB10_CSI2P' : 1280x720 [60.00 fps - (320, 180)/1280x720 crop]
 echo                              1920x1080 [60.00 fps - (0, 0)/1920x1080 crop]
+echo            'SRGGB12_CSI2P' : 1280x720 [60.00 fps - (320, 180)/1280x720 crop]
+echo                              1920x1080 [60.00 fps - (0, 0)/1920x1080 crop]
 """,
             encoding="utf-8",
         )
@@ -126,6 +128,42 @@ OUT
     model = found[0].model
     assert model is not None
     assert "imx290" in model
+    assert found[0].name == "imx290 camera 0"
+    assert found[0].metadata["sensor"] == "imx290"
+    assert found[0].metadata["path"] == "/base/soc/i2c0mux/i2c@1/imx290@1a"
+    assert found[0].metadata["width"] == 1920
+    assert found[0].metadata["height"] == 1080
+    assert found[0].metadata["bit_depth"] == 12
+    assert found[0].metadata["bayer_order"] == "RGGB"
+    assert found[0].metadata["modes"][0] == {
+        "pixel_format": "SRGGB10_CSI2P",
+        "width": 1280,
+        "height": 720,
+        "fps": 60.0,
+        "crop": {"x": 320, "y": 180, "width": 1280, "height": 720},
+    }
+    assert found[0].metadata["modes"][-1]["pixel_format"] == "SRGGB12_CSI2P"
+
+
+def test_rpicam_parse_camera_list_supports_multiple_cameras():
+    text = """Available cameras
+-----------------
+0 : imx290 [1920x1080 12-bit RGGB] (/base/soc/i2c0mux/i2c@1/imx290@1a)
+    Modes: 'SRGGB10_CSI2P' : 1280x720 [60.00 fps - (320, 180)/1280x720 crop]
+                             1920x1080 [60.00 fps - (0, 0)/1920x1080 crop]
+1 : imx708 [4608x2592 10-bit RGGB] (/base/soc/i2c0mux/i2c@1/imx708@1a)
+    Modes: 'SRGGB10_CSI2P' : 2304x1296 [56.03 fps - (0, 0)/4608x2592 crop]
+"""
+
+    found = RpiCamAdapter()._parse_camera_list(text)
+
+    assert [camera.id for camera in found] == ["rpicam://0", "rpicam://1"]
+    assert found[1].name == "imx708 camera 1"
+    assert found[1].metadata["sensor"] == "imx708"
+    assert found[1].metadata["width"] == 2304
+    assert found[1].metadata["height"] == 1296
+    assert found[1].metadata["bit_depth"] == 10
+    assert found[1].metadata["modes"][0]["crop"] == {"x": 0, "y": 0, "width": 4608, "height": 2592}
 
 
 def test_camera_registry_reuses_adapter_instances():

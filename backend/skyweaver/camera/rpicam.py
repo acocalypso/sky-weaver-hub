@@ -12,6 +12,13 @@ SIGUSR1 = getattr(signal, "SIGUSR1", None)
 RPICAM_DENOISE_MODES = {"auto", "off", "cdn_off", "cdn_fast", "cdn_hq"}
 RPICAM_AWB_MODES = {"auto", "incandescent", "tungsten", "fluorescent", "indoor", "daylight", "cloudy", "custom"}
 RPICAM_MODE_RE = re.compile(r"^\d+:\d+:\d+:[PU]$")
+RPICAM_CAMERA_RE = re.compile(r"^(?P<index>\d+)\s*:\s*(?P<sensor>\S+)(?:\s+\[(?P<description>[^\]]+)\])?(?:\s+\((?P<path>[^)]+)\))?")
+RPICAM_MODE_LINE_RE = re.compile(
+    r"^(?:Modes:\s*)?'(?P<pixel_format>[^']+)'\s*:\s*(?P<width>\d+)x(?P<height>\d+)\s+\[(?P<fps>[\d.]+)\s+fps(?:\s+-\s+\((?P<crop_x>\d+),\s*(?P<crop_y>\d+)\)/(?P<crop_w>\d+)x(?P<crop_h>\d+)\s+crop)?\]"
+)
+RPICAM_MODE_CONTINUATION_RE = re.compile(
+    r"^(?P<width>\d+)x(?P<height>\d+)\s+\[(?P<fps>[\d.]+)\s+fps(?:\s+-\s+\((?P<crop_x>\d+),\s*(?P<crop_y>\d+)\)/(?P<crop_w>\d+)x(?P<crop_h>\d+)\s+crop)?\]"
+)
 
 
 @dataclass
@@ -54,11 +61,105 @@ class RpiCamAdapter(CameraAdapter):
         text = stdout.decode(errors="replace")
         if proc.returncode != 0 or "Available cameras" not in text:
             return []
-        lines = [line.strip() for line in text.splitlines() if re.match(r"^\d+\s*:", line.strip())]
-        cameras: list[DetectedCamera] = []
-        for index, line in enumerate(lines):
-            cameras.append(DetectedCamera(id=f"rpicam://{index}", name=f"Pi camera {index}", backend=self.backend, model=line, metadata={"raw": line}))
-        return cameras
+        return self._parse_camera_list(text)
+
+    def _parse_camera_list(self, text: str) -> list[DetectedCamera]:
+        cameras: list[dict] = []
+        current: dict | None = None
+        current_pixel_format: str | None = None
+        for raw_line in text.splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+            camera_match = RPICAM_CAMERA_RE.match(line)
+            if camera_match:
+                current = {
+                    "index": int(camera_match.group("index")),
+                    "sensor": camera_match.group("sensor"),
+                    "description": camera_match.group("description"),
+                    "path": camera_match.group("path"),
+                    "raw": line,
+                    "modes": [],
+                }
+                current.update(self._parse_camera_description(current.get("description")))
+                cameras.append(current)
+                current_pixel_format = None
+                continue
+            if current is None:
+                continue
+            mode_match = RPICAM_MODE_LINE_RE.match(line)
+            if mode_match:
+                current_pixel_format = mode_match.group("pixel_format")
+                current["modes"].append(self._mode_from_match(mode_match, current_pixel_format))
+                continue
+            continuation_match = RPICAM_MODE_CONTINUATION_RE.match(line)
+            if continuation_match and current_pixel_format:
+                current["modes"].append(self._mode_from_match(continuation_match, current_pixel_format))
+
+        detected: list[DetectedCamera] = []
+        for camera in cameras:
+            modes = camera["modes"]
+            max_resolution = self._max_resolution(modes)
+            metadata = {
+                "raw": camera["raw"],
+                "index": camera["index"],
+                "sensor": camera["sensor"],
+                "description": camera.get("description"),
+                "path": camera.get("path"),
+                "width": max_resolution[0] if max_resolution else None,
+                "height": max_resolution[1] if max_resolution else None,
+                "bit_depth": camera.get("bit_depth"),
+                "bayer_order": camera.get("bayer_order"),
+                "modes": modes,
+            }
+            detected.append(
+                DetectedCamera(
+                    id=f"rpicam://{camera['index']}",
+                    name=f"{camera['sensor']} camera {camera['index']}",
+                    backend=self.backend,
+                    model=camera["sensor"],
+                    metadata={key: value for key, value in metadata.items() if value is not None},
+                )
+            )
+        return detected
+
+    def _parse_camera_description(self, description: str | None) -> dict[str, object]:
+        if not description:
+            return {}
+        out: dict[str, object] = {}
+        resolution_match = re.search(r"(?P<width>\d+)x(?P<height>\d+)", description)
+        if resolution_match:
+            out["width"] = int(resolution_match.group("width"))
+            out["height"] = int(resolution_match.group("height"))
+        bit_depth_match = re.search(r"(?P<bit_depth>\d+)-bit", description)
+        if bit_depth_match:
+            out["bit_depth"] = int(bit_depth_match.group("bit_depth"))
+        bayer_match = re.search(r"\b(?P<bayer>[RGBG]{4})\b", description)
+        if bayer_match:
+            out["bayer_order"] = bayer_match.group("bayer")
+        return out
+
+    def _mode_from_match(self, match: re.Match, pixel_format: str) -> dict[str, object]:
+        mode: dict[str, object] = {
+            "pixel_format": pixel_format,
+            "width": int(match.group("width")),
+            "height": int(match.group("height")),
+            "fps": float(match.group("fps")),
+        }
+        if match.groupdict().get("crop_w"):
+            mode["crop"] = {
+                "x": int(match.group("crop_x")),
+                "y": int(match.group("crop_y")),
+                "width": int(match.group("crop_w")),
+                "height": int(match.group("crop_h")),
+            }
+        return mode
+
+    def _max_resolution(self, modes: list[dict]) -> tuple[int, int] | None:
+        if not modes:
+            return None
+        best = max(modes, key=lambda mode: int(mode.get("width", 0)) * int(mode.get("height", 0)))
+        return int(best["width"]), int(best["height"])
 
     async def connect(self, camera_id: str) -> CameraInfo:
         return CameraInfo(id=camera_id, name="Raspberry Pi camera", backend=self.backend)
