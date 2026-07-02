@@ -114,6 +114,8 @@ Available cameras
 0 : imx290 [1920x1080 12-bit RGGB] (/base/soc/i2c0mux/i2c@1/imx290@1a)
     Modes: 'SRGGB10_CSI2P' : 1280x720 [60.00 fps - (320, 180)/1280x720 crop]
                              1920x1080 [60.00 fps - (0, 0)/1920x1080 crop]
+           'SRGGB12_CSI2P' : 1280x720 [60.00 fps - (320, 180)/1280x720 crop]
+                             1920x1080 [60.00 fps - (0, 0)/1920x1080 crop]
 OUT
 """,
             encoding="utf-8",
