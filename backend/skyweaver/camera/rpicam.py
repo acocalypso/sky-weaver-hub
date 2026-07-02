@@ -9,6 +9,9 @@ from .base import CameraAdapter, CameraCapabilities, CameraInfo, CaptureCancelRe
 
 
 SIGUSR1 = getattr(signal, "SIGUSR1", None)
+RPICAM_DENOISE_MODES = {"auto", "off", "cdn_off", "cdn_fast", "cdn_hq"}
+RPICAM_AWB_MODES = {"auto", "incandescent", "tungsten", "fluorescent", "indoor", "daylight", "cloudy", "custom"}
+RPICAM_MODE_RE = re.compile(r"^\d+:\d+:\d+:[PU]$")
 
 
 @dataclass
@@ -67,7 +70,26 @@ class RpiCamAdapter(CameraAdapter):
     async def get_capabilities(self) -> CameraCapabilities:
         return CameraCapabilities(
             formats=["jpg", "png", "dng"],
-            controls=["exposure_ms", "gain", "awb", "tuning_file", "width", "height", "quality"],
+            controls=[
+                "exposure_ms",
+                "gain",
+                "awb",
+                "awbgains",
+                "tuning_file",
+                "width",
+                "height",
+                "quality",
+                "denoise",
+                "hflip",
+                "vflip",
+                "rotation",
+                "roi",
+                "mode",
+                "brightness",
+                "contrast",
+                "saturation",
+                "sharpness",
+            ],
             max_exposure_ms=120000,
         )
 
@@ -94,11 +116,106 @@ class RpiCamAdapter(CameraAdapter):
             int(request.width or 0),
             int(request.height or 0),
             request.image_format.lower(),
-            str(request.settings.get("tuning_file") or ""),
-            str(request.settings.get("mode") or ""),
-            str(request.settings.get("denoise") or ""),
-            int(request.settings.get("quality", 0) or 0),
+            tuple(self._control_args(request)),
         )
+
+    def _bool_setting(self, settings: dict, key: str) -> bool:
+        value = settings.get(key)
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            return value.strip().lower() in {"1", "true", "yes", "on"}
+        return bool(value)
+
+    def _float_setting(self, settings: dict, key: str, min_value: float | None = None, max_value: float | None = None) -> float | None:
+        if key not in settings or settings.get(key) in {None, ""}:
+            return None
+        try:
+            value = float(settings[key])
+        except (TypeError, ValueError):
+            return None
+        if min_value is not None:
+            value = max(min_value, value)
+        if max_value is not None:
+            value = min(max_value, value)
+        return value
+
+    def _int_setting(self, settings: dict, key: str, min_value: int | None = None, max_value: int | None = None) -> int | None:
+        value = self._float_setting(settings, key, min_value, max_value)
+        return int(value) if value is not None else None
+
+    def _roi_value(self, settings: dict) -> str | None:
+        value = settings.get("roi")
+        if value is None or value == "":
+            return None
+        if isinstance(value, str):
+            parts = [part.strip() for part in value.split(",")]
+        elif isinstance(value, (list, tuple)):
+            parts = [str(part).strip() for part in value]
+        else:
+            return None
+        if len(parts) != 4:
+            return None
+        try:
+            numbers = [max(0.0, min(1.0, float(part))) for part in parts]
+        except ValueError:
+            return None
+        return ",".join(f"{number:g}" for number in numbers)
+
+    def _control_args(self, request: CaptureRequest) -> list[str]:
+        settings = request.settings or {}
+        args: list[str] = []
+        image_format = request.image_format.lower()
+        if image_format in {"jpg", "jpeg", "png"}:
+            args += ["--encoding", "jpg" if image_format in {"jpg", "jpeg"} else "png"]
+
+        tuning_file = settings.get("tuning_file")
+        if tuning_file:
+            args += ["--tuning-file", str(tuning_file)]
+
+        mode = settings.get("sensor_mode") or settings.get("rpicam_mode")
+        if isinstance(mode, str) and RPICAM_MODE_RE.match(mode.strip()):
+            args += ["--mode", mode.strip()]
+
+        denoise = str(settings.get("denoise") or "").strip().lower()
+        if denoise in RPICAM_DENOISE_MODES:
+            args += ["--denoise", denoise]
+
+        quality = self._int_setting(settings, "quality", 1, 100)
+        if quality is not None and image_format in {"jpg", "jpeg"}:
+            args += ["--quality", str(quality)]
+
+        awb = str(settings.get("awb") or "").strip().lower()
+        auto_white_balance = settings.get("auto_white_balance")
+        if auto_white_balance is False:
+            red = self._float_setting(settings, "red_balance", 0.0, 32.0)
+            blue = self._float_setting(settings, "blue_balance", 0.0, 32.0)
+            if red is not None and blue is not None:
+                args += ["--awbgains", f"{red:g},{blue:g}"]
+        elif awb in RPICAM_AWB_MODES:
+            args += ["--awb", awb]
+
+        if self._bool_setting(settings, "hflip"):
+            args.append("--hflip")
+        if self._bool_setting(settings, "vflip"):
+            args.append("--vflip")
+        rotation = self._int_setting(settings, "rotation")
+        if rotation in {0, 180}:
+            args += ["--rotation", str(rotation)]
+        roi = self._roi_value(settings)
+        if roi:
+            args += ["--roi", roi]
+
+        for key, min_value, max_value in (
+            ("brightness", -1.0, 1.0),
+            ("contrast", 0.0, 32.0),
+            ("saturation", 0.0, 32.0),
+            ("sharpness", 0.0, 16.0),
+        ):
+            value = self._float_setting(settings, key, min_value, max_value)
+            if value is not None:
+                args += [f"--{key}", f"{value:g}"]
+        return args
 
     async def _session_for_request(self, still: str, request: CaptureRequest) -> RpiCamSession:
         key = self._session_key(still, request)
@@ -129,19 +246,12 @@ class RpiCamAdapter(CameraAdapter):
             "--gain",
             str(request.gain),
             "--nopreview",
-            "--encoding",
-            "jpg" if request.image_format.lower() in {"jpg", "jpeg"} else "png",
         ]
         if request.width:
             args += ["--width", str(request.width)]
         if request.height:
             args += ["--height", str(request.height)]
-        if request.settings.get("tuning_file"):
-            args += ["--tuning-file", str(request.settings["tuning_file"])]
-        if request.settings.get("denoise"):
-            args += ["--denoise", str(request.settings["denoise"])]
-        if request.settings.get("quality") and request.image_format.lower() in {"jpg", "jpeg"}:
-            args += ["--quality", str(int(request.settings["quality"]))]
+        args += self._control_args(request)
         proc = await asyncio.create_subprocess_exec(*args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
         session = RpiCamSession(key=key, process=proc, directory=session_dir, pattern=pattern)
         session.log_tasks = self._collect_session_output(proc)
@@ -273,8 +383,7 @@ class RpiCamAdapter(CameraAdapter):
             args += ["--width", str(request.width)]
         if request.height:
             args += ["--height", str(request.height)]
-        if request.settings.get("tuning_file"):
-            args += ["--tuning-file", str(request.settings["tuning_file"])]
+        args += self._control_args(request)
         proc = await asyncio.create_subprocess_exec(*args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
         job_key = request.job_id or str(path)
         self._active_processes[job_key] = (proc, path)

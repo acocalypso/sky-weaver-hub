@@ -71,7 +71,7 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
   - capture state update
   - realtime event
 - When enabled, capture-time dark-frame calibration selects a matching master by camera/exposure/gain/resolution/pixel format and subtracts it before overlay, metadata analysis, thumbnails, latest publishing, and downstream processing.
-- `rpicam`/`libcamera` adapter can detect and capture through command-line tools when available, uses headless preview mode, and keeps a persistent `rpicam-still --signal` session for repeated compatible captures to avoid restarting the camera stack for every frame.
+- `rpicam`/`libcamera` adapter can detect and capture through command-line tools when available, uses headless preview mode, maps common libcamera controls such as AWB/white-balance gains, JPEG quality, denoise, tuning file, sensor mode, flips, rotation, ROI, and basic image adjustments, and keeps a persistent `rpicam-still --signal` session for repeated compatible captures to avoid restarting the camera stack for every frame.
 - `zwo` adapter can detect and capture through the native ZWO ASI SDK when `libASICamera2` is installed.
 - Subprocess calls use argv lists instead of shell string interpolation.
 
@@ -344,6 +344,7 @@ Raspberry Pi rpicam capture-speed investigation on 2026-07-02:
 - `rpicam-still --signal` kept the camera process open and avoided repeated camera stack startup. After startup, repeated signaled captures completed substantially faster than launching a fresh process per frame.
 - The rpicam adapter now uses `--nopreview` and supports a persistent signal session for compatible repeated JPG/PNG captures. The existing one-shot command path remains available by setting adapter request setting `persistent=false` or for unsupported formats.
 - Patched runtime validation on the Pi passed after restarting `skyweaver-capture.service`: queued 1-second IMX290 captures `3143d5fb-4865-4957-b36b-85836dd7ebb5` and `94ae6331-0ae2-48b9-9dfe-0558c8324356` completed with image metadata `capture_mode=persistent_signal`; execution time from job start to completion was about `4.8 s` for session startup plus first capture and about `3.6 s` for the immediately repeated capture.
+- Follow-up adapter hardening added safe argv mappings for rpicam AWB mode, explicit red/blue gains, JPEG quality, denoise, tuning file, sensor mode, horizontal/vertical flip, rotation, ROI, brightness, contrast, saturation, and sharpness.
 
 Raspberry Pi covered-sensor dark-frame calibration acceptance on 2026-07-02:
 

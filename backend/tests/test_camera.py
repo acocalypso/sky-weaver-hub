@@ -200,7 +200,24 @@ async def test_rpicam_one_shot_capture_uses_headless_preview_flag(tmp_path: Path
             width=1280,
             height=960,
             image_format="jpg",
-            settings={"persistent": False},
+            settings={
+                "persistent": False,
+                "quality": 88,
+                "denoise": "cdn_fast",
+                "auto_white_balance": False,
+                "red_balance": 1.4,
+                "blue_balance": 1.8,
+                "hflip": True,
+                "vflip": True,
+                "rotation": 180,
+                "roi": [0.1, 0.2, 0.7, 0.6],
+                "brightness": 0.2,
+                "contrast": 1.5,
+                "saturation": 0.8,
+                "sharpness": 1.2,
+                "sensor_mode": "1920:1080:12:P",
+                "tuning_file": "/opt/camera/imx290.json",
+            },
         )
     )
 
@@ -209,6 +226,20 @@ async def test_rpicam_one_shot_capture_uses_headless_preview_flag(tmp_path: Path
     assert "--immediate" in calls[0]
     assert "--nopreview" in calls[0]
     assert "--signal" not in calls[0]
+    assert calls[0][calls[0].index("--encoding") + 1] == "jpg"
+    assert calls[0][calls[0].index("--quality") + 1] == "88"
+    assert calls[0][calls[0].index("--denoise") + 1] == "cdn_fast"
+    assert calls[0][calls[0].index("--awbgains") + 1] == "1.4,1.8"
+    assert "--hflip" in calls[0]
+    assert "--vflip" in calls[0]
+    assert calls[0][calls[0].index("--rotation") + 1] == "180"
+    assert calls[0][calls[0].index("--roi") + 1] == "0.1,0.2,0.7,0.6"
+    assert calls[0][calls[0].index("--brightness") + 1] == "0.2"
+    assert calls[0][calls[0].index("--contrast") + 1] == "1.5"
+    assert calls[0][calls[0].index("--saturation") + 1] == "0.8"
+    assert calls[0][calls[0].index("--sharpness") + 1] == "1.2"
+    assert calls[0][calls[0].index("--mode") + 1] == "1920:1080:12:P"
+    assert calls[0][calls[0].index("--tuning-file") + 1] == "/opt/camera/imx290.json"
 
 
 @pytest.mark.asyncio
@@ -266,7 +297,7 @@ async def test_rpicam_persistent_signal_session_reuses_process(tmp_path: Path, m
         "width": 1280,
         "height": 960,
         "image_format": "jpg",
-        "settings": {"persistent_warmup_seconds": 0},
+        "settings": {"persistent_warmup_seconds": 0, "awb": "cloudy", "quality": 90},
     }
 
     first = await adapter.capture(CaptureRequest(output_path=tmp_path / "first.jpg", job_id="job-1", **request))
@@ -281,6 +312,8 @@ async def test_rpicam_persistent_signal_session_reuses_process(tmp_path: Path, m
     assert "--signal" in calls[0]
     assert "--nopreview" in calls[0]
     assert "--immediate" not in calls[0]
+    assert calls[0][calls[0].index("--awb") + 1] == "cloudy"
+    assert calls[0][calls[0].index("--quality") + 1] == "90"
     assert processes[0].terminated is True
 
 
