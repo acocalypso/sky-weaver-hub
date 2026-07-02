@@ -1,6 +1,6 @@
 # Sky Weaver Hub Project State
 
-Last updated: 2026-06-30
+Last updated: 2026-07-02
 
 This document tracks the current implementation state against the all-sky platform prompt. It is intended to be updated after each implementation phase.
 
@@ -8,7 +8,7 @@ This document tracks the current implementation state against the all-sky platfo
 
 Sky Weaver Hub has moved from a mock dashboard toward a local-first Raspberry Pi/Linux all-sky platform. The repository now has a FastAPI backend, SQLite persistence, a camera adapter interface, mock capture with real image artifacts, Raspberry Pi camera support, initial native ZWO ASI support, a daemon-owned scheduled capture loop, API-key authentication, systemd and installer support, and a React UI wired to the local API.
 
-The product is not yet Allsky feature-complete. The main missing areas are longer real outdoor overnight soak validation, richer image-product options, full Allsky settings parity, overlay image rendering, advanced dark-frame matching controls, and broader validated camera adapter coverage beyond Raspberry Pi libcamera hardware.
+The product is not yet Allsky feature-complete. The main missing areas are longer real outdoor overnight soak validation, richer image-product options, full Allsky settings parity, overlay image rendering, temperature-aware dark-frame matching controls, and broader validated camera adapter coverage beyond Raspberry Pi libcamera hardware.
 
 ## Repo Map
 
@@ -313,7 +313,7 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 
 - Capture daemon now performs day/night scheduled captures and consumes queued test-shot, single-capture, and sequence jobs. Restart-safe per-profile interval/save controls, next-capture due visibility, latest-only unsaved captures, end-of-night product queueing, graceful stop fallback, real-Pi validated rpicam hard-cancel, pause/resume/stop queue semantics, daemon activity visibility, Dashboard capture job progress, and interrupted job requeue on service start exist. Real outdoor overnight image quality and environmental stability still need field validation.
 - Worker now generates thumbnails, keograms, ffmpeg timelapses, mini timelapses, and startrails. Image/product retention cleanup, product deletion, filesystem upload execution, and Health-visible heartbeat/PID/last-job reporting exist.
-- Dark-frame calibration supports daemon-owned master capture, median stacking, camera-specific matching, manual active selection, and pixel subtraction with clipping. Real covered-sensor hardware validation and temperature-aware matching remain future hardening.
+- Dark-frame calibration supports daemon-owned master capture, median stacking, camera-specific matching, manual active selection, and pixel subtraction with clipping. Covered-sensor IMX290 validation passed on the Raspberry Pi; temperature-aware matching and capture-time performance tuning remain future hardening.
 - Product endpoints queue jobs; keogram, timelapse, mini timelapse, and startrail currently produce downloadable night products.
 - Public page exists for latest-image display with compact responsive metadata and honors the public-page enabled setting; richer public archives and branding controls are still open.
 - Phase 7 has a trusted built-in overlay module, module-flow execution, and external manifest registration. Arbitrary custom code execution is intentionally not enabled without sandboxing/signing.
@@ -324,7 +324,7 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 - API server no longer performs camera capture inline for test shots; test-shot requests enqueue daemon-owned `test` jobs so manual verification still works while automation is stopped.
 - Tailwind 4 is enabled through the official Vite plugin while preserving the existing theme config and shadcn animation utilities.
 - Lint passes with zero warnings in the current local validation.
-- Real Raspberry Pi install, service restart, reboot, and IMX290 real-camera capture acceptance passed on a Raspberry Pi 3 Model B running Debian 13/trixie.
+- Real Raspberry Pi install, service restart, reboot, IMX290 real-camera capture, and covered-sensor dark-frame calibration acceptance passed on a Raspberry Pi 3 Model B running Debian 13/trixie.
 
 ## Recent Verification
 
@@ -337,6 +337,19 @@ Most recent local checks on 2026-07-01:
 - `npm run build`: passed.
 - `git diff --check`: passed for the current dark-frame calibration changes.
 - `shellcheck install.sh scripts/test_install.sh upgrade.sh uninstall.sh support.sh`: not run locally because ShellCheck is not installed on this Windows host; CI installs ShellCheck on Ubuntu.
+
+Raspberry Pi covered-sensor dark-frame calibration acceptance on 2026-07-02:
+
+- Host was reachable as `pi@allsky`; deployed runtime was under `/opt/skyweaver` with data in `/var/lib/skyweaver`.
+- `skyweaver-api.service`, `skyweaver-capture.service`, and `skyweaver-worker.service` were active before and after validation.
+- `rpicam-hello --list-cameras` detected `imx290 [1920x1080 12-bit RGGB]`; the `skyweaver` service user had the required camera groups and access to `/dev/media*` and `/dev/dma_heap/*`.
+- A temporary validation API key was inserted directly into the Pi database, used for local API calls, then deleted; the deleted key returned `401 Invalid API key`.
+- Covered-sensor dark-frame job `8ff5c5c4-6680-42df-b33f-f1f6fe6a8831` completed for IMX290 with 3 frames, `10000 ms` exposure, gain `4`, `1280x960`, and generated active master dark `bc9974f0-f13f-400f-a57c-d411d0e7f6b4` at `/var/lib/skyweaver/dark-frames/f77985ba-67ac-4058-a8c0-8f31f2c95c92/20260702/master_dark_bc9974f0.png`.
+- Master dark metadata stored camera ID, exposure, gain, frame count, resolution, pixel format `RGB`, bit depth `8`, label, file path, and thumbnail path; both master and thumbnail files existed, and temporary source dark frames were cleaned up.
+- Dark-frame calibration was enabled with manual active selection. Matching image job `080a6130-131f-46d2-9cbb-0e5596d43395` produced image `31784511-ec4e-443f-8c27-7c99a027d085` with `dark_frame_applied=true` and metadata referencing master dark `bc9974f0-f13f-400f-a57c-d411d0e7f6b4`.
+- Mismatch guard passed: image job `257ff7da-6f94-4ac6-86a5-5cc9ad94c19a` with `1000 ms` exposure and gain `1` produced image `3991f7d8-2358-476c-877b-6d4e63680af8` with `dark_frame_applied=false`.
+- Public page and public latest endpoints still returned `200`.
+- Runtime caveat: on this Raspberry Pi 3/IMX290 setup, a 3-frame `10000 ms` dark set took about 5 minutes 28 seconds, and one matching `10000 ms` calibrated capture took about 1 minute 42 seconds. Performance needs further investigation before assuming configured exposure intervals are achievable for every hardware mode.
 
 Raspberry Pi acceptance on 2026-06-23:
 
