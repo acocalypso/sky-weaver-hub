@@ -1,11 +1,13 @@
-from pathlib import Path
 import os
+from pathlib import Path
 
 import pytest
 
 from skyweaver.camera.base import CaptureRequest
 from skyweaver.camera.mock import MockCameraAdapter
+from skyweaver.camera.registry import get_adapter
 from skyweaver.camera.rpicam import RpiCamAdapter
+import skyweaver.camera.rpicam as rpicam_module
 from skyweaver.camera.zwo import ASI_EXP_SUCCESS, ASI_EXP_WORKING, ASI_EXPOSURE, ASI_GAIN, ASI_IMG_END, ASI_IMG_RGB24, ASI_TEMPERATURE, ASICameraInfo, ZwoAsiAdapter, ZwoSdk
 
 
@@ -126,6 +128,13 @@ OUT
     assert "imx290" in model
 
 
+def test_camera_registry_reuses_adapter_instances():
+    first = get_adapter("rpicam")
+    second = get_adapter("rpicam")
+
+    assert first is second
+
+
 @pytest.mark.asyncio
 async def test_rpicam_cancel_capture_terminates_active_process(tmp_path: Path):
     adapter = RpiCamAdapter()
@@ -160,6 +169,119 @@ async def test_rpicam_cancel_capture_terminates_active_process(tmp_path: Path):
     assert proc.terminated is True
     assert proc.killed is False
     assert not output.exists()
+
+
+@pytest.mark.asyncio
+async def test_rpicam_one_shot_capture_uses_headless_preview_flag(tmp_path: Path, monkeypatch):
+    output = tmp_path / "single.jpg"
+    calls: list[list[str]] = []
+
+    class FakeProcess:
+        returncode = 0
+        stdout = None
+        stderr = None
+
+        async def communicate(self):
+            output.write_bytes(b"jpg")
+            return b"", b""
+
+    async def fake_exec(*args, **_kwargs):
+        calls.append(list(args))
+        return FakeProcess()
+
+    monkeypatch.setattr("skyweaver.camera.rpicam.shutil.which", lambda name: "/usr/bin/rpicam-still" if name == "rpicam-still" else None)
+    monkeypatch.setattr("skyweaver.camera.rpicam.asyncio.create_subprocess_exec", fake_exec)
+
+    result = await RpiCamAdapter().capture(
+        CaptureRequest(
+            output_path=output,
+            exposure_ms=1000,
+            gain=1,
+            width=1280,
+            height=960,
+            image_format="jpg",
+            settings={"persistent": False},
+        )
+    )
+
+    assert result.file_path == output
+    assert output.exists()
+    assert "--immediate" in calls[0]
+    assert "--nopreview" in calls[0]
+    assert "--signal" not in calls[0]
+
+
+@pytest.mark.asyncio
+async def test_rpicam_persistent_signal_session_reuses_process(tmp_path: Path, monkeypatch):
+    calls: list[list[str]] = []
+    processes: list["FakeSignalProcess"] = []
+
+    class FakeSignalProcess:
+        returncode = None
+        stdout = None
+        stderr = None
+
+        def __init__(self, args: tuple[str, ...]) -> None:
+            self.args = args
+            self.terminated = False
+            self.waited = False
+            output_index = args.index("--output") + 1
+            self.pattern = Path(args[output_index])
+            self.index = 0
+
+        def send_signal(self, signum: int) -> None:
+            assert signum == rpicam_module.SIGUSR1
+            path = Path(str(self.pattern).replace("%04d", f"{self.index:04d}"))
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(f"frame-{self.index}".encode("ascii"))
+            self.index += 1
+
+        def terminate(self) -> None:
+            self.terminated = True
+            self.returncode = -15
+
+        def kill(self) -> None:
+            self.returncode = -9
+
+        async def wait(self) -> int:
+            self.waited = True
+            if self.returncode is None:
+                self.returncode = 0
+            return self.returncode
+
+    async def fake_exec(*args, **_kwargs):
+        calls.append(list(args))
+        proc = FakeSignalProcess(tuple(args))
+        processes.append(proc)
+        return proc
+
+    monkeypatch.setattr("skyweaver.camera.rpicam.shutil.which", lambda name: "/usr/bin/rpicam-still" if name == "rpicam-still" else None)
+    monkeypatch.setattr("skyweaver.camera.rpicam.asyncio.create_subprocess_exec", fake_exec)
+    monkeypatch.setattr("skyweaver.camera.rpicam.SIGUSR1", 10)
+
+    adapter = RpiCamAdapter()
+    request = {
+        "exposure_ms": 1000,
+        "gain": 4,
+        "width": 1280,
+        "height": 960,
+        "image_format": "jpg",
+        "settings": {"persistent_warmup_seconds": 0},
+    }
+
+    first = await adapter.capture(CaptureRequest(output_path=tmp_path / "first.jpg", job_id="job-1", **request))
+    second = await adapter.capture(CaptureRequest(output_path=tmp_path / "second.jpg", job_id="job-2", **request))
+    await adapter.disconnect()
+
+    assert first.file_path.read_bytes() == b"frame-0"
+    assert second.file_path.read_bytes() == b"frame-1"
+    assert first.metadata["capture_mode"] == "persistent_signal"
+    assert second.metadata["capture_mode"] == "persistent_signal"
+    assert len(calls) == 1
+    assert "--signal" in calls[0]
+    assert "--nopreview" in calls[0]
+    assert "--immediate" not in calls[0]
+    assert processes[0].terminated is True
 
 
 @pytest.mark.asyncio

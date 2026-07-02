@@ -18,8 +18,14 @@ class NotInstalledAdapter(MockCameraAdapter):
         raise RuntimeError(self.hint)
 
 
+_ADAPTERS: dict[str, CameraAdapter] | None = None
+
+
 def adapters() -> dict[str, CameraAdapter]:
-    return {
+    global _ADAPTERS
+    if _ADAPTERS is not None:
+        return _ADAPTERS
+    _ADAPTERS = {
         "mock": MockCameraAdapter(),
         "rpicam": RpiCamAdapter(),
         "libcamera": RpiCamAdapter(),
@@ -30,7 +36,7 @@ def adapters() -> dict[str, CameraAdapter]:
         "indi": NotInstalledAdapter("indi", "INDI camera", "Install INDI server/client libraries; adapter is a future extension point."),
         "custom_command": NotInstalledAdapter("custom_command", "Custom command", "Custom commands are disabled until sandboxing is configured."),
     }
-
+    return _ADAPTERS
 
 def get_adapter(name: str) -> CameraAdapter:
     registry = adapters()
