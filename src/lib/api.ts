@@ -66,6 +66,8 @@ export const SkyApi = {
   schedulePreview: (body: Partial<ScheduleRow> = {}) => api<SchedulePreview>("/api/v1/schedule/preview-tonight", { method: "POST", body: JSON.stringify(body) }),
   products: () => api<ProductRow[]>("/api/v1/products"),
   darkFrames: () => api<DarkFrameRow[]>("/api/v1/dark-frames"),
+  captureDarkFrameSet: (body: DarkFrameCapturePayload) => api<CaptureJob>("/api/v1/dark-frames/capture", { method: "POST", body: JSON.stringify(body) }),
+  activateDarkFrame: (id: string) => api<{ id: string; camera_id: string; active: boolean; settings: Record<string, any> }>(`/api/v1/dark-frames/${id}/activate`, { method: "POST" }),
   deleteDarkFrame: (id: string) => api<ImageDeleteResult>(`/api/v1/dark-frames/${id}`, { method: "DELETE" }),
   processingJobs: () => api<ProcessingJob[]>("/api/v1/processing/jobs"),
   createProduct: (type: string, body: any) => api<ProcessingJob>(`/api/v1/products/${type}`, { method: "POST", body: JSON.stringify(body) }),
@@ -143,7 +145,8 @@ export interface SchedulePreview {
   seconds_until_due?: number | null;
 }
 export interface ProductRow { id: string; type: string; day_key: string; file_path: string | null; thumbnail_path: string | null; status: string; metadata: any; created_at: string; }
-export interface DarkFrameRow { id: string; camera_id?: string | null; captured_at: string; day_key: string; file_path: string; thumbnail_path?: string | null; format: string; width?: number | null; height?: number | null; size_bytes?: number | null; metadata: any; created_at: string; }
+export interface DarkFrameRow { id: string; camera_id?: string | null; captured_at: string; day_key: string; file_path: string; thumbnail_path?: string | null; format: string; width?: number | null; height?: number | null; size_bytes?: number | null; exposure_ms?: number | null; gain?: number | null; frame_count?: number | null; pixel_format?: string | null; bit_depth?: number | null; label?: string | null; active?: boolean; metadata: any; created_at: string; }
+export interface DarkFrameCapturePayload { camera_id?: string | null; label?: string | null; exposure_ms: number; gain: number; width?: number | null; height?: number | null; format?: string; mode?: string; count: number; set_active?: boolean; settings?: Record<string, any>; }
 export interface ProductDeleteResult { deleted: string; deleted_files: string[]; missing_files: string[]; skipped_files: ImageSkippedFile[]; }
 export interface ProductRetentionResult { retention_days: number; cutoff: string; deleted_products: number; deleted_product_ids: string[]; deleted_files: string[]; missing_files: string[]; skipped_files: ImageSkippedFile[]; }
 export interface ModuleRow { id: string; name: string; description?: string | null; version?: string | null; author?: string | null; module_path?: string | null; enabled: boolean; trusted: boolean; settings_schema: any; settings: any; created_at: string; updated_at: string; }

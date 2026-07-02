@@ -23,7 +23,7 @@ from ..secrets import encrypt_config_envelope
 from ..rate_limit import InMemoryRateLimiter, RateLimitStatus
 from ..security import create_api_key, hash_password, make_token, verify_password
 from ..services.allsky_migration import preview_allsky_root, rollback_allsky_import
-from ..services.capture import CaptureCommand, all_rows, cleanup_images_by_retention, configured_image_retention_days, create_capture_job, current_schedule, decode_row, delete_image_files, delete_storage_paths, enqueue_capture, get_primary_camera, public_latest_payload, publish_latest_image, read_latest_payload, scheduled_capture_timing, system_metrics
+from ..services.capture import CaptureCommand, all_rows, cleanup_images_by_retention, configured_image_retention_days, create_capture_job, current_schedule, dark_frame_settings, decode_row, delete_image_files, delete_storage_paths, enqueue_capture, get_primary_camera, public_latest_payload, publish_latest_image, read_latest_payload, scheduled_capture_timing, system_metrics, upsert_dark_frame_settings
 from ..services.modules import register_external_module, run_flow_preview, validate_module_order
 from ..services.processing import cleanup_products_by_retention, delete_product_files
 from ..services.schedule import active_window
@@ -114,6 +114,20 @@ class CaptureBody(BaseModel):
     settings: dict[str, Any] = Field(default_factory=dict)
 
 
+class DarkFrameCaptureBody(BaseModel):
+    camera_id: str | None = None
+    label: str | None = Field(default=None, max_length=120)
+    exposure_ms: float = Field(default=1000, gt=0)
+    gain: float = Field(default=1.0, ge=0)
+    width: int | None = Field(default=1280, ge=1)
+    height: int | None = Field(default=960, ge=1)
+    format: str = Field(default="png", pattern="^(jpg|jpeg|png)$")
+    mode: str = "dark"
+    count: int = Field(default=5, ge=1, le=100)
+    set_active: bool = True
+    settings: dict[str, Any] = Field(default_factory=dict)
+
+
 class SettingsPatch(BaseModel):
     values: dict[str, Any]
 
@@ -143,6 +157,16 @@ class PublicPageSettings(BaseModel):
     refresh_seconds: int = Field(default=30, ge=5, le=3600)
     iframe_enabled: bool = True
     product_days: int = Field(default=7, ge=1, le=3650)
+
+
+class DarkFrameSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = False
+    selection_mode: str = Field(default="auto", pattern="^(auto|manual)$")
+    active_dark_frame_id: str | None = None
+    exposure_tolerance_ms: float = Field(default=1.0, ge=0, le=60000)
+    gain_tolerance: float = Field(default=0.01, ge=0, le=1000)
 
 
 class SecuritySettings(BaseModel):
@@ -278,6 +302,7 @@ SETTING_MODELS: dict[str, type[BaseModel]] = {
     "observatory": ObservatorySettings,
     "storage": StorageSettings,
     "public_page": PublicPageSettings,
+    "dark_frames": DarkFrameSettings,
     "security": SecuritySettings,
 }
 
@@ -1734,15 +1759,54 @@ def product_download(product_id: str, _principal: Annotated[dict, Depends(requir
 
 
 @router.get("/dark-frames")
-def dark_frames(_principal: Annotated[dict, Depends(require_scope("read:images"))]):
+def dark_frames(camera_id: str | None = None, _principal: Annotated[dict, Depends(require_scope("read:images"))] = None):
+    clauses: list[str] = []
+    params: list[Any] = []
+    if camera_id:
+        clauses.append("camera_id=?")
+        params.append(camera_id)
+    where = "WHERE " + " AND ".join(clauses) if clauses else ""
     with session() as conn:
-        rows = all_rows(conn, "SELECT * FROM dark_frames ORDER BY captured_at DESC LIMIT 200")
+        rows = all_rows(conn, f"SELECT * FROM dark_frames {where} ORDER BY active DESC, captured_at DESC LIMIT 200", tuple(params))
     return ok(rows)
 
 
 @router.post("/dark-frames/capture")
-def capture_dark_frame(_principal: Annotated[dict, Depends(require_scope("write:capture"))]):
-    return ok({"status": "planned", "note": "Dark-frame capture will run through the capture daemon."})
+def capture_dark_frame(payload: DarkFrameCaptureBody, _principal: Annotated[dict, Depends(require_scope("write:capture"))]):
+    with session() as conn:
+        camera = get_primary_camera(conn, payload.camera_id)
+        job_id = create_capture_job(
+            conn,
+            "dark_frame",
+            {
+                "camera_id": camera["id"],
+                "label": payload.label,
+                "exposure_ms": payload.exposure_ms,
+                "gain": payload.gain,
+                "width": payload.width,
+                "height": payload.height,
+                "format": payload.format,
+                "mode": payload.mode,
+                "count": payload.count,
+                "set_active": payload.set_active,
+                "settings": payload.settings,
+            },
+        )
+        event(conn, "dark_frame_capture_queued", {"job_id": job_id, "camera_id": camera["id"], "count": payload.count})
+    return ok({"id": job_id, "status": "pending", "type": "dark_frame", "camera_id": camera["id"], "count": payload.count, "progress": 0})
+
+
+@router.post("/dark-frames/{frame_id}/activate")
+def activate_dark_frame(frame_id: str, _principal: Annotated[dict, Depends(require_scope("write:settings"))]):
+    with session() as conn:
+        row = decode_row(row_to_dict(conn.execute("SELECT * FROM dark_frames WHERE id=?", (frame_id,)).fetchone()))
+        if not row:
+            raise HTTPException(404, "Dark frame not found")
+        conn.execute("UPDATE dark_frames SET active=0 WHERE camera_id=?", (row["camera_id"],))
+        conn.execute("UPDATE dark_frames SET active=1 WHERE id=?", (frame_id,))
+        settings = upsert_dark_frame_settings(conn, {"selection_mode": "manual", "active_dark_frame_id": frame_id})
+        event(conn, "dark_frame_activated", {"dark_frame_id": frame_id, "camera_id": row["camera_id"]})
+    return ok({"id": frame_id, "camera_id": row["camera_id"], "active": True, "settings": settings})
 
 
 @router.delete("/dark-frames/{frame_id}")
@@ -1753,6 +1817,9 @@ def delete_dark_frame(frame_id: str, _principal: Annotated[dict, Depends(require
             raise HTTPException(404, "Dark frame not found")
         result = delete_storage_paths([Path(str(path)) for path in (row.get("file_path"), row.get("thumbnail_path")) if path])
         conn.execute("DELETE FROM dark_frames WHERE id=?", (frame_id,))
+        settings = dark_frame_settings(conn)
+        if settings.get("active_dark_frame_id") == frame_id:
+            upsert_dark_frame_settings(conn, {"selection_mode": "auto", "active_dark_frame_id": None})
         event(conn, "dark_frame_deleted", {"dark_frame_id": frame_id})
     return ok({"deleted": frame_id, **result})
 

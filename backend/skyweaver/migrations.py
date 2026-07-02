@@ -151,7 +151,9 @@ def _dark_frames(conn: sqlite3.Connection) -> None:
         """CREATE TABLE IF NOT EXISTS dark_frames (
            id TEXT PRIMARY KEY, camera_id TEXT, captured_at TEXT NOT NULL, day_key TEXT NOT NULL,
            file_path TEXT NOT NULL, thumbnail_path TEXT, format TEXT NOT NULL, width INTEGER, height INTEGER,
-           size_bytes INTEGER, metadata TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL
+           size_bytes INTEGER, exposure_ms REAL, gain REAL, frame_count INTEGER NOT NULL DEFAULT 1,
+           pixel_format TEXT, bit_depth INTEGER, label TEXT, active INTEGER NOT NULL DEFAULT 0,
+           metadata TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL
         )"""
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_dark_frames_captured_at ON dark_frames (captured_at DESC)")
@@ -189,6 +191,27 @@ def _worker_state(conn: sqlite3.Connection) -> None:
     conn.execute("INSERT OR IGNORE INTO worker_state (id, updated_at) VALUES (1, ?)", (now_iso(),))
 
 
+def _dark_frame_calibration(conn: sqlite3.Connection) -> None:
+    ensure_columns(
+        conn,
+        "dark_frames",
+        {
+            "exposure_ms": "REAL",
+            "gain": "REAL",
+            "frame_count": "INTEGER NOT NULL DEFAULT 1",
+            "pixel_format": "TEXT",
+            "bit_depth": "INTEGER",
+            "label": "TEXT",
+            "active": "INTEGER NOT NULL DEFAULT 0",
+        },
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_dark_frames_camera_settings ON dark_frames (camera_id, exposure_ms, gain, width, height, pixel_format, active)")
+    conn.execute(
+        "INSERT OR IGNORE INTO system_settings (key, value, updated_at) VALUES ('dark_frames', ?, ?)",
+        (json.dumps({"enabled": False, "selection_mode": "auto", "active_dark_frame_id": None}, separators=(",", ":"), sort_keys=True), now_iso()),
+    )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(1, "capture_daemon_job_columns", _capture_daemon_columns),
     Migration(2, "core_query_indexes", _core_indexes),
@@ -197,4 +220,5 @@ MIGRATIONS: tuple[Migration, ...] = (
     Migration(5, "dark_frames", _dark_frames),
     Migration(6, "encrypt_remote_target_configs", _encrypt_remote_target_configs),
     Migration(7, "worker_state", _worker_state),
+    Migration(8, "dark_frame_calibration", _dark_frame_calibration),
 )

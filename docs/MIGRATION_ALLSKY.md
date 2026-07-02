@@ -32,6 +32,6 @@ Original Allsky data is never deleted or modified.
 Current limitations:
 
 - not every Allsky setting has a one-to-one Sky Weaver equivalent yet
-- dark-frame processing/subtraction is not implemented yet
+- imported dark frames are preserved as dark-frame rows; capture-time subtraction uses Sky Weaver-created calibrated master dark sets with matching metadata
 - overlay image/logo assets are preserved but not rendered by the text overlay module yet
 - camera hints are stored as migration hints and do not create or replace hardware camera adapters

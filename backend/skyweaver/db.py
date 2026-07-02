@@ -83,7 +83,9 @@ CREATE TABLE IF NOT EXISTS night_products (
 CREATE TABLE IF NOT EXISTS dark_frames (
   id TEXT PRIMARY KEY, camera_id TEXT, captured_at TEXT NOT NULL, day_key TEXT NOT NULL,
   file_path TEXT NOT NULL, thumbnail_path TEXT, format TEXT NOT NULL, width INTEGER, height INTEGER,
-  size_bytes INTEGER, metadata TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL
+  size_bytes INTEGER, exposure_ms REAL, gain REAL, frame_count INTEGER NOT NULL DEFAULT 1,
+  pixel_format TEXT, bit_depth INTEGER, label TEXT, active INTEGER NOT NULL DEFAULT 0,
+  metadata TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS remote_targets (
   id TEXT PRIMARY KEY, name TEXT NOT NULL, type TEXT NOT NULL, config_encrypted TEXT NOT NULL,
@@ -378,6 +380,7 @@ def default_settings(settings: Settings | None = None) -> dict[str, Any]:
         "public_page": {"enabled": settings.public_page_enabled if settings else True, "refresh_seconds": 30, "iframe_enabled": True, "product_days": 7},
         "security": {"cors_origins": ["http://localhost:8080"], "first_setup_required": settings.first_setup_required if settings else True},
         "processing": {"thumbnails": True, "keogram": True, "startrails": True, "timelapse": True},
+        "dark_frames": {"enabled": False, "selection_mode": "auto", "active_dark_frame_id": None},
     }
 
 

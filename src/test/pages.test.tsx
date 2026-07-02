@@ -35,6 +35,7 @@ vi.mock("@/lib/api", async () => {
     SkyApi: {
       status: vi.fn(),
       images: vi.fn(),
+      cameras: vi.fn(),
       logs: vi.fn(),
       settings: vi.fn(),
       metrics: vi.fn(),
@@ -60,6 +61,10 @@ vi.mock("@/lib/api", async () => {
       publicLatest: vi.fn(),
       publicProducts: vi.fn(),
       products: vi.fn(),
+      darkFrames: vi.fn(),
+      captureDarkFrameSet: vi.fn(),
+      activateDarkFrame: vi.fn(),
+      deleteDarkFrame: vi.fn(),
       processingJobs: vi.fn(),
       createProduct: vi.fn(),
       deleteProduct: vi.fn(),
@@ -113,6 +118,7 @@ const mockSettings = {
   observatory: { name: "Test Observatory", latitude: 47.1, longitude: 15.4, timezone: "Europe/Berlin" },
   storage: { images: "./data/images", videos: "./data/videos", retention_days: 30, min_free_gb: 2 },
   public_page: { enabled: true, iframe_enabled: true, product_days: 7 },
+  dark_frames: { enabled: false, selection_mode: "auto", active_dark_frame_id: null, exposure_tolerance_ms: 1, gain_tolerance: 0.01 },
   security: { cors_origins: ["http://localhost:8080"], first_setup_required: true },
 };
 
@@ -210,6 +216,7 @@ beforeEach(() => {
     { id: "log-2", created_at: "2026-06-23T22:17:00+00:00", level: "warning", source: "capture", message: "Camera warming" },
   ] as any);
   vi.mocked(SkyApi.settings).mockResolvedValue(mockSettings);
+  vi.mocked(SkyApi.cameras).mockResolvedValue([{ id: "cam-1", name: "Mock all-sky camera", adapter: "mock", enabled: true, is_primary: true } as any]);
   vi.mocked(SkyApi.schedule).mockResolvedValue(mockSchedule as any);
   vi.mocked(SkyApi.putSchedule).mockImplementation(async (body) => body as any);
   vi.mocked(SkyApi.metrics).mockResolvedValue({ cpu_percent: 12, memory_percent: 34, disk_percent: 45, disk_free_gb: 12.3, temperature_c: 41, uptime_seconds: 7200 });
@@ -281,6 +288,32 @@ beforeEach(() => {
   vi.mocked(SkyApi.createCamera).mockResolvedValue({ id: "cam-2" });
   vi.mocked(SkyApi.publicLatest).mockResolvedValue(mockPublicLatest);
   vi.mocked(SkyApi.publicProducts).mockResolvedValue(mockPublicProducts);
+  vi.mocked(SkyApi.darkFrames).mockResolvedValue([
+    {
+      id: "dark-1",
+      camera_id: "cam-1",
+      captured_at: "2026-06-23T21:00:00+00:00",
+      day_key: "20260623",
+      file_path: "/data/dark-frames/cam-1/master_dark.png",
+      thumbnail_path: null,
+      format: "png",
+      width: 1280,
+      height: 960,
+      size_bytes: 1234,
+      exposure_ms: 1000,
+      gain: 2,
+      frame_count: 5,
+      pixel_format: "RGB",
+      bit_depth: 8,
+      label: "Night gain 2",
+      active: true,
+      metadata: { settings: { width: 1280, height: 960 } },
+      created_at: "2026-06-23T21:00:00+00:00",
+    },
+  ] as any);
+  vi.mocked(SkyApi.captureDarkFrameSet).mockResolvedValue({ id: "dark-job-1", type: "dark_frame", status: "pending", request: {}, progress: 0, created_at: "2026-06-23T21:00:00+00:00" } as any);
+  vi.mocked(SkyApi.activateDarkFrame).mockResolvedValue({ id: "dark-1", camera_id: "cam-1", active: true, settings: mockSettings.dark_frames });
+  vi.mocked(SkyApi.deleteDarkFrame).mockResolvedValue({ deleted: "dark-1", deleted_files: ["/data/dark-frames/cam-1/master_dark.png"], missing_files: [], skipped_files: [] } as any);
   vi.mocked(SkyApi.processingJobs).mockResolvedValue([
     {
       id: "processing-1",
@@ -705,6 +738,8 @@ describe("main pages", () => {
     expect(await screen.findByDisplayValue("Test Observatory")).toBeInTheDocument();
     expect(screen.getByText("Storage and retention")).toBeInTheDocument();
     expect(screen.getByText("Public and API")).toBeInTheDocument();
+    expect(screen.getByText("Dark Frame Calibration")).toBeInTheDocument();
+    expect(screen.getByText("Night gain 2")).toBeInTheDocument();
     expect(screen.getByDisplayValue("7")).toBeInTheDocument();
   });
 

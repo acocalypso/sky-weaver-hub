@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import psutil
-from PIL import ExifTags, Image, ImageStat
+from PIL import ExifTags, Image, ImageChops, ImageStat
 
 from ..camera.base import CameraAdapter, CaptureCancelResult, CaptureCanceled, CaptureRequest, CaptureResult
 from ..camera.registry import get_adapter
@@ -67,7 +67,7 @@ def decode_row(row: dict[str, Any] | None) -> dict[str, Any] | None:
         if key in out and isinstance(out[key], str):
             out[key] = json_loads(out[key], out[key])
     for key, value in list(out.items()):
-        if isinstance(value, int) and key in {"enabled", "is_primary", "bad_image", "dark_frame_applied", "overlay_applied", "trusted"}:
+        if isinstance(value, int) and key in {"enabled", "is_primary", "bad_image", "dark_frame_applied", "overlay_applied", "trusted", "active"}:
             out[key] = bool(value)
     return out
 
@@ -291,6 +291,131 @@ def delete_storage_paths(paths: list[Path]) -> dict[str, Any]:
     }
 
 
+def dark_frame_settings(conn) -> dict[str, Any]:
+    row = conn.execute("SELECT value FROM system_settings WHERE key='dark_frames'").fetchone()
+    value = json_loads(row["value"], {}) if row else {}
+    if not isinstance(value, dict):
+        value = {}
+    return {
+        "enabled": bool(value.get("enabled", False)),
+        "selection_mode": value.get("selection_mode") if value.get("selection_mode") in {"auto", "manual"} else "auto",
+        "active_dark_frame_id": value.get("active_dark_frame_id"),
+        "exposure_tolerance_ms": float(value.get("exposure_tolerance_ms", 1.0)),
+        "gain_tolerance": float(value.get("gain_tolerance", 0.01)),
+    }
+
+
+def upsert_dark_frame_settings(conn, patch: dict[str, Any]) -> dict[str, Any]:
+    current = dark_frame_settings(conn)
+    merged = {**current, **patch}
+    if merged.get("selection_mode") not in {"auto", "manual"}:
+        merged["selection_mode"] = "auto"
+    merged["enabled"] = bool(merged.get("enabled", False))
+    conn.execute(
+        "INSERT OR REPLACE INTO system_settings (key, value, updated_at) VALUES ('dark_frames', ?, ?)",
+        (json_dumps(merged), now_iso()),
+    )
+    return merged
+
+
+def bit_depth_for_mode(mode: str) -> int:
+    if mode in {"I;16", "I;16B", "I;16L"}:
+        return 16
+    if mode in {"I", "F"}:
+        return 32
+    return 8
+
+
+def median_stack_images(paths: list[Path]) -> Image.Image:
+    if not paths:
+        raise ValueError("No dark frames captured")
+    images: list[Image.Image] = []
+    try:
+        with Image.open(paths[0]) as first:
+            mode = "RGB" if first.mode not in {"L", "RGB"} else first.mode
+            size = first.size
+            images.append(first.convert(mode))
+        for path in paths[1:]:
+            with Image.open(path) as source:
+                img = source.convert(mode)
+                if img.size != size:
+                    raise ValueError("Dark-frame source dimensions do not match")
+                images.append(img)
+        if len(images) == 1:
+            return images[0].copy()
+        bands: list[Image.Image] = []
+        for band_index in range(len(images[0].getbands())):
+            band_values = [list(img.getchannel(band_index).get_flattened_data()) for img in images]
+            median_pixels = [sorted(values)[len(values) // 2] for values in zip(*band_values)]
+            band = Image.new("L", size)
+            band.putdata(median_pixels)
+            bands.append(band)
+        return Image.merge(mode, bands) if len(bands) > 1 else bands[0]
+    finally:
+        for img in images:
+            img.close()
+
+
+def find_matching_dark_frame(conn, image_path: Path, camera_id: str, exposure_ms: float | None, gain: float | None, settings: dict[str, Any]) -> dict[str, Any] | None:
+    calibration = dark_frame_settings(conn)
+    if not calibration["enabled"]:
+        return None
+    storage = extract_image_metadata(image_path)
+    image_info = storage["image"]
+    rows = all_rows(conn, "SELECT * FROM dark_frames WHERE camera_id=? ORDER BY active DESC, created_at DESC", (camera_id,))
+    if calibration["selection_mode"] == "manual" and calibration.get("active_dark_frame_id"):
+        rows = [row for row in rows if row["id"] == calibration["active_dark_frame_id"]]
+    exposure_tolerance = float(settings.get("dark_frame_exposure_tolerance_ms", calibration["exposure_tolerance_ms"]))
+    gain_tolerance = float(settings.get("dark_frame_gain_tolerance", calibration["gain_tolerance"]))
+    matches: list[tuple[float, dict[str, Any]]] = []
+    for row in rows:
+        if not row.get("file_path") or not Path(str(row["file_path"])).exists():
+            continue
+        if row.get("width") != image_info["width"] or row.get("height") != image_info["height"]:
+            continue
+        pixel_format = row.get("pixel_format") or (row.get("metadata") or {}).get("settings", {}).get("pixel_format")
+        if pixel_format and pixel_format != image_info["mode"]:
+            continue
+        if exposure_ms is not None and row.get("exposure_ms") is not None:
+            exposure_delta = abs(float(row["exposure_ms"]) - float(exposure_ms))
+            if exposure_delta > exposure_tolerance:
+                continue
+        else:
+            exposure_delta = 0.0
+        if gain is not None and row.get("gain") is not None:
+            gain_delta = abs(float(row["gain"]) - float(gain))
+            if gain_delta > gain_tolerance:
+                continue
+        else:
+            gain_delta = 0.0
+        matches.append((exposure_delta + gain_delta, row))
+    if not matches:
+        log(conn, "warning", "capture", "No matching dark frame for capture", {"camera_id": camera_id, "exposure_ms": exposure_ms, "gain": gain, "width": image_info["width"], "height": image_info["height"], "pixel_format": image_info["mode"]})
+        return None
+    return sorted(matches, key=lambda item: item[0])[0][1]
+
+
+def subtract_dark_frame(image_path: Path, dark_frame: dict[str, Any]) -> dict[str, Any]:
+    with Image.open(image_path) as sky_source, Image.open(dark_frame["file_path"]) as dark_source:
+        mode = sky_source.mode if sky_source.mode in {"L", "RGB"} else "RGB"
+        sky = sky_source.convert(mode)
+        dark = dark_source.convert(mode)
+        if sky.size != dark.size:
+            raise ValueError("Dark-frame dimensions do not match captured image")
+        calibrated = ImageChops.subtract(sky, dark)
+        save_kwargs = {"quality": 92} if image_path.suffix.lower() in {".jpg", ".jpeg"} else {}
+        calibrated.save(image_path, **save_kwargs)
+    return {
+        "applied": True,
+        "dark_frame_id": dark_frame["id"],
+        "file_path": dark_frame["file_path"],
+        "label": dark_frame.get("label"),
+        "exposure_ms": dark_frame.get("exposure_ms"),
+        "gain": dark_frame.get("gain"),
+        "frame_count": dark_frame.get("frame_count"),
+    }
+
+
 def configured_image_retention_days(conn) -> int:
     row = conn.execute("SELECT value FROM system_settings WHERE key='storage'").fetchone()
     if not row:
@@ -352,7 +477,129 @@ def claim_next_capture_job(job_types: tuple[str, ...] = ("single", "scheduled", 
 async def execute_capture_job(job: dict[str, Any]) -> dict[str, Any]:
     if job["type"] == "sequence":
         return await execute_sequence_job(job)
+    if job["type"] == "dark_frame":
+        return await execute_dark_frame_job(job)
     return await execute_capture(CaptureCommand.from_mapping(job["request"]), job["type"], job_id=job["id"])
+
+
+async def execute_dark_frame_job(job: dict[str, Any]) -> dict[str, Any]:
+    request = job["request"]
+    command = CaptureCommand.from_mapping({**request, "mode": request.get("mode", "dark")})
+    count = max(1, min(100, int(request.get("count", request.get("frames", 1)))))
+    label = str(request.get("label") or "").strip() or None
+    set_active = bool(request.get("set_active", True))
+    settings = get_settings()
+
+    with session() as conn:
+        cam = get_primary_camera(conn, command.camera_id)
+        conn.execute("UPDATE capture_jobs SET status='running', progress=0.05, started_at=? WHERE id=?", (now_iso(), job["id"]))
+
+    captured_at = datetime.now(UTC)
+    day_key = captured_at.strftime("%Y%m%d")
+    frame_id = new_id()
+    temp_dir = settings.data_dir / "dark-frames" / ".captures" / frame_id
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    captured_paths: list[Path] = []
+    adapter = get_adapter(cam["adapter"])
+    adapter_settings = {**command.settings, "dark_frame": True}
+    if cam.get("device_id") and "device_id" not in adapter_settings:
+        adapter_settings["device_id"] = cam["device_id"]
+
+    try:
+        for index in range(count):
+            output = temp_dir / f"dark_{index + 1:03d}.{command.format.lower()}"
+            result, _cancel_result = await capture_with_cancel(
+                adapter,
+                CaptureRequest(
+                    output_path=output,
+                    job_id=job["id"],
+                    exposure_ms=command.exposure_ms,
+                    gain=command.gain,
+                    width=command.width,
+                    height=command.height,
+                    image_format=command.format,
+                    mode="dark",
+                    settings=adapter_settings,
+                ),
+                job["id"],
+            )
+            captured_paths.append(result.file_path)
+            with session() as conn:
+                conn.execute("UPDATE capture_jobs SET progress=? WHERE id=?", (0.05 + 0.7 * ((index + 1) / count), job["id"]))
+
+        master = median_stack_images(captured_paths)
+        target = settings.data_dir / "dark-frames" / cam["id"] / day_key / f"master_dark_{frame_id[:8]}.png"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        master.save(target, "PNG")
+        thumb = make_thumbnail(target, settings.thumbnail_dir / "dark-frames" / cam["id"] / day_key / target.name)
+        storage = extract_image_metadata(target)
+        metadata = {
+            "id": frame_id,
+            "label": label,
+            "camera": {"id": cam["id"], "name": cam.get("name"), "adapter": cam["adapter"], "model": cam.get("model")},
+            "settings": {
+                "exposure_ms": command.exposure_ms,
+                "gain": command.gain,
+                "width": master.width,
+                "height": master.height,
+                "format": "png",
+                "pixel_format": master.mode,
+                "bit_depth": bit_depth_for_mode(master.mode),
+            },
+            "frame_count": count,
+            "source_frame_count": len(captured_paths),
+            "source_frames_deleted": True,
+            "created_at": captured_at.isoformat(),
+            "storage": storage,
+        }
+        with session() as conn:
+            if set_active:
+                conn.execute("UPDATE dark_frames SET active=0 WHERE camera_id=?", (cam["id"],))
+            conn.execute(
+                """INSERT INTO dark_frames
+                   (id, camera_id, captured_at, day_key, file_path, thumbnail_path, format, width, height,
+                    size_bytes, exposure_ms, gain, frame_count, pixel_format, bit_depth, label, active, metadata, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, 'png', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    frame_id,
+                    cam["id"],
+                    captured_at.isoformat(),
+                    day_key,
+                    str(target),
+                    str(thumb) if thumb else None,
+                    master.width,
+                    master.height,
+                    target.stat().st_size,
+                    command.exposure_ms,
+                    command.gain,
+                    count,
+                    master.mode,
+                    bit_depth_for_mode(master.mode),
+                    label,
+                    int(set_active),
+                    json_dumps(metadata),
+                    now_iso(),
+                ),
+            )
+            if set_active:
+                upsert_dark_frame_settings(conn, {"active_dark_frame_id": frame_id, "selection_mode": "manual"})
+            payload = {"dark_frame_id": frame_id, "camera_id": cam["id"], "frame_count": count, "file_path": str(target)}
+            conn.execute("UPDATE capture_jobs SET status='completed', progress=1, result=?, completed_at=? WHERE id=?", (json_dumps(payload), now_iso(), job["id"]))
+            event(conn, "dark_frame_created", payload)
+        return {"job_id": job["id"], **payload}
+    except CaptureCanceled as exc:
+        with session() as conn:
+            conn.execute("UPDATE capture_jobs SET status='canceled', progress=1, error=?, completed_at=? WHERE id=?", (str(exc), now_iso(), job["id"]))
+            event(conn, "dark_frame_capture_canceled", {"job_id": job["id"], "camera_id": cam["id"]})
+        return {"job_id": job["id"], "canceled": True}
+    except Exception as exc:
+        with session() as conn:
+            conn.execute("UPDATE capture_jobs SET status='failed', error=?, completed_at=? WHERE id=?", (str(exc), now_iso(), job["id"]))
+            log(conn, "error", "capture", "Dark-frame capture failed", {"error": str(exc), "camera_id": cam["id"]})
+            event(conn, "dark_frame_capture_failed", {"job_id": job["id"], "camera_id": cam["id"], "error": str(exc)})
+        raise
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 async def execute_sequence_job(job: dict[str, Any]) -> dict[str, Any]:
@@ -431,6 +678,17 @@ async def execute_capture(command: CaptureCommand, job_type: str = "manual", job
             ),
             job_id,
         )
+        dark_frame_result: dict[str, Any] = {"applied": False}
+        with session() as conn:
+            selected_dark = find_matching_dark_frame(conn, result.file_path, cam["id"], result.exposure_ms, result.gain, command.settings)
+            if selected_dark:
+                try:
+                    dark_frame_result = subtract_dark_frame(result.file_path, selected_dark)
+                    log(conn, "info", "capture", "Applied dark-frame calibration", {"camera_id": cam["id"], "dark_frame_id": selected_dark["id"], "image_path": str(result.file_path)})
+                    event(conn, "dark_frame_applied", {"camera_id": cam["id"], "dark_frame_id": selected_dark["id"], "image_path": str(result.file_path)})
+                except Exception as exc:
+                    dark_frame_result = {"applied": False, "error": str(exc), "dark_frame_id": selected_dark.get("id")}
+                    log(conn, "warning", "capture", "Dark-frame calibration skipped", {"camera_id": cam["id"], "dark_frame_id": selected_dark.get("id"), "error": str(exc)})
         overlay_result: dict[str, Any] = {"applied": False}
         with session() as conn:
             if overlay_enabled(conn) and module_enabled_for_trigger(conn, POST_CAPTURE_TRIGGER, OVERLAY_MODULE_ID):
@@ -461,6 +719,7 @@ async def execute_capture(command: CaptureCommand, job_type: str = "manual", job
             "storage": extract_image_metadata(result.file_path),
             "environment": {"sensor_temperature_c": result.temperature_c, "system_temperature_c": read_pi_temp()},
             "analysis": analyze_image(result.file_path),
+            "dark_frame": dark_frame_result,
             "overlay": overlay_result,
             **result.metadata,
         }
@@ -502,6 +761,7 @@ async def execute_capture(command: CaptureCommand, job_type: str = "manual", job
                 "star_count": metadata["analysis"]["star_count"],
                 "cloud_score": metadata["analysis"]["cloud_score"],
                 "bad_image": int(metadata["analysis"]["bad_image"]),
+                "dark_frame_applied": int(bool(dark_frame_result.get("applied"))),
                 "overlay_applied": int(bool(overlay_result.get("applied"))),
                 "metadata": metadata,
                 "created_at": now_iso(),
@@ -511,8 +771,8 @@ async def execute_capture(command: CaptureCommand, job_type: str = "manual", job
                 conn.execute(
                     """INSERT INTO images
                        (id, camera_id, captured_at, day_key, mode, file_path, public_url, thumbnail_path, format, width, height,
-                        size_bytes, exposure_ms, gain, temperature_c, mean_brightness, star_count, cloud_score, bad_image, overlay_applied, metadata, created_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        size_bytes, exposure_ms, gain, temperature_c, mean_brightness, star_count, cloud_score, bad_image, dark_frame_applied, overlay_applied, metadata, created_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         image_row["id"],
                         image_row["camera_id"],
@@ -533,6 +793,7 @@ async def execute_capture(command: CaptureCommand, job_type: str = "manual", job
                         image_row["star_count"],
                         image_row["cloud_score"],
                         image_row["bad_image"],
+                        image_row["dark_frame_applied"],
                         image_row["overlay_applied"],
                         json_dumps(metadata),
                         image_row["created_at"],

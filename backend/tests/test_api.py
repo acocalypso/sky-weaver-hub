@@ -623,7 +623,7 @@ def test_api_key_scope_boundaries_for_endpoint_groups(tmp_path):
         ("read:images", "GET", "/api/v1/products", None),
         ("read:images", "GET", "/api/v1/dark-frames", None),
         ("read:images", "GET", "/api/v1/uploads/jobs", None),
-        ("write:capture", "POST", "/api/v1/dark-frames/capture", None),
+        ("write:capture", "POST", "/api/v1/dark-frames/capture", {"exposure_ms": 100, "gain": 1, "width": 8, "height": 8, "count": 1}),
         ("write:settings", "POST", "/api/v1/schedule/recalculate", None),
         ("write:processing", "POST", "/api/v1/products/keogram", {"day_key": "20260630"}),
         ("admin", "GET", "/api/v1/users", None),
@@ -669,7 +669,7 @@ def test_mutating_api_key_scope_boundaries_for_non_admin_endpoint_groups(tmp_pat
     assert_scope_boundary("write:capture", write_capture_key, "POST", "/api/v1/capture/test-shot", {"exposure_ms": 250, "gain": 1, "format": "jpg", "mode": "manual"})
     assert_scope_boundary("write:capture", write_capture_key, "POST", "/api/v1/capture/single", {"exposure_ms": 250, "gain": 1, "format": "jpg", "mode": "manual"})
     assert_scope_boundary("write:capture", write_capture_key, "POST", "/api/v1/capture/sequence", {"frames": 1, "delay_seconds": 1})
-    assert_scope_boundary("write:capture", write_capture_key, "POST", "/api/v1/dark-frames/capture")
+    assert_scope_boundary("write:capture", write_capture_key, "POST", "/api/v1/dark-frames/capture", {"exposure_ms": 100, "gain": 1, "width": 8, "height": 8, "count": 1})
     assert_scope_boundary("write:capture", write_capture_key, "POST", f"/api/v1/cameras/{camera_id}/test", {"exposure_ms": 250, "gain": 1, "format": "jpg", "mode": "manual"})
     assert_scope_boundary("write:capture", write_capture_key, "POST", "/api/v1/capture/stop")
 

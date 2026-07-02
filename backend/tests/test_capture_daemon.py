@@ -224,6 +224,98 @@ def test_daemon_consumes_queued_single_capture(tmp_path: Path):
     assert images[0]["mode"] == "manual"
 
 
+def test_daemon_captures_dark_frame_set_and_activates_it(tmp_path: Path):
+    client = make_client(tmp_path)
+    token = login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    queued = client.post(
+        "/api/v1/dark-frames/capture",
+        headers=headers,
+        json={"label": "IMX290 1s gain 2", "exposure_ms": 1000, "gain": 2, "width": 32, "height": 24, "format": "png", "count": 2},
+    )
+    assert queued.status_code == 200, queued.text
+    job = queued.json()["data"]
+    assert job["type"] == "dark_frame"
+
+    from skyweaver.capture_daemon import CaptureDaemon
+
+    daemon = CaptureDaemon()
+    assert asyncio.run(daemon.run_once()) is True
+
+    completed = client.get(f"/api/v1/capture/jobs/{job['id']}", headers=headers).json()["data"]
+    assert completed["status"] == "completed"
+    dark_frame_id = completed["result"]["dark_frame_id"]
+
+    dark_frames = client.get("/api/v1/dark-frames", headers=headers).json()["data"]
+    created = next(item for item in dark_frames if item["id"] == dark_frame_id)
+    assert created["label"] == "IMX290 1s gain 2"
+    assert created["active"] is True
+    assert created["exposure_ms"] == 1000
+    assert created["gain"] == 2
+    assert created["frame_count"] == 2
+    assert created["pixel_format"] == "RGB"
+    assert created["metadata"]["settings"]["width"] == 32
+    assert Path(created["file_path"]).exists()
+
+
+def test_capture_applies_matching_dark_frame_only_for_same_camera(tmp_path: Path):
+    client = make_client(tmp_path)
+    token = login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    assert client.patch(
+        "/api/v1/settings",
+        headers=headers,
+        json={"values": {"dark_frames": {"enabled": True, "selection_mode": "auto"}}},
+    ).status_code == 200
+    dark_job = client.post(
+        "/api/v1/dark-frames/capture",
+        headers=headers,
+        json={"exposure_ms": 250, "gain": 1, "width": 32, "height": 24, "format": "png", "count": 1},
+    ).json()["data"]
+
+    from skyweaver.capture_daemon import CaptureDaemon
+
+    daemon = CaptureDaemon()
+    assert asyncio.run(daemon.run_once()) is True
+    dark_job_done = client.get(f"/api/v1/capture/jobs/{dark_job['id']}", headers=headers).json()["data"]
+    dark_frame_id = dark_job_done["result"]["dark_frame_id"]
+    assert client.post("/api/v1/capture/start", headers=headers).status_code == 200
+
+    capture = client.post(
+        "/api/v1/capture/single",
+        headers=headers,
+        json={"exposure_ms": 250, "gain": 1, "width": 32, "height": 24, "format": "png", "mode": "manual"},
+    ).json()["data"]
+    assert asyncio.run(daemon.run_once()) is True
+    image = client.get("/api/v1/images/latest", headers=headers).json()["data"]
+    assert image["dark_frame_applied"] is True
+    assert image["metadata"]["dark_frame"]["applied"] is True
+    assert image["metadata"]["dark_frame"]["dark_frame_id"] == dark_frame_id
+
+    from skyweaver.db import json_dumps, new_id, now_iso, session
+
+    other_camera_id = new_id()
+    with session() as conn:
+        conn.execute(
+            """INSERT INTO cameras (id, name, adapter, device_id, model, enabled, is_primary, capabilities, created_at, updated_at)
+               VALUES (?, 'Other mock', 'mock', 'mock://other', 'Synthetic', 1, 0, ?, ?, ?)""",
+            (other_camera_id, json_dumps({}), now_iso(), now_iso()),
+        )
+    other_capture = client.post(
+        "/api/v1/capture/single",
+        headers=headers,
+        json={"camera_id": other_camera_id, "exposure_ms": 250, "gain": 1, "width": 32, "height": 24, "format": "png", "mode": "manual"},
+    ).json()["data"]
+    assert asyncio.run(daemon.run_once()) is True
+    other_job = client.get(f"/api/v1/capture/jobs/{other_capture['id']}", headers=headers).json()["data"]
+    other_image = client.get(f"/api/v1/images/{other_job['result']['image_id']}", headers=headers).json()["data"]
+    assert other_image["dark_frame_applied"] is False
+    assert other_image["metadata"]["dark_frame"]["applied"] is False
+    assert capture["id"]
+
+
 def test_daemon_consumes_test_shot_while_capture_is_stopped(tmp_path: Path):
     client = make_client(tmp_path)
     token = login(client)
