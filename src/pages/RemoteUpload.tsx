@@ -4,10 +4,10 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { SkyApi, type RemoteTarget, type RemoteTargetType, type UploadJob } from "@/lib/api";
 import { StatusBadge } from "@/components/StatusBadge";
+import { ConfigLabel } from "@/components/ConfigHelp";
 
 export default function RemoteUpload() {
   const [targets, setTargets] = useState<RemoteTarget[]>([]);
@@ -188,9 +188,9 @@ export default function RemoteUpload() {
       <Card className="telemetry-card space-y-4">
         <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Upload target</h2>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-[1fr_1fr_auto] md:items-end">
-          <Field label="Name" value={name} onChange={setName} />
+          <Field label="Name" help="Human-readable upload target name shown in jobs and target lists." value={name} onChange={setName} />
           <div className="space-y-2">
-            <Label>Type</Label>
+            <ConfigLabel label="Type" help="Transport used for uploads. Filesystem writes locally, SSH targets use remote commands, FTP/FTPS use network upload." />
             <select className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={targetType} onChange={(event) => setTargetType(event.target.value as RemoteTargetType)}>
               <option value="filesystem">Filesystem</option>
               <option value="rsync_ssh">Rsync over SSH</option>
@@ -202,29 +202,29 @@ export default function RemoteUpload() {
           </div>
           <div className="flex items-center gap-3 pb-2">
             <Switch checked={enabled} onCheckedChange={setEnabled} />
-            <span className="text-sm text-muted-foreground">Enabled</span>
+            <ConfigLabel label="Enabled" help="Disabled targets are stored but skipped by upload queue actions." />
           </div>
         </div>
         {targetType === "filesystem" ? (
-          <Field label="Destination path" value={destination} onChange={setDestination} placeholder="/mnt/allsky-upload" />
+          <Field label="Destination path" help="Local filesystem directory where files will be copied for this target." value={destination} onChange={setDestination} placeholder="/mnt/allsky-upload" />
         ) : isSshTarget(targetType) ? (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
-            <Field label="Host" value={host} onChange={setHost} placeholder="example.local" />
-            <Field label="Username" value={username} onChange={setUsername} />
-            <Field label="Remote path" value={remotePath} onChange={setRemotePath} />
-            <Field label="Port" value={port} onChange={setPort} type="number" min={1} max={65535} />
-            <Field label="SSH key path" value={sshKeyPath} onChange={setSshKeyPath} placeholder="/home/skyweaver/.ssh/id_ed25519" />
+            <Field label="Host" help="Remote hostname or IP address for the SSH upload target." value={host} onChange={setHost} placeholder="example.local" />
+            <Field label="Username" help="Remote account used for SSH-based uploads." value={username} onChange={setUsername} />
+            <Field label="Remote path" help="Directory on the remote host where uploaded files should be placed." value={remotePath} onChange={setRemotePath} />
+            <Field label="Port" help="Network port for the selected upload transport. SSH normally uses 22." value={port} onChange={setPort} type="number" min={1} max={65535} />
+            <Field label="SSH key path" help="Path on the Pi to the private key used for SSH authentication. Leave empty to use default SSH behavior." value={sshKeyPath} onChange={setSshKeyPath} placeholder="/home/skyweaver/.ssh/id_ed25519" />
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
-            <Field label="Host" value={host} onChange={setHost} placeholder="ftp.example.com" />
-            <Field label="Username" value={username} onChange={setUsername} />
-            <Field label="Password" value={password} onChange={setPassword} type="password" />
-            <Field label="Remote path" value={remotePath} onChange={setRemotePath} />
-            <Field label="Port" value={port} onChange={setPort} type="number" min={1} max={65535} />
+            <Field label="Host" help="Remote hostname or IP address for the FTP/FTPS upload target." value={host} onChange={setHost} placeholder="ftp.example.com" />
+            <Field label="Username" help="Remote FTP account used for uploads." value={username} onChange={setUsername} />
+            <Field label="Password" help="Password for the FTP/FTPS account. Avoid reusing your Pi admin password." value={password} onChange={setPassword} type="password" />
+            <Field label="Remote path" help="Directory on the FTP/FTPS server where uploaded files should be placed." value={remotePath} onChange={setRemotePath} />
+            <Field label="Port" help="Network port for the selected upload transport. FTP normally uses 21." value={port} onChange={setPort} type="number" min={1} max={65535} />
             <div className="flex items-center gap-3 pb-2 md:col-span-2 xl:col-span-1">
               <Switch checked={passive} onCheckedChange={setPassive} />
-              <span className="text-sm text-muted-foreground">Passive mode</span>
+              <ConfigLabel label="Passive mode" help="FTP passive mode is usually required behind NAT or home routers. Disable only if your server requires active FTP." />
             </div>
           </div>
         )}
@@ -341,12 +341,12 @@ function Detail({ label, value }: { label: string; value: string }) {
   );
 }
 
-function Field({ label, value, onChange, ...rest }: { label: string; value: string; onChange: (value: string) => void } & React.InputHTMLAttributes<HTMLInputElement>) {
+function Field({ label, help, value, onChange, ...rest }: { label: string; help?: React.ReactNode; value: string; onChange: (value: string) => void } & React.InputHTMLAttributes<HTMLInputElement>) {
   const generatedId = useId();
   const inputId = rest.id ?? generatedId;
   return (
     <div className="space-y-2">
-      <Label htmlFor={inputId}>{label}</Label>
+      <ConfigLabel label={label} help={help} htmlFor={inputId} />
       <Input id={inputId} value={value} onChange={(event) => onChange(event.target.value)} {...rest} />
     </div>
   );

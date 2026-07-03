@@ -7,6 +7,7 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { StatusBadge } from "@/components/StatusBadge";
+import { ConfigHelp, ConfigLabel } from "@/components/ConfigHelp";
 import { SkyApi, type CameraProfile, type CameraRow, type DetectedCamera } from "@/lib/api";
 import { Camera as CameraIcon, Plus, Pencil, Camera as TestIcon, Radar } from "lucide-react";
 import { toast } from "sonner";
@@ -165,21 +166,21 @@ export default function Cameras() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <ToggleRow label="Capture" description="Daemon may take images in this mode." checked={Boolean(settings.capture_enabled)} onChange={(v) => setSettings({ ...settings, capture_enabled: v })} />
-              <ToggleRow label="Save frames" description="Off keeps latest updated without growing the gallery." checked={settings.save_enabled !== false} onChange={(v) => setSettings({ ...settings, save_enabled: v })} />
-              <Field label="Interval (seconds)" type="number" min={1} value={String(settings.interval_seconds ?? (profileMode === "nighttime" ? 30 : 300))} onChange={(v) => setSettings({ ...settings, interval_seconds: Math.max(1, Number(v) || 1) })} />
+              <ToggleRow label="Capture" description="Daemon may take images in this mode." help="Allows the scheduler to capture frames while this day or night profile is active." checked={Boolean(settings.capture_enabled)} onChange={(v) => setSettings({ ...settings, capture_enabled: v })} />
+              <ToggleRow label="Save frames" description="Off keeps latest updated without growing the gallery." help="Enable to keep every scheduled frame in the gallery. Disable for latest-only daytime operation." checked={settings.save_enabled !== false} onChange={(v) => setSettings({ ...settings, save_enabled: v })} />
+              <Field label="Interval (seconds)" help="Time between scheduled captures while this profile is active." type="number" min={1} value={String(settings.interval_seconds ?? (profileMode === "nighttime" ? 30 : 300))} onChange={(v) => setSettings({ ...settings, interval_seconds: Math.max(1, Number(v) || 1) })} />
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <ToggleRow label="Auto exposure" description="Let the camera choose daytime exposure." checked={Boolean(settings.auto_exposure)} onChange={(v) => setSettings({ ...settings, auto_exposure: v })} />
-              <ToggleRow label="Auto gain" description="Let the camera choose analog gain." checked={Boolean(settings.auto_gain)} onChange={(v) => setSettings({ ...settings, auto_gain: v })} />
-              <Field label="Manual exposure (ms)" type="number" min={0.001} step={0.001} disabled={Boolean(settings.auto_exposure)} value={String(settings.manual_exposure_ms ?? 1000)} onChange={(v) => setSettings({ ...settings, manual_exposure_ms: Number(v) })} />
-              <Field label="Gain" type="number" disabled={Boolean(settings.auto_gain)} value={String(settings.gain ?? 1)} onChange={(v) => setSettings({ ...settings, gain: Number(v) })} />
-              <Field label="Max auto exposure (ms)" type="number" value={String(settings.max_auto_exposure_ms ?? 30000)} onChange={(v) => setSettings({ ...settings, max_auto_exposure_ms: Number(v) })} />
-              <Field label="Mean target" type="number" step="0.01" value={String(settings.mean_target ?? 0.28)} onChange={(v) => setSettings({ ...settings, mean_target: Number(v) })} />
-              <ToggleRow label="Auto white balance" description="Use rpicam AWB instead of fixed red/blue gains." checked={settings.auto_white_balance !== false} onChange={(v) => setSettings({ ...settings, auto_white_balance: v })} />
+              <ToggleRow label="Auto exposure" description="Let the camera choose daytime exposure." help="Uses the camera adapter's auto exposure mode where supported. Manual exposure is ignored while enabled." checked={Boolean(settings.auto_exposure)} onChange={(v) => setSettings({ ...settings, auto_exposure: v })} />
+              <ToggleRow label="Auto gain" description="Let the camera choose analog gain." help="Lets the camera adapter adjust gain. Manual gain is ignored while enabled." checked={Boolean(settings.auto_gain)} onChange={(v) => setSettings({ ...settings, auto_gain: v })} />
+              <Field label="Manual exposure (ms)" help="Fixed exposure time in milliseconds for this profile. Use very small values for bright daytime scenes." type="number" min={0.001} step={0.001} disabled={Boolean(settings.auto_exposure)} value={String(settings.manual_exposure_ms ?? 1000)} onChange={(v) => setSettings({ ...settings, manual_exposure_ms: Number(v) })} />
+              <Field label="Gain" help="Fixed camera gain when auto gain is disabled. Higher gain brightens the image but increases noise." type="number" disabled={Boolean(settings.auto_gain)} value={String(settings.gain ?? 1)} onChange={(v) => setSettings({ ...settings, gain: Number(v) })} />
+              <Field label="Max auto exposure (ms)" help="Upper exposure limit for auto exposure so the camera does not choose exposures longer than this profile should allow." type="number" value={String(settings.max_auto_exposure_ms ?? 30000)} onChange={(v) => setSettings({ ...settings, max_auto_exposure_ms: Number(v) })} />
+              <Field label="Mean target" help="Target normalized image brightness for exposure automation. Lower values produce darker frames." type="number" step="0.01" value={String(settings.mean_target ?? 0.28)} onChange={(v) => setSettings({ ...settings, mean_target: Number(v) })} />
+              <ToggleRow label="Auto white balance" description="Use rpicam AWB instead of fixed red/blue gains." help="Lets the camera adapter choose color balance. Disable it to use fixed red and blue balance values." checked={settings.auto_white_balance !== false} onChange={(v) => setSettings({ ...settings, auto_white_balance: v })} />
               <div className="space-y-2">
-                <Label>AWB mode</Label>
+                <ConfigLabel label="AWB mode" help="White-balance preset passed to the camera adapter when auto white balance is enabled." />
                 <Select value={settings.awb ?? "auto"} onValueChange={(v) => setSettings({ ...settings, awb: v })} disabled={settings.auto_white_balance === false}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
@@ -187,16 +188,16 @@ export default function Cameras() {
                   </SelectContent>
                 </Select>
               </div>
-              <Field label="Red balance" type="number" step="0.1" disabled={settings.auto_white_balance !== false} value={String(settings.red_balance ?? 1)} onChange={(v) => setSettings({ ...settings, red_balance: Number(v) })} />
-              <Field label="Blue balance" type="number" step="0.1" disabled={settings.auto_white_balance !== false} value={String(settings.blue_balance ?? 1)} onChange={(v) => setSettings({ ...settings, blue_balance: Number(v) })} />
+              <Field label="Red balance" help="Manual red-channel multiplier used only when auto white balance is disabled." type="number" step="0.1" disabled={settings.auto_white_balance !== false} value={String(settings.red_balance ?? 1)} onChange={(v) => setSettings({ ...settings, red_balance: Number(v) })} />
+              <Field label="Blue balance" help="Manual blue-channel multiplier used only when auto white balance is disabled." type="number" step="0.1" disabled={settings.auto_white_balance !== false} value={String(settings.blue_balance ?? 1)} onChange={(v) => setSettings({ ...settings, blue_balance: Number(v) })} />
             </div>
 
             {profileMode === "nighttime" && (
               <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                <ToggleRow label="Keogram" description="Queue after night ends." checked={Boolean(settings.end_of_night_keogram)} onChange={(v) => setSettings({ ...settings, end_of_night_keogram: v })} />
-                <ToggleRow label="Startrail" description="Queue after night ends." checked={Boolean(settings.end_of_night_startrail)} onChange={(v) => setSettings({ ...settings, end_of_night_startrail: v })} />
-                <ToggleRow label="Timelapse" description="Queue after night ends." checked={Boolean(settings.end_of_night_timelapse)} onChange={(v) => setSettings({ ...settings, end_of_night_timelapse: v })} />
-                <ToggleRow label="Mini timelapse" description="Queue after night ends." checked={Boolean(settings.end_of_night_mini_timelapse)} onChange={(v) => setSettings({ ...settings, end_of_night_mini_timelapse: v })} />
+                <ToggleRow label="Keogram" description="Queue after night ends." help="Generates a keogram from the saved night frames after the capture window ends." checked={Boolean(settings.end_of_night_keogram)} onChange={(v) => setSettings({ ...settings, end_of_night_keogram: v })} />
+                <ToggleRow label="Startrail" description="Queue after night ends." help="Generates a startrail image from the saved night frames after the capture window ends." checked={Boolean(settings.end_of_night_startrail)} onChange={(v) => setSettings({ ...settings, end_of_night_startrail: v })} />
+                <ToggleRow label="Timelapse" description="Queue after night ends." help="Queues a full-night video timelapse after the capture window ends." checked={Boolean(settings.end_of_night_timelapse)} onChange={(v) => setSettings({ ...settings, end_of_night_timelapse: v })} />
+                <ToggleRow label="Mini timelapse" description="Queue after night ends." help="Queues a smaller preview timelapse after the capture window ends." checked={Boolean(settings.end_of_night_mini_timelapse)} onChange={(v) => setSettings({ ...settings, end_of_night_mini_timelapse: v })} />
               </div>
             )}
 
@@ -210,15 +211,15 @@ export default function Cameras() {
   );
 }
 
-function Field({ label, value, onChange, ...rest }: { label: string; value: string; onChange: (v: string) => void } & React.InputHTMLAttributes<HTMLInputElement>) {
-  return <div className="space-y-2"><Label>{label}</Label><Input value={value} onChange={(e) => onChange(e.target.value)} {...rest} /></div>;
+function Field({ label, help, value, onChange, ...rest }: { label: string; help?: React.ReactNode; value: string; onChange: (v: string) => void } & React.InputHTMLAttributes<HTMLInputElement>) {
+  return <div className="space-y-2"><ConfigLabel label={label} help={help} /><Input value={value} onChange={(e) => onChange(e.target.value)} {...rest} /></div>;
 }
 
-function ToggleRow({ label, description, checked, onChange }: { label: string; description: string; checked: boolean; onChange: (v: boolean) => void }) {
+function ToggleRow({ label, description, help, checked, onChange }: { label: string; description: string; help?: React.ReactNode; checked: boolean; onChange: (v: boolean) => void }) {
   return (
     <div className="flex items-center justify-between gap-3 rounded-md border border-border bg-muted/20 p-3">
       <div className="min-w-0">
-        <p className="text-sm font-medium">{label}</p>
+        <ConfigLabel label={label} help={help} />
         <p className="text-xs text-muted-foreground mt-0.5">{description}</p>
       </div>
       <Switch checked={checked} onCheckedChange={onChange} />
@@ -237,17 +238,21 @@ function CameraDialog({ editing, onSave }: { editing: CameraRow | null; onSave: 
     <DialogContent>
       <DialogHeader><DialogTitle>{editing ? "Edit camera" : "New camera"}</DialogTitle></DialogHeader>
       <div className="space-y-4">
-        <Field label="Name" value={name} onChange={setName} placeholder="Roof All-Sky" />
-        <Field label="Model" value={model} onChange={setModel} placeholder="IMX477 / IMX708 / ASI224MC" />
+        <Field label="Name" help="Human-readable camera name shown in the UI, jobs, and metadata." value={name} onChange={setName} placeholder="Roof All-Sky" />
+        <Field label="Model" help="Optional model identifier, such as IMX477, IMX290, or ASI224MC." value={model} onChange={setModel} placeholder="IMX477 / IMX708 / ASI224MC" />
         <div className="space-y-2">
-          <Label>Adapter</Label>
+          <ConfigLabel label="Adapter" help="Hardware adapter used by the capture daemon. Pick the adapter that matches how the camera is controlled." />
           <Select value={adapter} onValueChange={(v) => setAdapter(v as AdapterType)}>
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>{ADAPTERS.map((a) => <SelectItem key={a.value} value={a.value}>{a.label}</SelectItem>)}</SelectContent>
           </Select>
           {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
         </div>
-        <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={primary} onChange={(e) => setPrimary(e.target.checked)} /> Primary camera</label>
+        <div className="flex items-center gap-2 text-sm">
+          <input id="primary-camera" type="checkbox" checked={primary} onChange={(e) => setPrimary(e.target.checked)} />
+          <Label htmlFor="primary-camera">Primary camera</Label>
+          <ConfigHelp label="Primary camera">The primary camera is used by default for dashboard status, scheduled capture, and one-click test shots.</ConfigHelp>
+        </div>
       </div>
       <DialogFooter>
         <Button onClick={() => onSave({ name, model: model || null, adapter, is_primary: primary })} className="bg-gradient-primary text-primary-foreground">{editing ? "Save" : "Create"}</Button>

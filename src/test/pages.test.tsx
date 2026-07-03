@@ -813,6 +813,8 @@ describe("main pages", () => {
     expect(screen.getByText("Night gain 2")).toBeInTheDocument();
     expect(screen.getByDisplayValue("0.98")).toBeInTheDocument();
     expect(screen.getByDisplayValue("7")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /about observatory name/i }));
+    expect(screen.getByText(/Displayed in the dashboard, public page, overlays/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /scan/i }));
     await waitFor(() => expect(SkyApi.scanWifi).toHaveBeenCalled());
     fireEvent.click(screen.getByRole("button", { name: /sync now/i }));

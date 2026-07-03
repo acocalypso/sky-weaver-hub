@@ -2,8 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { ConfigLabel } from "@/components/ConfigHelp";
 import { StatusBadge } from "@/components/StatusBadge";
 import { SkyApi, type CameraRow, type DarkFrameRow, type SystemTime, type WifiNetwork, type WifiStatus } from "@/lib/api";
 import { Settings as SettingsIcon, MapPin, HardDrive, Shield, Trash2, Camera, Plus, CheckCircle2, RefreshCw, SlidersHorizontal, Clock, Wifi } from "lucide-react";
@@ -178,10 +178,10 @@ export default function SettingsPage() {
       </div>
 
       <Section icon={<MapPin className="h-4 w-4 text-primary" />} title="Location">
-        <Field label="Observatory name" value={observatory.name ?? ""} onChange={(v) => updateGroup("observatory", { name: v })} />
-        <Field label="Latitude" type="number" step="0.0001" value={String(observatory.latitude ?? 0)} onChange={(v) => updateGroup("observatory", { latitude: Number(v) })} />
-        <Field label="Longitude" type="number" step="0.0001" value={String(observatory.longitude ?? 0)} onChange={(v) => updateGroup("observatory", { longitude: Number(v) })} />
-        <Field label="Timezone" value={observatory.timezone ?? "UTC"} onChange={(v) => updateGroup("observatory", { timezone: v })} />
+        <Field label="Observatory name" help="Displayed in the dashboard, public page, overlays, and exported metadata." value={observatory.name ?? ""} onChange={(v) => updateGroup("observatory", { name: v })} />
+        <Field label="Latitude" help="Decimal latitude used for sun altitude, twilight, and scheduler calculations. North is positive." type="number" step="0.0001" value={String(observatory.latitude ?? 0)} onChange={(v) => updateGroup("observatory", { latitude: Number(v) })} />
+        <Field label="Longitude" help="Decimal longitude used for sun altitude, twilight, and scheduler calculations. East is positive." type="number" step="0.0001" value={String(observatory.longitude ?? 0)} onChange={(v) => updateGroup("observatory", { longitude: Number(v) })} />
+        <Field label="Timezone" help="IANA timezone name used to present local times and calculate daily schedule windows." value={observatory.timezone ?? "UTC"} onChange={(v) => updateGroup("observatory", { timezone: v })} />
       </Section>
 
       <Section icon={<Wifi className="h-4 w-4 text-primary" />} title="Pi Device Access">
@@ -208,14 +208,14 @@ export default function SettingsPage() {
           </div>
           <div className="grid grid-cols-1 gap-3">
             <div className="space-y-2">
-              <Label>Network</Label>
+              <ConfigLabel label="Network" help="Wi-Fi network found by the Pi scan. Select the SSID to connect the Pi to a different network." />
               <select className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={wifiForm.ssid} onChange={(event) => setWifiForm({ ...wifiForm, ssid: event.target.value })}>
                 <option value="">Select network</option>
                 {wifiNetworks.map((network) => <option key={`${network.ssid}-${network.security}-${network.channel}`} value={network.ssid}>{network.ssid} {network.signal == null ? "" : `(${network.signal}%)`} {network.security || "open"}</option>)}
               </select>
             </div>
-            <Field label="Password" type="password" value={wifiForm.password} onChange={(v) => setWifiForm({ ...wifiForm, password: v })} placeholder="Open network: leave empty" />
-            <Toggle label="Hidden SSID" hint="Use hidden network connection mode for the selected SSID." value={wifiForm.hidden} onChange={(v) => setWifiForm({ ...wifiForm, hidden: v })} />
+            <Field label="Password" help="Password for the selected Wi-Fi network. Leave empty only for open networks." type="password" value={wifiForm.password} onChange={(v) => setWifiForm({ ...wifiForm, password: v })} placeholder="Open network: leave empty" />
+            <Toggle label="Hidden SSID" hint="Use hidden network connection mode for the selected SSID." help="Enable this when the network does not broadcast its SSID. The Pi will attempt a hidden-network connection." value={wifiForm.hidden} onChange={(v) => setWifiForm({ ...wifiForm, hidden: v })} />
             <Button type="button" onClick={connectWifiNetwork} disabled={connectingWifi || !wifiForm.ssid}>
               <Wifi className="h-4 w-4 mr-2" />{connectingWifi ? "Connecting..." : "Connect"}
             </Button>
@@ -224,10 +224,10 @@ export default function SettingsPage() {
       </Section>
 
       <Section icon={<HardDrive className="h-4 w-4 text-primary" />} title="Storage and retention">
-        <Field label="Image storage path" value={storage.images ?? "./data/images"} onChange={(v) => updateGroup("storage", { images: v })} />
-        <Field label="Video storage path" value={storage.videos ?? "./data/videos"} onChange={(v) => updateGroup("storage", { videos: v })} />
-        <Field label="Retention days" type="number" value={String(storage.retention_days ?? 30)} onChange={(v) => updateGroup("storage", { retention_days: Number(v) })} />
-        <Field label="Minimum free GB" type="number" value={String(storage.min_free_gb ?? 2)} onChange={(v) => updateGroup("storage", { min_free_gb: Number(v) })} />
+        <Field label="Image storage path" help="Filesystem path where captured images and thumbnails are stored. Keep it on persistent local storage." value={storage.images ?? "./data/images"} onChange={(v) => updateGroup("storage", { images: v })} />
+        <Field label="Video storage path" help="Filesystem path where generated timelapses and night products are stored." value={storage.videos ?? "./data/videos"} onChange={(v) => updateGroup("storage", { videos: v })} />
+        <Field label="Retention days" help="How many days of images and generated products to keep when retention cleanup runs." type="number" value={String(storage.retention_days ?? 30)} onChange={(v) => updateGroup("storage", { retention_days: Number(v) })} />
+        <Field label="Minimum free GB" help="Target free disk space threshold. Keep enough headroom for overnight captures and generated videos." type="number" value={String(storage.min_free_gb ?? 2)} onChange={(v) => updateGroup("storage", { min_free_gb: Number(v) })} />
         <div className="flex items-end">
           <Button type="button" variant="outline" className="w-full" onClick={runRetentionCleanup} disabled={cleaningRetention}>
             <Trash2 className="h-4 w-4 mr-2" />{cleaningRetention ? "Cleaning..." : "Run retention cleanup"}
@@ -236,40 +236,40 @@ export default function SettingsPage() {
       </Section>
 
       <Section icon={<Shield className="h-4 w-4 text-primary" />} title="Public and API">
-        <Toggle label="Public page enabled" hint="Expose /public without admin controls." value={Boolean(publicPage.enabled)} onChange={(v) => updateGroup("public_page", { enabled: v })} />
-        <Toggle label="Iframe mode enabled" hint="Allow an embeddable read-only public sky view." value={Boolean(publicPage.iframe_enabled)} onChange={(v) => updateGroup("public_page", { iframe_enabled: v })} />
-        <Field label="Public product days" type="number" min={1} max={3650} value={String(publicPage.product_days ?? 7)} onChange={(v) => updateGroup("public_page", { product_days: Number(v) })} />
-        <Field label="CORS origins" value={(security.cors_origins ?? []).join(",")} onChange={(v) => updateGroup("security", { cors_origins: v.split(",").map((x) => x.trim()).filter(Boolean) })} />
-        <Toggle label="First setup required" hint="Installer should force a password change before unattended use." value={Boolean(security.first_setup_required)} onChange={(v) => updateGroup("security", { first_setup_required: v })} />
+        <Toggle label="Public page enabled" hint="Expose /public without admin controls." help="When enabled, unauthenticated visitors can view the public sky page and public latest/product APIs." value={Boolean(publicPage.enabled)} onChange={(v) => updateGroup("public_page", { enabled: v })} />
+        <Toggle label="Iframe mode enabled" hint="Allow an embeddable read-only public sky view." help="Allows the public view to be embedded in another page. Keep disabled if you do not need iframe embedding." value={Boolean(publicPage.iframe_enabled)} onChange={(v) => updateGroup("public_page", { iframe_enabled: v })} />
+        <Field label="Public product days" help="Limits how many recent days of keograms, startrails, and timelapses are visible on the public page." type="number" min={1} max={3650} value={String(publicPage.product_days ?? 7)} onChange={(v) => updateGroup("public_page", { product_days: Number(v) })} />
+        <Field label="CORS origins" help="Comma-separated browser origins allowed to call the API. Leave empty unless a separate local client needs API access." value={(security.cors_origins ?? []).join(",")} onChange={(v) => updateGroup("security", { cors_origins: v.split(",").map((x) => x.trim()).filter(Boolean) })} />
+        <Toggle label="First setup required" hint="Installer should force a password change before unattended use." help="Keeps the first-run setup flow active until the admin password and essential settings are confirmed." value={Boolean(security.first_setup_required)} onChange={(v) => updateGroup("security", { first_setup_required: v })} />
       </Section>
 
       <Section icon={<SlidersHorizontal className="h-4 w-4 text-primary" />} title="Processing Quality">
-        <Field label="Minimum brightness" type="number" min={0} max={1} step="0.001" value={String(processing.bad_image_min_brightness ?? 0.01)} onChange={(v) => updateGroup("processing", { bad_image_min_brightness: Number(v) })} />
-        <Field label="Maximum brightness" type="number" min={0} max={1} step="0.001" value={String(processing.bad_image_max_brightness ?? 0.98)} onChange={(v) => updateGroup("processing", { bad_image_max_brightness: Number(v) })} />
-        <Field label="Maximum cloud score" type="number" min={0} max={1} step="0.001" placeholder="Off" value={processing.bad_image_max_cloud_score == null ? "" : String(processing.bad_image_max_cloud_score)} onChange={(v) => updateGroup("processing", { bad_image_max_cloud_score: v === "" ? null : Number(v) })} />
+        <Field label="Minimum brightness" help="Frames darker than this normalized mean brightness can be flagged as bad for downstream products." type="number" min={0} max={1} step="0.001" value={String(processing.bad_image_min_brightness ?? 0.01)} onChange={(v) => updateGroup("processing", { bad_image_min_brightness: Number(v) })} />
+        <Field label="Maximum brightness" help="Frames brighter than this normalized mean brightness can be flagged as overexposed." type="number" min={0} max={1} step="0.001" value={String(processing.bad_image_max_brightness ?? 0.98)} onChange={(v) => updateGroup("processing", { bad_image_max_brightness: Number(v) })} />
+        <Field label="Maximum cloud score" help="Optional cloud-score threshold for rejecting frames from products. Leave empty to disable this filter." type="number" min={0} max={1} step="0.001" placeholder="Off" value={processing.bad_image_max_cloud_score == null ? "" : String(processing.bad_image_max_cloud_score)} onChange={(v) => updateGroup("processing", { bad_image_max_cloud_score: v === "" ? null : Number(v) })} />
       </Section>
 
       <Section icon={<Camera className="h-4 w-4 text-primary" />} title="Dark Frame Calibration">
-        <Toggle label="Enable calibration" hint="Apply matching master dark frames to new captures before processing." value={Boolean(darkFrameSettings.enabled)} onChange={(v) => updateGroup("dark_frames", { enabled: v })} />
+        <Toggle label="Enable calibration" hint="Apply matching master dark frames to new captures before processing." help="When enabled, Sky Weaver subtracts a matching master dark frame from new captures before saving and processing." value={Boolean(darkFrameSettings.enabled)} onChange={(v) => updateGroup("dark_frames", { enabled: v })} />
         <div className="space-y-2">
-          <Label>Selection mode</Label>
+          <ConfigLabel label="Selection mode" help="Auto chooses the best dark frame by camera and capture settings. Manual uses the active selected set." />
           <select className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={darkFrameSettings.selection_mode ?? "auto"} onChange={(event) => updateGroup("dark_frames", { selection_mode: event.target.value })}>
             <option value="auto">Auto match by camera and settings</option>
             <option value="manual">Use selected active set</option>
           </select>
         </div>
         <div className="space-y-2">
-          <Label>Camera</Label>
+          <ConfigLabel label="Camera" help="Camera that the new dark-frame set belongs to. Dark frames are never shared across cameras." />
           <select className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={darkForm.camera_id} onChange={(event) => setDarkForm({ ...darkForm, camera_id: event.target.value })}>
             {cameras.map((camera) => <option key={camera.id} value={camera.id}>{camera.name}</option>)}
           </select>
         </div>
-        <Field label="Set label" value={darkForm.label} onChange={(v) => setDarkForm({ ...darkForm, label: v })} placeholder="Night 10s gain 4" />
-        <Field label="Exposure ms" type="number" min={1} value={String(darkForm.exposure_ms)} onChange={(v) => setDarkForm({ ...darkForm, exposure_ms: Number(v) })} />
-        <Field label="Gain / ISO" type="number" min={0} step="0.1" value={String(darkForm.gain)} onChange={(v) => setDarkForm({ ...darkForm, gain: Number(v) })} />
-        <Field label="Width" type="number" min={1} value={String(darkForm.width)} onChange={(v) => setDarkForm({ ...darkForm, width: Number(v) })} />
-        <Field label="Height" type="number" min={1} value={String(darkForm.height)} onChange={(v) => setDarkForm({ ...darkForm, height: Number(v) })} />
-        <Field label="Frame count" type="number" min={1} max={100} value={String(darkForm.count)} onChange={(v) => setDarkForm({ ...darkForm, count: Number(v) })} />
+        <Field label="Set label" help="Optional human-readable label for this master dark frame, such as the exposure and gain combination." value={darkForm.label} onChange={(v) => setDarkForm({ ...darkForm, label: v })} placeholder="Night 10s gain 4" />
+        <Field label="Exposure ms" help="Exposure time used for each dark frame. It should match the sky captures you want to calibrate." type="number" min={1} value={String(darkForm.exposure_ms)} onChange={(v) => setDarkForm({ ...darkForm, exposure_ms: Number(v) })} />
+        <Field label="Gain / ISO" help="Gain or ISO used for the dark frame set. It should match the camera profile being calibrated." type="number" min={0} step="0.1" value={String(darkForm.gain)} onChange={(v) => setDarkForm({ ...darkForm, gain: Number(v) })} />
+        <Field label="Width" help="Capture width for the dark frames. It must match the sky-frame resolution to be applied." type="number" min={1} value={String(darkForm.width)} onChange={(v) => setDarkForm({ ...darkForm, width: Number(v) })} />
+        <Field label="Height" help="Capture height for the dark frames. It must match the sky-frame resolution to be applied." type="number" min={1} value={String(darkForm.height)} onChange={(v) => setDarkForm({ ...darkForm, height: Number(v) })} />
+        <Field label="Frame count" help="Number of covered-sensor frames to capture and combine into the master dark. More frames reduce random noise." type="number" min={1} max={100} value={String(darkForm.count)} onChange={(v) => setDarkForm({ ...darkForm, count: Number(v) })} />
         <div className="flex items-end gap-2">
           <Button type="button" className="w-full" onClick={captureDarkFrameSet} disabled={capturingDark || !darkForm.camera_id}>
             <Plus className="h-4 w-4 mr-2" />{capturingDark ? "Queueing..." : "Capture dark set"}
@@ -319,10 +319,10 @@ function Section({ icon, title, children }: { icon: React.ReactNode; title: stri
   return <Card className="telemetry-card space-y-4"><h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">{icon}{title}</h2><div className="grid grid-cols-1 md:grid-cols-2 gap-4">{children}</div></Card>;
 }
 
-function Field({ label, value, onChange, ...rest }: { label: string; value: string; onChange: (v: string) => void } & React.InputHTMLAttributes<HTMLInputElement>) {
-  return <div className="space-y-2"><Label>{label}</Label><Input value={value} onChange={(e) => onChange(e.target.value)} {...rest} /></div>;
+function Field({ label, help, value, onChange, ...rest }: { label: string; help?: React.ReactNode; value: string; onChange: (v: string) => void } & React.InputHTMLAttributes<HTMLInputElement>) {
+  return <div className="space-y-2"><ConfigLabel label={label} help={help} /><Input value={value} onChange={(e) => onChange(e.target.value)} {...rest} /></div>;
 }
 
-function Toggle({ label, hint, value, onChange }: { label: string; hint: string; value: boolean; onChange: (v: boolean) => void }) {
-  return <div className="flex items-center justify-between p-3 rounded-md border border-border bg-muted/20"><div><p className="text-sm font-medium">{label}</p><p className="text-xs text-muted-foreground mt-0.5">{hint}</p></div><Switch checked={value} onCheckedChange={onChange} /></div>;
+function Toggle({ label, hint, help, value, onChange }: { label: string; hint: string; help?: React.ReactNode; value: boolean; onChange: (v: boolean) => void }) {
+  return <div className="flex items-center justify-between p-3 rounded-md border border-border bg-muted/20"><div><ConfigLabel label={label} help={help} /><p className="text-xs text-muted-foreground mt-0.5">{hint}</p></div><Switch checked={value} onCheckedChange={onChange} /></div>;
 }

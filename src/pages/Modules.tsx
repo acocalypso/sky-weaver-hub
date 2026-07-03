@@ -3,9 +3,9 @@ import type { InputHTMLAttributes } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { StatusBadge } from "@/components/StatusBadge";
+import { ConfigLabel } from "@/components/ConfigHelp";
 import { SkyApi, type ModuleFlowRow, type ModuleRow } from "@/lib/api";
 import { Play, Plus, Puzzle, Save, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -150,19 +150,19 @@ export default function Modules() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-            <Field label="Font size" type="number" value={String(overlaySettings.font_size ?? 24)} onChange={(value) => setSetting("font_size", Number(value))} />
-            <Field label="Margin" type="number" value={String(overlaySettings.margin ?? 18)} onChange={(value) => setSetting("margin", Number(value))} />
-            <Field label="Padding" type="number" value={String(overlaySettings.padding ?? 8)} onChange={(value) => setSetting("padding", Number(value))} />
-            <Field label="Text" type="color" value={normalizeColorInput(overlaySettings.text_color ?? "#ffffffff")} onChange={(value) => setSetting("text_color", `${value}ff`)} />
-            <Field label="Background" value={overlaySettings.background_color ?? "#00000099"} onChange={(value) => setSetting("background_color", value)} />
+            <Field label="Font size" help="Overlay text size in pixels for rendered capture annotations." type="number" value={String(overlaySettings.font_size ?? 24)} onChange={(value) => setSetting("font_size", Number(value))} />
+            <Field label="Margin" help="Distance in pixels between overlay text blocks and the image edge." type="number" value={String(overlaySettings.margin ?? 18)} onChange={(value) => setSetting("margin", Number(value))} />
+            <Field label="Padding" help="Padding in pixels inside each overlay text background box." type="number" value={String(overlaySettings.padding ?? 8)} onChange={(value) => setSetting("padding", Number(value))} />
+            <Field label="Text" help="Text color used for overlay annotations." type="color" value={normalizeColorInput(overlaySettings.text_color ?? "#ffffffff")} onChange={(value) => setSetting("text_color", `${value}ff`)} />
+            <Field label="Background" help="Overlay background color. Supports hex values with optional alpha, such as #00000099." value={overlaySettings.background_color ?? "#00000099"} onChange={(value) => setSetting("background_color", value)} />
           </div>
 
           <div className="space-y-3">
             {lines.map((line, index) => (
               <div key={index} className="grid grid-cols-1 md:grid-cols-[1fr_180px_auto] gap-3 items-end">
-                <Field label={`Line ${index + 1}`} value={line.text ?? ""} onChange={(value) => setLine(index, { text: value })} />
+                <Field label={`Line ${index + 1}`} help="Overlay text template for this line. Variables such as {observatory_name} and {captured_time} are resolved during processing." value={line.text ?? ""} onChange={(value) => setLine(index, { text: value })} />
                 <div className="space-y-2">
-                  <Label>Position</Label>
+                  <ConfigLabel label="Position" help="Image anchor where this overlay line is rendered." />
                   <select className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm" value={line.position ?? "bottom_left"} onChange={(event) => setLine(index, { position: event.target.value })}>
                     {POSITIONS.map((position) => <option key={position} value={position}>{position.replace("_", " ")}</option>)}
                   </select>
@@ -231,10 +231,10 @@ export default function Modules() {
       <Card className="telemetry-card space-y-4">
         <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">External module manifest</h2>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <Field label="Module id" value={manifest.id} placeholder="external.my-module" onChange={(value) => setManifest({ ...manifest, id: value })} />
-          <Field label="Name" value={manifest.name} placeholder="My module" onChange={(value) => setManifest({ ...manifest, name: value })} />
-          <Field label="Version" value={manifest.version} onChange={(value) => setManifest({ ...manifest, version: value })} />
-          <Field label="Author" value={manifest.author} onChange={(value) => setManifest({ ...manifest, author: value })} />
+          <Field label="Module id" help="Stable identifier for the external module manifest, for example external.my-module." value={manifest.id} placeholder="external.my-module" onChange={(value) => setManifest({ ...manifest, id: value })} />
+          <Field label="Name" help="Human-readable module name shown in the module list." value={manifest.name} placeholder="My module" onChange={(value) => setManifest({ ...manifest, name: value })} />
+          <Field label="Version" help="Module version string used for operator visibility and future compatibility checks." value={manifest.version} onChange={(value) => setManifest({ ...manifest, version: value })} />
+          <Field label="Author" help="Optional module author or source label." value={manifest.author} onChange={(value) => setManifest({ ...manifest, author: value })} />
         </div>
         <div className="flex justify-end">
           <Button variant="outline" onClick={registerManifest} disabled={!manifest.id.trim() || !manifest.name.trim()}>
@@ -246,8 +246,8 @@ export default function Modules() {
   );
 }
 
-function Field({ label, value, onChange, ...rest }: { label: string; value: string; onChange: (value: string) => void } & InputHTMLAttributes<HTMLInputElement>) {
-  return <div className="space-y-2"><Label>{label}</Label><Input value={value} onChange={(event) => onChange(event.target.value)} {...rest} /></div>;
+function Field({ label, help, value, onChange, ...rest }: { label: string; help?: React.ReactNode; value: string; onChange: (value: string) => void } & InputHTMLAttributes<HTMLInputElement>) {
+  return <div className="space-y-2"><ConfigLabel label={label} help={help} /><Input value={value} onChange={(event) => onChange(event.target.value)} {...rest} /></div>;
 }
 
 function normalizeColorInput(value: string) {

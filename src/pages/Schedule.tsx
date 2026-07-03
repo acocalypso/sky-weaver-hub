@@ -2,11 +2,11 @@ import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { StatusBadge } from "@/components/StatusBadge";
+import { ConfigLabel } from "@/components/ConfigHelp";
 import { SkyApi, type SchedulePreview, type ScheduleRow } from "@/lib/api";
 import { CalendarClock, Moon, Sunrise } from "lucide-react";
 import { toast } from "sonner";
@@ -102,30 +102,30 @@ export default function Schedule() {
           {observatory && <Button variant="outline" size="sm" onClick={() => setS({ ...s, timezone: String(observatory.timezone ?? s.timezone), latitude: Number(observatory.latitude ?? s.latitude), longitude: Number(observatory.longitude ?? s.longitude) })}>Use observatory</Button>}
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <ModeSelect label="Start mode" value={s.start_mode} options={startModeOptions} onChange={(v) => setS({ ...s, start_mode: v })} />
-          <ModeSelect label="End mode" value={s.end_mode} options={endModeOptions} onChange={(v) => setS({ ...s, end_mode: v })} />
-          {s.start_mode === "fixed" && <Field label="Fixed start time" type="time" value={s.fixed_start_time ?? "18:00"} onChange={(v) => setS({ ...s, fixed_start_time: v })} />}
-          {s.end_mode === "fixed" && <Field label="Fixed end time" type="time" value={s.fixed_end_time ?? "06:00"} onChange={(v) => setS({ ...s, fixed_end_time: v })} />}
-          {s.start_mode === "sun_angle" && <Field label="Start sun altitude" type="number" step="0.1" value={String(s.start_sun_angle ?? s.sun_angle)} onChange={(v) => setS({ ...s, start_sun_angle: Number(v), sun_angle: Number(v) })} />}
-          {s.end_mode === "sun_angle" && <Field label="End sun altitude" type="number" step="0.1" value={String(s.end_sun_angle ?? s.sun_angle)} onChange={(v) => setS({ ...s, end_sun_angle: Number(v) })} />}
-          <Field label="Latitude" type="number" step="0.0001" value={String(s.latitude)} onChange={(v) => setS({ ...s, latitude: Number(v) })} />
-          <Field label="Longitude" type="number" step="0.0001" value={String(s.longitude)} onChange={(v) => setS({ ...s, longitude: Number(v) })} />
-          <Field label="Timezone" value={s.timezone} onChange={(v) => setS({ ...s, timezone: v })} />
+          <ModeSelect label="Start mode" help="Defines when the nightly capture window opens: twilight event, sun altitude threshold, fixed time, or manual." value={s.start_mode} options={startModeOptions} onChange={(v) => setS({ ...s, start_mode: v })} />
+          <ModeSelect label="End mode" help="Defines when the nightly capture window closes: dawn event, sunrise, sun altitude threshold, fixed time, or manual." value={s.end_mode} options={endModeOptions} onChange={(v) => setS({ ...s, end_mode: v })} />
+          {s.start_mode === "fixed" && <Field label="Fixed start time" help="Local clock time when the capture window should start if start mode is fixed." type="time" value={s.fixed_start_time ?? "18:00"} onChange={(v) => setS({ ...s, fixed_start_time: v })} />}
+          {s.end_mode === "fixed" && <Field label="Fixed end time" help="Local clock time when the capture window should end if end mode is fixed." type="time" value={s.fixed_end_time ?? "06:00"} onChange={(v) => setS({ ...s, fixed_end_time: v })} />}
+          {s.start_mode === "sun_angle" && <Field label="Start sun altitude" help="Sun altitude in degrees that starts the capture window. Negative values mean the sun is below the horizon." type="number" step="0.1" value={String(s.start_sun_angle ?? s.sun_angle)} onChange={(v) => setS({ ...s, start_sun_angle: Number(v), sun_angle: Number(v) })} />}
+          {s.end_mode === "sun_angle" && <Field label="End sun altitude" help="Sun altitude in degrees that ends the capture window. Use a separate value from start if needed." type="number" step="0.1" value={String(s.end_sun_angle ?? s.sun_angle)} onChange={(v) => setS({ ...s, end_sun_angle: Number(v) })} />}
+          <Field label="Latitude" help="Decimal latitude used by the scheduler for sun and twilight events." type="number" step="0.0001" value={String(s.latitude)} onChange={(v) => setS({ ...s, latitude: Number(v) })} />
+          <Field label="Longitude" help="Decimal longitude used by the scheduler for sun and twilight events." type="number" step="0.0001" value={String(s.longitude)} onChange={(v) => setS({ ...s, longitude: Number(v) })} />
+          <Field label="Timezone" help="IANA timezone used for fixed clock times and preview labels." value={s.timezone} onChange={(v) => setS({ ...s, timezone: v })} />
         </div>
-        <div><Label>Interval between captures: <span className="font-mono-data text-foreground">{s.interval_seconds}s</span></Label><Slider min={5} max={600} step={5} value={[s.interval_seconds]} onValueChange={([v]) => setS({ ...s, interval_seconds: v })} className="mt-3" /></div>
-        <div className="flex items-center justify-between p-3 rounded-md border border-border bg-muted/20"><div><p className="text-sm font-medium">Exposure ramping</p><p className="text-xs text-muted-foreground mt-0.5">Worker will smooth exposure changes during twilight.</p></div><Switch checked={s.exposure_ramping_enabled} onCheckedChange={(v) => setS({ ...s, exposure_ramping_enabled: v })} /></div>
+        <div><ConfigLabel label={`Interval between captures: ${s.interval_seconds}s`} help="Scheduler interval between capture jobs while the active camera profile permits capture." /><Slider min={5} max={600} step={5} value={[s.interval_seconds]} onValueChange={([v]) => setS({ ...s, interval_seconds: v })} className="mt-3" /></div>
+        <div className="flex items-center justify-between p-3 rounded-md border border-border bg-muted/20"><div><ConfigLabel label="Exposure ramping" help="Smooths exposure changes around twilight so day/night transitions are less abrupt." /><p className="text-xs text-muted-foreground mt-0.5">Worker will smooth exposure changes during twilight.</p></div><Switch checked={s.exposure_ramping_enabled} onCheckedChange={(v) => setS({ ...s, exposure_ramping_enabled: v })} /></div>
         <div className="flex justify-end"><Button onClick={save} className="bg-gradient-primary text-primary-foreground">Save schedule</Button></div>
       </Card>
     </div>
   );
 }
 
-function ModeSelect({ label, value, options, onChange }: { label: string; value: string; options: { value: string; label: string }[]; onChange: (v: string) => void }) {
-  return <div className="space-y-2"><Label className="flex items-center gap-2"><CalendarClock className="h-4 w-4 text-primary" /> {label}</Label><Select value={value} onValueChange={onChange}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{options.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent></Select></div>;
+function ModeSelect({ label, help, value, options, onChange }: { label: string; help?: React.ReactNode; value: string; options: { value: string; label: string }[]; onChange: (v: string) => void }) {
+  return <div className="space-y-2"><div className="flex items-center gap-2"><CalendarClock className="h-4 w-4 text-primary" /><ConfigLabel label={label} help={help} /></div><Select value={value} onValueChange={onChange}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{options.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent></Select></div>;
 }
 
-function Field({ label, value, onChange, ...rest }: { label: string; value: string; onChange: (v: string) => void } & React.InputHTMLAttributes<HTMLInputElement>) {
-  return <div className="space-y-2"><Label>{label}</Label><Input value={value} onChange={(e) => onChange(e.target.value)} {...rest} /></div>;
+function Field({ label, help, value, onChange, ...rest }: { label: string; help?: React.ReactNode; value: string; onChange: (v: string) => void } & React.InputHTMLAttributes<HTMLInputElement>) {
+  return <div className="space-y-2"><ConfigLabel label={label} help={help} /><Input value={value} onChange={(e) => onChange(e.target.value)} {...rest} /></div>;
 }
 
 function PreviewStat({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
