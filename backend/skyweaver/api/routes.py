@@ -779,6 +779,61 @@ def logs(level: str | None = None, source: str | None = None, limit: int = 200, 
     return ok(rows)
 
 
+@router.get("/logs/page")
+def logs_page(
+    limit: int = Query(100, ge=1, le=500),
+    cursor: Annotated[str | None, Query(min_length=1, max_length=500)] = None,
+    level: str | None = None,
+    source: str | None = None,
+    _principal: dict = Depends(require_scope("read:status")),
+):
+    clauses: list[str] = []
+    params: list[Any] = []
+    if level:
+        clauses.append("level=?")
+        params.append(level)
+    if source:
+        clauses.append("source LIKE ?")
+        params.append(f"%{source}%")
+    if cursor:
+        created_at, log_id = decode_log_cursor(cursor)
+        clauses.append("(created_at < ? OR (created_at = ? AND id < ?))")
+        params.extend([created_at, created_at, log_id])
+    where = "WHERE " + " AND ".join(clauses) if clauses else ""
+    with session() as conn:
+        rows = all_rows(conn, f"SELECT * FROM logs {where} ORDER BY created_at DESC, id DESC LIMIT ?", (*params, limit + 1))
+    items = rows[:limit]
+    has_more = len(rows) > limit
+    next_cursor = encode_log_cursor(items[-1]) if has_more and items else None
+    return ok(
+        {
+            "items": items,
+            "next_cursor": next_cursor,
+            "has_more": has_more,
+            "limit": limit,
+            "filters": {"level": level, "source": source},
+        }
+    )
+
+
+def encode_log_cursor(row: dict[str, Any]) -> str:
+    payload = json.dumps({"created_at": row["created_at"], "id": row["id"]}, separators=(",", ":")).encode("utf-8")
+    return base64.urlsafe_b64encode(payload).decode("ascii").rstrip("=")
+
+
+def decode_log_cursor(cursor: str) -> tuple[str, str]:
+    try:
+        padded = cursor + "=" * (-len(cursor) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8"))
+    except (binascii.Error, UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+        raise HTTPException(400, "Invalid log cursor") from exc
+    created_at = payload.get("created_at") if isinstance(payload, dict) else None
+    log_id = payload.get("id") if isinstance(payload, dict) else None
+    if not isinstance(created_at, str) or not created_at or not isinstance(log_id, str) or not log_id:
+        raise HTTPException(400, "Invalid log cursor")
+    return created_at, log_id
+
+
 @router.post("/auth/login")
 def login(body: LoginRequest, request: Request):
     settings = get_settings()

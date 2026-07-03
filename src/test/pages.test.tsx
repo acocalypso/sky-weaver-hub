@@ -37,6 +37,7 @@ vi.mock("@/lib/api", async () => {
       images: vi.fn(),
       cameras: vi.fn(),
       logs: vi.fn(),
+      logsPage: vi.fn(),
       settings: vi.fn(),
       metrics: vi.fn(),
       schedule: vi.fn(),
@@ -212,10 +213,16 @@ beforeEach(() => {
   } as any);
   vi.mocked(SkyApi.images).mockResolvedValue([mockImage] as any);
   vi.mocked(SkyApi.imageDetail).mockResolvedValue(mockImage as any);
-  vi.mocked(SkyApi.logs).mockResolvedValue([
-    { id: "log-1", created_at: "2026-06-23T22:16:00+00:00", level: "info", source: "api", message: "API started" },
-    { id: "log-2", created_at: "2026-06-23T22:17:00+00:00", level: "warning", source: "capture", message: "Camera warming" },
-  ] as any);
+  vi.mocked(SkyApi.logsPage).mockResolvedValue({
+    items: [
+      { id: "log-1", created_at: "2026-06-23T22:16:00+00:00", level: "info", source: "api", message: "API started" },
+      { id: "log-2", created_at: "2026-06-23T22:17:00+00:00", level: "warning", source: "capture", message: "Camera warming" },
+    ],
+    next_cursor: null,
+    has_more: false,
+    limit: 100,
+    filters: { level: null, source: null },
+  } as any);
   vi.mocked(SkyApi.settings).mockResolvedValue(mockSettings);
   vi.mocked(SkyApi.cameras).mockResolvedValue([{ id: "cam-1", name: "Mock all-sky camera", adapter: "mock", enabled: true, is_primary: true } as any]);
   vi.mocked(SkyApi.schedule).mockResolvedValue(mockSchedule as any);
@@ -705,7 +712,7 @@ describe("main pages", () => {
     expect(screen.getByText("API started")).toBeInTheDocument();
     expect(screen.getByText("Camera warming")).toBeInTheDocument();
     fireEvent.change(screen.getByPlaceholderText("camera, scheduler, api"), { target: { value: "capture" } });
-    await waitFor(() => expect(SkyApi.logs).toHaveBeenCalledWith("?source=capture"));
+    await waitFor(() => expect(SkyApi.logsPage).toHaveBeenCalledWith("?limit=100&source=capture"));
   });
 
   it("renders developer API examples and public endpoints", () => {

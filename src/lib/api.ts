@@ -36,6 +36,7 @@ export const SkyApi = {
   restartService: (name: string) => api<ServiceActionResult>(`/api/v1/system/services/${name}/restart`, { method: "POST" }),
   diagnostics: () => api<SystemDiagnostics>("/api/v1/system/diagnostics"),
   logs: (query = "") => api<LogRow[]>(`/api/v1/logs${query}`),
+  logsPage: (query = "") => api<LogPage>(`/api/v1/logs/page${query}`),
   cameras: () => api<CameraRow[]>("/api/v1/cameras"),
   detectCameras: () => api<DetectedCamera[]>("/api/v1/cameras/detect", { method: "POST" }),
   createCamera: (body: Partial<CameraRow>) => api<{ id: string }>("/api/v1/cameras", { method: "POST", body: JSON.stringify(body) }),
@@ -166,4 +167,5 @@ export interface AllskyRollbackResult { migration_job_id: string; deleted_images
 export interface ProcessingJob { id: string; type: string; status: string; input: any; output?: any; error?: string | null; progress: number; created_at: string; started_at?: string | null; completed_at?: string | null; }
 export interface CaptureJob { id: string; type: string; status: string; request: any; result?: any; error?: string | null; progress: number; created_at: string; started_at?: string | null; completed_at?: string | null; }
 export interface LogRow { id: string; level: string; source: string; message: string; context: any; created_at: string; }
+export interface LogPage { items: LogRow[]; next_cursor: string | null; has_more: boolean; limit: number; filters: { level: string | null; source: string | null; }; }
 export interface ApiKeyRow { id: string; name: string; prefix: string; scopes: string[]; enabled: boolean; created_at: string; last_used_at?: string | null; }

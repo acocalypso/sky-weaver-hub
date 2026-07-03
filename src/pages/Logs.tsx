@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
@@ -11,16 +12,34 @@ const LEVEL_COLOR: Record<string, string> = { debug: "text-muted-foreground", in
 
 export default function Logs() {
   const [logs, setLogs] = useState<LogRow[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [level, setLevel] = useState("all");
   const [source, setSource] = useState("");
+  const [loadingMore, setLoadingMore] = useState(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (cursor?: string | null) => {
     const params = new URLSearchParams();
+    params.set("limit", "100");
     if (level !== "all") params.set("level", level);
     if (source) params.set("source", source);
+    if (cursor) params.set("cursor", cursor);
     const query = params.toString() ? `?${params}` : "";
-    try { setLogs(await SkyApi.logs(query)); } catch { /* keep last log view */ }
+    try {
+      const page = await SkyApi.logsPage(query);
+      setLogs((current) => cursor ? [...current, ...page.items] : page.items);
+      setNextCursor(page.next_cursor);
+    } catch { /* keep last log view */ }
   }, [level, source]);
+
+  async function loadMore() {
+    if (!nextCursor || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      await load(nextCursor);
+    } finally {
+      setLoadingMore(false);
+    }
+  }
 
   useEffect(() => { document.title = "Logs - Sky Weaver Hub"; }, []);
   useEffect(() => { load(); const t = setInterval(load, 5000); return () => clearInterval(t); }, [load]);
@@ -40,6 +59,7 @@ export default function Logs() {
           {logs.map((l) => <div key={l.id} className="px-4 py-2 grid grid-cols-[170px_70px_120px_1fr] gap-3 hover:bg-muted/30"><span className="text-muted-foreground">{format(new Date(l.created_at), "yyyy-MM-dd HH:mm:ss")}</span><span className={`uppercase tracking-wider ${LEVEL_COLOR[l.level] ?? ""}`}>{l.level}</span><span className="text-primary truncate">{l.source}</span><span className="text-foreground truncate">{l.message}</span></div>)}
           {logs.length === 0 && <p className="p-6 text-sm text-muted-foreground">No log entries.</p>}
         </div>
+        {nextCursor && <div className="border-t border-border/60 p-3"><Button variant="outline" className="w-full" onClick={loadMore} disabled={loadingMore}>{loadingMore ? "Loading..." : "Load more"}</Button></div>}
       </Card>
     </div>
   );

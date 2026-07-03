@@ -16,7 +16,7 @@ Errors use:
 
 External clients use `Authorization: Bearer <API_KEY>`. Admin UI login receives a bearer token from `/api/v1/auth/login`.
 
-`GET /api/v1/logs?source=auth` exposes local auth audit entries to authenticated status readers, including failed login/setup attempts, rate-limit blocks, and successful login after previous failures. `GET /api/v1/logs?source=security` exposes privileged-change audit entries for setup completion, password changes, user/API-key lifecycle, settings, schedule, camera, and camera-profile changes. Audit contexts include actor/client metadata, target identifiers, scopes, and changed field names, but not submitted passwords, raw API keys, key hashes, or secret setting values.
+`GET /api/v1/logs?source=auth` exposes local auth audit entries to authenticated status readers, including failed login/setup attempts, rate-limit blocks, and successful login after previous failures. `GET /api/v1/logs?source=security` exposes privileged-change audit entries for setup completion, password changes, user/API-key lifecycle, settings, schedule, camera, and camera-profile changes. Audit contexts include actor/client metadata, target identifiers, scopes, and changed field names, but not submitted passwords, raw API keys, key hashes, or secret setting values. New clients should prefer `GET /api/v1/logs/page?limit=100`, which returns `items`, `next_cursor`, `has_more`, `limit`, and `filters` for cursor-paged log browsing with optional `level` and `source` filters.
 
 Capture requests that can touch hardware are queued. `/api/v1/capture/test-shot`, `/api/v1/capture/single`, and `/api/v1/capture/sequence` return a capture job immediately; clients should poll `/api/v1/capture/jobs` or `/api/v1/capture/jobs/{job_id}` and then read `/api/v1/images/latest` or image detail endpoints after completion.
 
@@ -46,6 +46,8 @@ Image row `metadata` includes capture context, environment readings, analysis va
 ```
 
 Pass `cursor=<next_cursor>` to fetch the next page. Supported filters are `day_key`, `mode`, `camera_id`, and `bad_image`. Cursors are opaque client tokens and should not be parsed by mobile apps.
+
+`GET /api/v1/logs/page?limit=100` follows the same opaque-cursor pattern for operational logs. Supported filters are `level` and `source`. The legacy `GET /api/v1/logs` endpoint remains available for existing clients and returns a plain data array.
 
 Image and product cleanup endpoints use the same success envelope and require `write:processing`. `DELETE /api/v1/images/{image_id}` removes the database row plus the owned image file, thumbnail, JSON sidecar, and matching latest artifacts; if an older image remains it republishes that image as latest. `POST /api/v1/images/retention/run?days=30` removes image rows and owned artifacts older than the cutoff. Generated night products have matching lifecycle endpoints: `DELETE /api/v1/products/{product_id}` removes the product row and owned product/thumbnail files, and `POST /api/v1/products/retention/run?days=30` removes old generated products.
 

@@ -62,6 +62,49 @@ def test_health_and_status(tmp_path):
     assert res.json()["data"]["camera"]["adapter"] == "mock"
 
 
+def test_logs_page_uses_cursor_and_filters(tmp_path):
+    client = make_client(tmp_path)
+    token = login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    from skyweaver.db import session
+
+    with session() as conn:
+        for index in range(5):
+            conn.execute(
+                "INSERT INTO logs (id, level, source, message, context, created_at) VALUES (?, ?, ?, ?, '{}', ?)",
+                (
+                    f"log-{index}",
+                    "warning" if index % 2 else "info",
+                    "capture" if index < 4 else "api",
+                    f"message {index}",
+                    f"2026-07-03T12:00:0{index}+00:00",
+                ),
+            )
+
+    first = client.get("/api/v1/logs/page?limit=2&source=capture", headers=headers)
+    assert first.status_code == 200, first.text
+    first_page = first.json()["data"]
+    assert [item["id"] for item in first_page["items"]] == ["log-3", "log-2"]
+    assert first_page["has_more"] is True
+    assert first_page["next_cursor"]
+    assert first_page["filters"] == {"level": None, "source": "capture"}
+
+    second = client.get(f"/api/v1/logs/page?limit=2&source=capture&cursor={first_page['next_cursor']}", headers=headers)
+    assert second.status_code == 200, second.text
+    second_page = second.json()["data"]
+    assert [item["id"] for item in second_page["items"]] == ["log-1", "log-0"]
+    assert second_page["has_more"] is False
+    assert second_page["next_cursor"] is None
+
+    warning = client.get("/api/v1/logs/page?level=warning&source=capture&limit=10", headers=headers).json()["data"]
+    assert [item["id"] for item in warning["items"]] == ["log-3", "log-1"]
+
+    invalid = client.get("/api/v1/logs/page?cursor=not-a-valid-cursor", headers=headers)
+    assert invalid.status_code == 400
+    assert invalid.json()["error"]["message"] == "Invalid log cursor"
+
+
 def test_frontend_deep_links_fall_back_to_index(tmp_path):
     web_dir = tmp_path / "data" / "web"
     web_dir.mkdir(parents=True)
@@ -602,6 +645,7 @@ def test_api_key_scope_boundaries_for_endpoint_groups(tmp_path):
         ("read:status", "GET", "/api/v1/system/services/skyweaver-capture", None),
         ("read:status", "GET", "/api/v1/system/diagnostics", None),
         ("read:status", "GET", "/api/v1/logs", None),
+        ("read:status", "GET", "/api/v1/logs/page", None),
         ("read:status", "GET", "/api/v1/capture/state", None),
         ("read:status", "GET", "/api/v1/capture/jobs", None),
         ("read:settings", "GET", "/api/v1/cameras", None),
