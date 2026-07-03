@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import Dashboard from "@/pages/Dashboard";
 import Gallery from "@/pages/Gallery";
 import SettingsPage from "@/pages/Settings";
+import Cameras from "@/pages/Cameras";
 import ApiKeys from "@/pages/ApiKeys";
 import SetupPage from "@/pages/Setup";
 import Health from "@/pages/Health";
@@ -64,6 +65,10 @@ vi.mock("@/lib/api", async () => {
       completeSetup: vi.fn(),
       detectCameras: vi.fn(),
       createCamera: vi.fn(),
+      testShot: vi.fn(),
+      cameraProfiles: vi.fn(),
+      createProfile: vi.fn(),
+      patchProfile: vi.fn(),
       publicLatest: vi.fn(),
       publicProducts: vi.fn(),
       products: vi.fn(),
@@ -304,6 +309,32 @@ beforeEach(() => {
   vi.mocked(SkyApi.completeSetup).mockResolvedValue({ required: false });
   vi.mocked(SkyApi.detectCameras).mockResolvedValue([]);
   vi.mocked(SkyApi.createCamera).mockResolvedValue({ id: "cam-2" });
+  vi.mocked(SkyApi.testShot).mockResolvedValue({ id: "job-test", type: "test", status: "pending", request: {}, progress: 0 } as any);
+  vi.mocked(SkyApi.cameraProfiles).mockResolvedValue([
+    {
+      id: "profile-day",
+      camera_id: "cam-1",
+      name: "Daytime",
+      mode: "daytime",
+      settings: {
+        capture_enabled: true,
+        save_enabled: false,
+        interval_seconds: 30,
+        auto_exposure: true,
+        manual_exposure_ms: 1,
+        auto_gain: true,
+        gain: 1,
+        max_auto_exposure_ms: 100,
+        mean_target: 0.28,
+        auto_white_balance: true,
+        awb: "auto",
+        red_balance: 1,
+        blue_balance: 1,
+      },
+    },
+  ] as any);
+  vi.mocked(SkyApi.createProfile).mockResolvedValue({ id: "profile-new" });
+  vi.mocked(SkyApi.patchProfile).mockResolvedValue({ id: "profile-day" } as any);
   vi.mocked(SkyApi.publicLatest).mockResolvedValue(mockPublicLatest);
   vi.mocked(SkyApi.publicProducts).mockResolvedValue(mockPublicProducts);
   vi.mocked(SkyApi.darkFrames).mockResolvedValue([
@@ -620,14 +651,33 @@ describe("main pages", () => {
       id: "latest-only-1",
       captured_at: "2026-06-23T22:16:30+00:00",
       mode: "day",
-      exposure_ms: 10,
+      exposure_ms: 1,
       gain: 1,
     });
 
     render(<Dashboard />);
 
     expect(await screen.findByText("latest only")).toBeInTheDocument();
+    expect(screen.getByText("1 ms")).toBeInTheDocument();
     expect(screen.getByAltText("Latest all-sky capture")).toHaveAttribute("src", expect.stringContaining("/api/v1/public/latest/download?v=latest-only-1-"));
+  });
+
+  it("renders camera auto exposure and white balance controls", async () => {
+    render(<Cameras />);
+
+    expect(await screen.findByRole("heading", { name: "Cameras" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Day" }));
+    expect(await screen.findByText("Auto exposure")).toBeInTheDocument();
+    expect(screen.getByText("Auto gain")).toBeInTheDocument();
+    expect(screen.getByText("Auto white balance")).toBeInTheDocument();
+    expect(screen.getAllByDisplayValue("1").some((field) => field instanceof HTMLInputElement && field.disabled)).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: /test shot/i }));
+    await waitFor(() => expect(SkyApi.testShot).toHaveBeenCalledWith(expect.objectContaining({
+      camera_id: "cam-1",
+      exposure_ms: 1,
+      gain: 1,
+      settings: expect.objectContaining({ auto_exposure: true, auto_gain: true, auto_white_balance: true }),
+    })));
   });
 
   it("renders gallery images and filters", async () => {

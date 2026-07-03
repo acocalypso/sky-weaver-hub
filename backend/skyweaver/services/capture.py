@@ -369,6 +369,9 @@ def find_matching_dark_frame(conn, image_path: Path, camera_id: str, exposure_ms
     calibration = dark_frame_settings(conn)
     if not calibration["enabled"]:
         return None
+    if exposure_ms is None or gain is None:
+        log(conn, "warning", "capture", "Dark-frame calibration skipped for auto exposure/gain capture", {"camera_id": camera_id, "exposure_ms": exposure_ms, "gain": gain})
+        return None
     storage = extract_image_metadata(image_path)
     image_info = storage["image"]
     rows = all_rows(conn, "SELECT * FROM dark_frames WHERE camera_id=? ORDER BY active DESC, created_at DESC", (camera_id,))

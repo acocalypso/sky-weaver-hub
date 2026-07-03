@@ -102,7 +102,7 @@ export default function Cameras() {
   async function runTest() {
     if (!selected) return;
     try {
-      await SkyApi.testShot({ camera_id: selected.id, exposure_ms: Number(settings.manual_exposure_ms ?? 1000), gain: Number(settings.gain ?? 1), mode: "manual" });
+      await SkyApi.testShot({ camera_id: selected.id, exposure_ms: Number(settings.manual_exposure_ms ?? 1000), gain: Number(settings.gain ?? 1), mode: "manual", settings });
       toast.success("Test shot queued");
     } catch (e: any) {
       toast.error(e.message ?? "Capture failed");
@@ -171,12 +171,24 @@ export default function Cameras() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Field label="Manual exposure (ms)" type="number" value={String(settings.manual_exposure_ms ?? 1000)} onChange={(v) => setSettings({ ...settings, manual_exposure_ms: Number(v) })} />
-              <Field label="Gain" type="number" value={String(settings.gain ?? 1)} onChange={(v) => setSettings({ ...settings, gain: Number(v) })} />
+              <ToggleRow label="Auto exposure" description="Let the camera choose daytime exposure." checked={Boolean(settings.auto_exposure)} onChange={(v) => setSettings({ ...settings, auto_exposure: v })} />
+              <ToggleRow label="Auto gain" description="Let the camera choose analog gain." checked={Boolean(settings.auto_gain)} onChange={(v) => setSettings({ ...settings, auto_gain: v })} />
+              <Field label="Manual exposure (ms)" type="number" min={0.001} step={0.001} disabled={Boolean(settings.auto_exposure)} value={String(settings.manual_exposure_ms ?? 1000)} onChange={(v) => setSettings({ ...settings, manual_exposure_ms: Number(v) })} />
+              <Field label="Gain" type="number" disabled={Boolean(settings.auto_gain)} value={String(settings.gain ?? 1)} onChange={(v) => setSettings({ ...settings, gain: Number(v) })} />
               <Field label="Max auto exposure (ms)" type="number" value={String(settings.max_auto_exposure_ms ?? 30000)} onChange={(v) => setSettings({ ...settings, max_auto_exposure_ms: Number(v) })} />
               <Field label="Mean target" type="number" step="0.01" value={String(settings.mean_target ?? 0.28)} onChange={(v) => setSettings({ ...settings, mean_target: Number(v) })} />
-              <Field label="Red balance" type="number" step="0.1" value={String(settings.red_balance ?? 1)} onChange={(v) => setSettings({ ...settings, red_balance: Number(v) })} />
-              <Field label="Blue balance" type="number" step="0.1" value={String(settings.blue_balance ?? 1)} onChange={(v) => setSettings({ ...settings, blue_balance: Number(v) })} />
+              <ToggleRow label="Auto white balance" description="Use rpicam AWB instead of fixed red/blue gains." checked={settings.auto_white_balance !== false} onChange={(v) => setSettings({ ...settings, auto_white_balance: v })} />
+              <div className="space-y-2">
+                <Label>AWB mode</Label>
+                <Select value={settings.awb ?? "auto"} onValueChange={(v) => setSettings({ ...settings, awb: v })} disabled={settings.auto_white_balance === false}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {["auto", "daylight", "cloudy", "indoor", "fluorescent", "incandescent", "tungsten", "custom"].map((mode) => <SelectItem key={mode} value={mode}>{mode}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <Field label="Red balance" type="number" step="0.1" disabled={settings.auto_white_balance !== false} value={String(settings.red_balance ?? 1)} onChange={(v) => setSettings({ ...settings, red_balance: Number(v) })} />
+              <Field label="Blue balance" type="number" step="0.1" disabled={settings.auto_white_balance !== false} value={String(settings.blue_balance ?? 1)} onChange={(v) => setSettings({ ...settings, blue_balance: Number(v) })} />
             </div>
 
             {profileMode === "nighttime" && (

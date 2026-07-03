@@ -212,8 +212,8 @@ class RpiCamAdapter(CameraAdapter):
     def _session_key(self, still: str, request: CaptureRequest) -> tuple:
         return (
             still,
-            float(request.exposure_ms),
-            float(request.gain),
+            self._manual_exposure_ms(request),
+            self._manual_gain(request),
             int(request.width or 0),
             int(request.height or 0),
             request.image_format.lower(),
@@ -263,6 +263,56 @@ class RpiCamAdapter(CameraAdapter):
             return None
         return ",".join(f"{number:g}" for number in numbers)
 
+    def _auto_exposure(self, request: CaptureRequest) -> bool:
+        return self._bool_setting(request.settings or {}, "auto_exposure")
+
+    def _auto_gain(self, request: CaptureRequest) -> bool:
+        return self._bool_setting(request.settings or {}, "auto_gain")
+
+    def _manual_exposure_ms(self, request: CaptureRequest) -> float | None:
+        if self._auto_exposure(request):
+            return None
+        return float(request.exposure_ms)
+
+    def _manual_gain(self, request: CaptureRequest) -> float | None:
+        if self._auto_gain(request):
+            return None
+        return float(request.gain)
+
+    def _exposure_gain_args(self, request: CaptureRequest) -> list[str]:
+        args: list[str] = []
+        exposure_ms = self._manual_exposure_ms(request)
+        gain = self._manual_gain(request)
+        if exposure_ms is not None:
+            args += ["--shutter", str(int(exposure_ms * 1000))]
+        if gain is not None:
+            args += ["--gain", f"{gain:g}"]
+        return args
+
+    def _timeout_ms(self, request: CaptureRequest, persistent: bool = False) -> int:
+        if persistent:
+            return int(request.settings.get("persistent_timeout_ms") or 12 * 60 * 60 * 1000)
+        if self._auto_exposure(request) or self._auto_gain(request):
+            delay_seconds = self._float_setting(request.settings or {}, "delay_seconds", 0.1, 120.0)
+            return int((delay_seconds if delay_seconds is not None else 2.0) * 1000)
+        return max(1, int(request.exposure_ms + 500))
+
+    def _capture_metadata(self, still: str, request: CaptureRequest, capture_mode: str | None = None) -> dict[str, object]:
+        metadata: dict[str, object] = {
+            "adapter": self.backend,
+            "command": Path(still).name,
+            "auto_exposure": self._auto_exposure(request),
+            "auto_gain": self._auto_gain(request),
+            "auto_white_balance": request.settings.get("auto_white_balance", True) is not False,
+        }
+        if capture_mode:
+            metadata["capture_mode"] = capture_mode
+        if self._auto_exposure(request):
+            metadata["requested_max_auto_exposure_ms"] = request.settings.get("max_auto_exposure_ms")
+        if self._auto_gain(request):
+            metadata["requested_max_auto_gain"] = request.settings.get("max_auto_gain")
+        return metadata
+
     def _control_args(self, request: CaptureRequest) -> list[str]:
         settings = request.settings or {}
         args: list[str] = []
@@ -286,7 +336,7 @@ class RpiCamAdapter(CameraAdapter):
         if quality is not None and image_format in {"jpg", "jpeg"}:
             args += ["--quality", str(quality)]
 
-        awb = str(settings.get("awb") or "").strip().lower()
+        awb = str(settings.get("awb") or "auto").strip().lower()
         auto_white_balance = settings.get("auto_white_balance")
         if auto_white_balance is False:
             red = self._float_setting(settings, "red_balance", 0.0, 32.0)
@@ -334,7 +384,7 @@ class RpiCamAdapter(CameraAdapter):
         pattern = pattern.with_suffix(suffix)
         for stale in session_dir.glob(f"frame_*{suffix}"):
             stale.unlink(missing_ok=True)
-        timeout_ms = int(request.settings.get("persistent_timeout_ms") or 12 * 60 * 60 * 1000)
+        timeout_ms = self._timeout_ms(request, persistent=True)
         args = [
             still,
             "--signal",
@@ -342,12 +392,9 @@ class RpiCamAdapter(CameraAdapter):
             str(pattern),
             "--timeout",
             str(timeout_ms),
-            "--shutter",
-            str(int(request.exposure_ms * 1000)),
-            "--gain",
-            str(request.gain),
             "--nopreview",
         ]
+        args += self._exposure_gain_args(request)
         if request.width:
             args += ["--width", str(request.width)]
         if request.height:
@@ -474,9 +521,9 @@ class RpiCamAdapter(CameraAdapter):
             file_path=request.output_path,
             format=request.image_format.lower(),
             size_bytes=request.output_path.stat().st_size,
-            exposure_ms=request.exposure_ms,
-            gain=request.gain,
-            metadata={"adapter": self.backend, "command": Path(still).name, "capture_mode": "persistent_signal"},
+            exposure_ms=self._manual_exposure_ms(request),
+            gain=self._manual_gain(request),
+            metadata=self._capture_metadata(still, request, "persistent_signal"),
         )
 
     async def _capture_once_after_persistent_failure(self, still: str, request: CaptureRequest, exc: Exception) -> CaptureResult:
@@ -490,16 +537,16 @@ class RpiCamAdapter(CameraAdapter):
     async def _capture_once(self, still: str, request: CaptureRequest) -> CaptureResult:
         path: Path = request.output_path
         path.parent.mkdir(parents=True, exist_ok=True)
-        timeout_ms = max(1, int(request.exposure_ms + 500))
+        timeout_ms = self._timeout_ms(request)
         args = [
             still,
             "--output", str(path),
             "--timeout", str(timeout_ms),
-            "--shutter", str(int(request.exposure_ms * 1000)),
-            "--gain", str(request.gain),
-            "--immediate",
             "--nopreview",
         ]
+        args += self._exposure_gain_args(request)
+        if not (self._auto_exposure(request) or self._auto_gain(request)):
+            args.append("--immediate")
         if request.width:
             args += ["--width", str(request.width)]
         if request.height:
@@ -522,9 +569,9 @@ class RpiCamAdapter(CameraAdapter):
             file_path=path,
             format=request.image_format.lower(),
             size_bytes=path.stat().st_size,
-            exposure_ms=request.exposure_ms,
-            gain=request.gain,
-            metadata={"adapter": self.backend, "command": Path(still).name},
+            exposure_ms=self._manual_exposure_ms(request),
+            gain=self._manual_gain(request),
+            metadata=self._capture_metadata(still, request),
         )
 
     async def cancel_capture(self, job_id: str, reason: str = "operator stop") -> CaptureCancelResult:

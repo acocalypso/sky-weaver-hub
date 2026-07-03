@@ -266,6 +266,8 @@ async def test_rpicam_one_shot_capture_uses_headless_preview_flag(tmp_path: Path
     assert "--immediate" in calls[0]
     assert "--nopreview" in calls[0]
     assert "--signal" not in calls[0]
+    assert calls[0][calls[0].index("--shutter") + 1] == "1000000"
+    assert calls[0][calls[0].index("--gain") + 1] == "1"
     assert calls[0][calls[0].index("--encoding") + 1] == "jpg"
     assert calls[0][calls[0].index("--quality") + 1] == "88"
     assert calls[0][calls[0].index("--denoise") + 1] == "cdn_fast"
@@ -280,6 +282,51 @@ async def test_rpicam_one_shot_capture_uses_headless_preview_flag(tmp_path: Path
     assert calls[0][calls[0].index("--sharpness") + 1] == "1.2"
     assert calls[0][calls[0].index("--mode") + 1] == "1920:1080:12:P"
     assert calls[0][calls[0].index("--tuning-file") + 1] == "/opt/camera/imx290.json"
+
+
+@pytest.mark.asyncio
+async def test_rpicam_auto_exposure_omits_manual_shutter_gain_and_immediate(tmp_path: Path, monkeypatch):
+    output = tmp_path / "auto.jpg"
+    calls: list[list[str]] = []
+
+    class FakeProcess:
+        returncode = 0
+        stdout = None
+        stderr = None
+
+        async def communicate(self):
+            output.write_bytes(b"jpg")
+            return b"", b""
+
+    async def fake_exec(*args, **_kwargs):
+        calls.append(list(args))
+        return FakeProcess()
+
+    monkeypatch.setattr("skyweaver.camera.rpicam.shutil.which", lambda name: "/usr/bin/rpicam-still" if name == "rpicam-still" else None)
+    monkeypatch.setattr("skyweaver.camera.rpicam.asyncio.create_subprocess_exec", fake_exec)
+
+    result = await RpiCamAdapter().capture(
+        CaptureRequest(
+            output_path=output,
+            exposure_ms=10,
+            gain=1,
+            width=1280,
+            height=960,
+            image_format="jpg",
+            settings={"persistent": False, "auto_exposure": True, "auto_gain": True, "auto_white_balance": True, "awb": "daylight", "delay_seconds": 2},
+        )
+    )
+
+    assert "--shutter" not in calls[0]
+    assert "--gain" not in calls[0]
+    assert "--immediate" not in calls[0]
+    assert calls[0][calls[0].index("--timeout") + 1] == "2000"
+    assert calls[0][calls[0].index("--awb") + 1] == "daylight"
+    assert result.exposure_ms is None
+    assert result.gain is None
+    assert result.metadata["auto_exposure"] is True
+    assert result.metadata["auto_gain"] is True
+    assert result.metadata["auto_white_balance"] is True
 
 
 @pytest.mark.asyncio

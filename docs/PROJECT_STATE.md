@@ -74,7 +74,7 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
   - capture state update
   - realtime event
 - When enabled, capture-time dark-frame calibration selects a matching master by camera/exposure/gain/resolution/pixel format and subtracts it before overlay, metadata analysis, thumbnails, latest publishing, and downstream processing.
-- `rpicam`/`libcamera` adapter can detect and capture through command-line tools when available, parses camera list output into sensor/device/mode metadata, uses headless preview mode, maps common libcamera controls such as AWB/white-balance gains, JPEG quality, denoise, tuning file, sensor mode, flips, rotation, ROI, and basic image adjustments, and keeps a persistent `rpicam-still --signal` session for repeated compatible captures to avoid restarting the camera stack for every frame. If the persistent session exits before producing a frame, the adapter falls back to the one-shot rpicam path instead of failing the scheduled capture.
+- `rpicam`/`libcamera` adapter can detect and capture through command-line tools when available, parses camera list output into sensor/device/mode metadata, uses headless preview mode, maps common libcamera controls such as auto/manual exposure, auto/manual gain, AWB/white-balance gains, JPEG quality, denoise, tuning file, sensor mode, flips, rotation, ROI, and basic image adjustments, and keeps a persistent `rpicam-still --signal` session for repeated compatible captures to avoid restarting the camera stack for every frame. If the persistent session exits before producing a frame, the adapter falls back to the one-shot rpicam path instead of failing the scheduled capture.
 - `zwo` adapter can detect and capture through the native ZWO ASI SDK when `libASICamera2` is installed.
 - Subprocess calls use argv lists instead of shell string interpolation.
 
@@ -102,7 +102,7 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 - Public Sky page at `/public` that displays the latest public image, compact responsive safe metadata, and available public night products without admin login or controls, and shows a disabled state when `public_page.enabled` is false.
 - First-setup page that blocks normal admin routes until observatory details, timezone, primary camera, public page mode, and bootstrap password status are confirmed. It detects hardware camera candidates, warns when only mock capture is available, and shows live password readiness guidance.
 - Dashboard with latest image, start/pause/resume/stop/test-shot controls, queued single/sequence capture controls, capture job progress, daemon activity, status, metrics, and recent captures.
-- Cameras page with detection, adapter selection, day/night profile editing, per-mode capture/save/interval controls, end-of-night product toggles, and test shot.
+- Cameras page with detection, adapter selection, day/night profile editing, per-mode capture/save/interval controls, auto/manual exposure and white-balance controls, end-of-night product toggles, and test shot.
 - Schedule page with sun-angle/fixed/manual mode settings.
 - Schedule page displays the backend active window, next transition, and fixed-time controls.
 - Dashboard Tonight panel displays capture-window status and the next schedule transition.
@@ -324,9 +324,9 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 
 Most recent local checks on 2026-07-03:
 
-- `backend\\.venv\\Scripts\\python -m pytest backend\\tests`: passed with 114 tests and 1 Windows-only POSIX-permission skip.
+- `backend\\.venv\\Scripts\\python -m pytest backend\\tests`: passed with 115 tests and 1 Windows-only POSIX-permission skip.
 - `npm run lint`: passed with zero warnings.
-- `npm test`: passed with 26 tests.
+- `npm test`: passed with 27 tests.
 - `npm test -- --run src/test/pages.test.tsx`: passed with 20 tests.
 - `npm run test:smoke`: passed with 9 tests and 1 expected desktop skip for the mobile-only assertion.
 - `npm run build`: passed.

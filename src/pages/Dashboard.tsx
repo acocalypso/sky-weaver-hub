@@ -16,6 +16,7 @@ import { format, formatDistanceToNow } from "date-fns";
 type DashboardLatest = (ImageRow | (PublicLatestImage & { public_url: string; latest_only: true })) & {
   exposure_ms?: number | null;
   gain?: number | null;
+  metadata?: any;
 };
 
 export default function Dashboard() {
@@ -142,7 +143,7 @@ export default function Dashboard() {
                 {latest?.latest_only && <p className="text-[10px] uppercase tracking-widest text-muted-foreground mt-1">latest only</p>}
               </div>
               <div className="flex gap-2">
-                <StatusBadge variant="ok">{latest?.exposure_ms ? `${(latest.exposure_ms / 1000).toFixed(2)}s` : "no exposure"}</StatusBadge>
+                <StatusBadge variant="ok">{formatExposure(latest)}</StatusBadge>
                 <StatusBadge variant="active">gain {latest?.gain ?? "-"}</StatusBadge>
               </div>
             </div>
@@ -273,6 +274,15 @@ function preferPublicLatest(publicLatest: PublicLatestImage | null, savedLatest?
     public_url: `${publicLatest.download_url}?v=${encodeURIComponent(`${publicLatest.id}-${publicLatest.captured_at}`)}`,
     latest_only: !savedLatest || publicLatest.id !== savedLatest.id,
   };
+}
+
+function formatExposure(image?: DashboardLatest | null) {
+  if (!image) return "no exposure";
+  if (image.metadata?.auto_exposure) return "auto exposure";
+  const exposure = image.exposure_ms;
+  if (exposure == null) return "no exposure";
+  if (exposure < 1000) return `${Number(exposure.toFixed(3))} ms`;
+  return `${(exposure / 1000).toFixed(2)} s`;
 }
 
 function Stat({ k, v }: { k: string; v: React.ReactNode }) {
