@@ -64,6 +64,26 @@ def test_analyze_image_estimates_star_count(tmp_path: Path):
     assert analysis["mean_brightness"] > 0
 
 
+def test_analyze_image_counts_faint_local_contrast_stars(tmp_path: Path):
+    from skyweaver.services.capture import analyze_image
+
+    image_path = tmp_path / "faint-stars.png"
+    image = Image.new("RGB", (256, 192), (20, 36, 27))
+    draw = ImageDraw.Draw(image)
+    for x in range(0, 256, 8):
+        draw.line((x, 0, min(255, x + 60), 191), fill=(24, 42, 32), width=5)
+    stars = [(42, 35), (88, 54), (128, 82), (172, 44), (205, 118), (74, 142), (147, 150)]
+    for x, y in stars:
+        draw.point((x, y), fill=(115, 130, 120))
+        draw.point((x + 1, y), fill=(82, 95, 88))
+        draw.point((x, y + 1), fill=(72, 86, 78))
+    image.save(image_path)
+
+    analysis = analyze_image(image_path)
+
+    assert analysis["star_count"] >= 7
+
+
 def test_analyze_image_ignores_large_bright_blobs_for_star_count(tmp_path: Path):
     from skyweaver.services.capture import analyze_image
 

@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import psutil
-from PIL import ExifTags, Image, ImageChops, ImageStat
+from PIL import ExifTags, Image, ImageChops, ImageFilter, ImageStat
 
 from ..camera.base import CameraAdapter, CaptureCancelResult, CaptureCanceled, CaptureRequest, CaptureResult
 from ..camera.registry import get_adapter
@@ -718,6 +718,7 @@ async def execute_capture(command: CaptureCommand, job_type: str = "manual", job
                 except Exception as exc:
                     dark_frame_result = {"applied": False, "error": str(exc), "dark_frame_id": selected_dark.get("id")}
                     log(conn, "warning", "capture", "Dark-frame calibration skipped", {"camera_id": cam["id"], "dark_frame_id": selected_dark.get("id"), "error": str(exc)})
+        analysis = analyze_image(result.file_path, processing_settings())
         overlay_result: dict[str, Any] = {"applied": False}
         with session() as conn:
             if overlay_enabled(conn) and module_enabled_for_trigger(conn, POST_CAPTURE_TRIGGER, OVERLAY_MODULE_ID):
@@ -747,7 +748,7 @@ async def execute_capture(command: CaptureCommand, job_type: str = "manual", job
             "settings": {"exposure_ms": command.exposure_ms, "gain": command.gain, "format": command.format},
             "storage": extract_image_metadata(result.file_path),
             "environment": {"sensor_temperature_c": result.temperature_c, "system_temperature_c": read_pi_temp()},
-            "analysis": analyze_image(result.file_path, processing_settings()),
+            "analysis": analysis,
             "dark_frame": dark_frame_result,
             "overlay": overlay_result,
             **result.metadata,
@@ -1248,26 +1249,76 @@ def estimate_star_count(gray: Image.Image) -> int:
         scale = 512 / max_dimension
         image = image.resize((max(1, int(image.width * scale)), max(1, int(image.height * scale))), Image.Resampling.BILINEAR)
 
-    stat = ImageStat.Stat(image)
-    mean = stat.mean[0]
-    stddev = stat.stddev[0]
-    threshold = min(250, max(180, int(mean + max(30, stddev * 2.8))))
+    background = image.filter(ImageFilter.MedianFilter(9))
     pixels = image_pixels(image)
+    background_pixels = image_pixels(background)
+    diff_pixels = [max(0, value - background_pixels[index]) for index, value in enumerate(pixels)]
+    positive = sorted(value for value in diff_pixels if value > 0)
+    if not positive:
+        return 0
+    percentile = positive[min(len(positive) - 1, int(len(positive) * 0.985))]
+    diff_threshold = max(7, min(40, percentile))
+    stat = ImageStat.Stat(image)
+    absolute_floor = max(18, int(stat.mean[0] + max(8, stat.stddev[0] * 1.4)))
     width, height = image.size
+    artifact_threshold = max(150, min(220, int(stat.mean[0] + stat.stddev[0] * 2)))
+    artifact_mask = large_bright_artifact_mask(pixels, width, height, artifact_threshold)
     visited = bytearray(width * height)
     stars = 0
+    margin_x = max(2, int(width * 0.015))
+    margin_y = max(2, int(height * 0.015))
 
     for index, value in enumerate(pixels):
-        if visited[index] or value < threshold:
+        x = index % width
+        y = index // width
+        if (
+            visited[index]
+            or x < margin_x
+            or x >= width - margin_x
+            or y < margin_y
+            or y >= height - margin_y
+            or artifact_mask[index]
+            or value < absolute_floor
+            or diff_pixels[index] < diff_threshold
+        ):
             continue
         stack = [index]
         visited[index] = 1
         count = 0
         peak = value
+        contrast_peak = diff_pixels[index]
         while stack:
             current = stack.pop()
             count += 1
             peak = max(peak, pixels[current])
+            contrast_peak = max(contrast_peak, diff_pixels[current])
+            x = current % width
+            y = current // width
+            for ny in range(max(0, y - 1), min(height, y + 2)):
+                base = ny * width
+                for nx in range(max(0, x - 1), min(width, x + 2)):
+                    neighbor = base + nx
+                    if visited[neighbor] or artifact_mask[neighbor] or pixels[neighbor] < absolute_floor or diff_pixels[neighbor] < diff_threshold:
+                        continue
+                    visited[neighbor] = 1
+                    stack.append(neighbor)
+        if 1 <= count <= 28 and contrast_peak >= diff_threshold:
+            stars += 1
+    return stars
+
+
+def large_bright_artifact_mask(pixels: list[int], width: int, height: int, threshold: int) -> bytearray:
+    visited = bytearray(width * height)
+    mask = bytearray(width * height)
+    for index, value in enumerate(pixels):
+        if visited[index] or value < threshold:
+            continue
+        stack = [index]
+        visited[index] = 1
+        component: list[int] = []
+        while stack:
+            current = stack.pop()
+            component.append(current)
             x = current % width
             y = current // width
             for ny in range(max(0, y - 1), min(height, y + 2)):
@@ -1278,9 +1329,15 @@ def estimate_star_count(gray: Image.Image) -> int:
                         continue
                     visited[neighbor] = 1
                     stack.append(neighbor)
-        if 1 <= count <= 24 and peak >= threshold:
-            stars += 1
-    return stars
+        if len(component) > 64:
+            for current in component:
+                x = current % width
+                y = current // width
+                for ny in range(max(0, y - 2), min(height, y + 3)):
+                    base = ny * width
+                    for nx in range(max(0, x - 2), min(width, x + 3)):
+                        mask[base + nx] = 1
+    return mask
 
 
 def estimate_cloud_score(gray: Image.Image, mean_brightness: float | None = None, star_count: int | None = None) -> float:
