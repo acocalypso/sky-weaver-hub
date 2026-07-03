@@ -21,7 +21,7 @@ The admin password is stored as a bcrypt hash in `/etc/skyweaver/skyweaver.env`,
 
 ## Local Pi access
 
-The Settings page can sync Pi time from the browser clock for offline setups without RTC hardware. It can also scan and connect Wi-Fi networks through NetworkManager's `nmcli`. The backend uses argument-array subprocess calls and admin-scoped API routes; the installer grants only the required `date` and `nmcli` sudoers command families. Wi-Fi password values are not returned by the API.
+The Settings page can sync Pi time from the browser clock for offline setups without RTC hardware. It can also scan and connect Wi-Fi networks through NetworkManager's `nmcli` using portable terse output parsing. The backend uses argument-array subprocess calls and admin-scoped API routes; the installer grants only the required `date` and `nmcli` sudoers command families. Wi-Fi password values are not returned by the API.
 
 ## ZWO ASI
 

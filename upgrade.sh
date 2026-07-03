@@ -179,8 +179,8 @@ install_service_controls() {
     done
     printf ", %s -u -s @*" "$DATE_BIN"
     printf ", %s device wifi rescan" "$NMCLI_BIN"
-    printf ", %s -t --separator * -f * device status" "$NMCLI_BIN"
-    printf ", %s -t --separator * -f * device wifi list" "$NMCLI_BIN"
+    printf ", %s -t -e yes -f * device status" "$NMCLI_BIN"
+    printf ", %s -t -e yes -f * device wifi list" "$NMCLI_BIN"
     printf ", %s device wifi connect *" "$NMCLI_BIN"
     printf "\n"
   } >"$sudoers_tmp"

@@ -786,12 +786,35 @@ def run_system_command(command: list[str], timeout: int = 20) -> subprocess.Comp
     return subprocess.run(command, capture_output=True, text=True, timeout=timeout, check=False)
 
 
-def parse_nmcli_rows(output: str, fields: list[str], separator: str = "|") -> list[dict[str, str]]:
+def split_nmcli_escaped_fields(line: str) -> list[str]:
+    fields: list[str] = []
+    current: list[str] = []
+    escaped = False
+    for char in line:
+        if escaped:
+            current.append(char)
+            escaped = False
+            continue
+        if char == "\\":
+            escaped = True
+            continue
+        if char == ":":
+            fields.append("".join(current))
+            current = []
+            continue
+        current.append(char)
+    if escaped:
+        current.append("\\")
+    fields.append("".join(current))
+    return fields
+
+
+def parse_nmcli_rows(output: str, fields: list[str]) -> list[dict[str, str]]:
     rows: list[dict[str, str]] = []
     for line in output.splitlines():
         if not line.strip():
             continue
-        values = line.split(separator)
+        values = split_nmcli_escaped_fields(line)
         if len(values) < len(fields):
             values.extend([""] * (len(fields) - len(values)))
         rows.append({field: values[index].strip() for index, field in enumerate(fields)})
@@ -810,10 +833,10 @@ def wifi_status_payload() -> dict[str, Any]:
     command = wifi_command()
     if not command:
         return {"available": False, "message": "nmcli is not available on this host.", "devices": [], "active": []}
-    devices_result = run_system_command([*command, "-t", "--separator", "|", "-f", "DEVICE,TYPE,STATE,CONNECTION", "device", "status"])
+    devices_result = run_system_command([*command, "-t", "-e", "yes", "-f", "DEVICE,TYPE,STATE,CONNECTION", "device", "status"])
     if devices_result.returncode != 0:
         return {"available": False, "message": redact_operational_text((devices_result.stderr or devices_result.stdout or "nmcli device status failed").strip()), "devices": [], "active": []}
-    active_result = run_system_command([*command, "-t", "--separator", "|", "-f", "ACTIVE,SSID,SIGNAL,SECURITY", "device", "wifi", "list"])
+    active_result = run_system_command([*command, "-t", "-e", "yes", "-f", "ACTIVE,SSID,SIGNAL,SECURITY", "device", "wifi", "list"])
     active_rows = parse_nmcli_rows(active_result.stdout, ["active", "ssid", "signal", "security"]) if active_result.returncode == 0 else []
     return {
         "available": True,
@@ -828,7 +851,7 @@ def scan_wifi_networks() -> dict[str, Any]:
     if not command:
         return {"available": False, "message": "nmcli is not available on this host.", "networks": []}
     rescan = run_system_command([*command, "device", "wifi", "rescan"], timeout=30)
-    list_result = run_system_command([*command, "-t", "--separator", "|", "-f", "SSID,SIGNAL,SECURITY,CHAN,RATE", "device", "wifi", "list"], timeout=30)
+    list_result = run_system_command([*command, "-t", "-e", "yes", "-f", "SSID,SIGNAL,SECURITY,CHAN,RATE", "device", "wifi", "list"], timeout=30)
     if list_result.returncode != 0:
         raise HTTPException(500, redact_operational_text((list_result.stderr or list_result.stdout or "Wi-Fi scan failed").strip()))
     networks: dict[str, dict[str, Any]] = {}

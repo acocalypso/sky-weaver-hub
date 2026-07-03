@@ -1584,13 +1584,13 @@ def test_wifi_scan_and_connect_use_nmcli_and_redact_password(tmp_path, monkeypat
     def fake_run(command, **_kwargs):
         calls.append(command)
         if command[-2:] == ["device", "status"]:
-            return Result("wlan0|wifi|connected|GardenNet\neth0|ethernet|unavailable|--\n")
+            return Result("wlan0:wifi:connected:GardenNet\neth0:ethernet:unavailable:--\n")
         if command[-3:] == ["device", "wifi", "list"] and "ACTIVE,SSID,SIGNAL,SECURITY" in command:
-            return Result("yes|GardenNet|80|WPA2\n")
+            return Result("yes:GardenNet:80:WPA2\n")
         if command[-3:] == ["device", "wifi", "rescan"]:
             return Result()
         if command[-3:] == ["device", "wifi", "list"]:
-            return Result("GardenNet|80|WPA2|6|130 Mbit/s\nGuest|45||1|65 Mbit/s\nGardenNet|70|WPA2|11|130 Mbit/s\n")
+            return Result("GardenNet:80:WPA2:6:130 Mbit/s\nGuest\\:Lab:45::1:65 Mbit/s\nGardenNet:70:WPA2:11:130 Mbit/s\n")
         if "connect" in command:
             return Result("Device 'wlan0' successfully activated\n")
         return Result()
@@ -1598,13 +1598,15 @@ def test_wifi_scan_and_connect_use_nmcli_and_redact_password(tmp_path, monkeypat
     monkeypatch.setattr(routes, "wifi_command", lambda: ["sudo", "-n", "/usr/bin/nmcli"])
     monkeypatch.setattr(routes, "run_system_command", fake_run)
 
+    assert routes.split_nmcli_escaped_fields("Guest\\:Lab:45::1:65 Mbit/s") == ["Guest:Lab", "45", "", "1", "65 Mbit/s"]
+
     status = client.get("/api/v1/system/wifi/status", headers={"Authorization": f"Bearer {readonly_key}"})
     assert status.status_code == 200, status.text
     assert status.json()["data"]["active"][0]["ssid"] == "GardenNet"
 
     scan = client.post("/api/v1/system/wifi/scan", headers=headers)
     assert scan.status_code == 200, scan.text
-    assert [network["ssid"] for network in scan.json()["data"]["networks"]] == ["GardenNet", "Guest"]
+    assert [network["ssid"] for network in scan.json()["data"]["networks"]] == ["GardenNet", "Guest:Lab"]
 
     denied = client.post("/api/v1/system/wifi/connect", headers={"Authorization": f"Bearer {readonly_key}"}, json={"ssid": "GardenNet", "password": "secretpass"})
     assert denied.status_code == 403

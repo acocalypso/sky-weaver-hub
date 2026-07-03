@@ -192,6 +192,7 @@ assert_contains "/usr/bin/systemctl --no-block restart skyweaver-api.service" "$
 assert_contains "/usr/bin/systemctl --no-block stop skyweaver.target" "$TMP_DIR/sudoers/skyweaver"
 assert_contains "/usr/bin/date -u -s @*" "$TMP_DIR/sudoers/skyweaver"
 assert_contains "/usr/bin/nmcli device wifi rescan" "$TMP_DIR/sudoers/skyweaver"
+assert_contains "/usr/bin/nmcli -t -e yes -f * device wifi list" "$TMP_DIR/sudoers/skyweaver"
 assert_contains "/usr/bin/nmcli device wifi connect *" "$TMP_DIR/sudoers/skyweaver"
 assert_contains "Environment=PYTHONPATH=/opt/skyweaver/backend" "$TMP_DIR/systemd/skyweaver-api.service"
 assert_contains "Environment=PYTHONPATH=/opt/skyweaver/backend" "$TMP_DIR/systemd/skyweaver-capture.service"
