@@ -180,18 +180,23 @@ export default function Dashboard() {
         <MetricCard icon={<Activity className="h-4 w-4" />} label="Uptime" value={`${Math.floor(metrics.uptime_seconds / 3600)}h`} pct={100} />
       </div>
 
-      <Card className="telemetry-card">
-        <div className="flex items-center justify-between mb-4">
+      <Card className="telemetry-card min-w-0">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
           <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2"><Clock className="h-4 w-4 text-primary" /> Tonight</h3>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <StatusBadge variant={schedulePreview?.active ? "active" : schedulePreview?.enabled ? "idle" : "warn"} pulse={schedulePreview?.active}>{schedulePreview?.active ? "window active" : schedulePreview?.enabled ? "waiting" : "disabled"}</StatusBadge>
             <span className="text-xs text-muted-foreground font-mono-data">{schedulePreview?.timezone ?? observatory.timezone}</span>
           </div>
         </div>
-        <div className="grid grid-cols-4 lg:grid-cols-8 gap-2 text-xs font-mono-data">
-          {Object.entries(timeline).map(([key, value]) => <div key={key}><p className="text-muted-foreground">{key}</p><p>{formatTimelineValue(value)}</p></div>)}
+        <div className="grid grid-cols-2 gap-2 text-xs font-mono-data sm:grid-cols-4 xl:grid-cols-8">
+          {Object.entries(timeline).map(([key, value]) => (
+            <div key={key} className="min-w-0 rounded-md bg-muted/20 p-2">
+              <p className="truncate text-[10px] uppercase tracking-wider text-muted-foreground">{formatTimelineLabel(key)}</p>
+              <p className="mt-1 text-sm">{formatTimelineValue(value)}</p>
+            </div>
+          ))}
         </div>
-        <div className="mt-4 pt-4 border-t border-border flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs font-mono-data">
+        <div className="mt-4 pt-4 border-t border-border grid grid-cols-1 gap-2 text-xs font-mono-data sm:grid-cols-3">
           <span className="text-muted-foreground">Capture window: {formatScheduleTime(schedulePreview?.window_start)} to {formatScheduleTime(schedulePreview?.window_end)}</span>
           <span>Next: {schedulePreview?.next_transition_at ? `${schedulePreview.next_state} ${formatDistanceToNow(new Date(schedulePreview.next_transition_at), { addSuffix: true })}` : "-"}</span>
           <span>Capture: {formatNextCapture(schedulePreview)}</span>
@@ -199,17 +204,17 @@ export default function Dashboard() {
       </Card>
 
       <Card className="telemetry-card space-y-4">
-        <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
           <div>
             <p className="text-xs uppercase tracking-widest text-muted-foreground">Capture queue</p>
             <h3 className="text-lg font-semibold">Sequence capture</h3>
           </div>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 lg:min-w-[680px]">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:min-w-[680px] xl:grid-cols-5">
             <NumberField label="Frames" value={sequenceForm.count} min={1} max={100} onChange={(count) => setSequenceForm({ ...sequenceForm, count })} />
             <NumberField label="Delay s" value={sequenceForm.delay_seconds} min={0} max={3600} onChange={(delay_seconds) => setSequenceForm({ ...sequenceForm, delay_seconds })} />
             <NumberField label="Exposure ms" value={sequenceForm.exposure_ms} min={1} onChange={(exposure_ms) => setSequenceForm({ ...sequenceForm, exposure_ms })} />
             <NumberField label="Gain" value={sequenceForm.gain} min={0} step={0.1} onChange={(gain) => setSequenceForm({ ...sequenceForm, gain })} />
-            <Button onClick={queueSequence} className="bg-gradient-primary text-primary-foreground md:self-end"><Play className="h-4 w-4 mr-2" /> Queue</Button>
+            <Button onClick={queueSequence} className="col-span-2 bg-gradient-primary text-primary-foreground sm:col-span-4 xl:col-span-1 xl:self-end"><Play className="h-4 w-4 mr-2" /> Queue</Button>
           </div>
         </div>
         <div className="space-y-3">
@@ -217,12 +222,12 @@ export default function Dashboard() {
             <div key={job.id} className="rounded-md border border-border bg-muted/20 p-3">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                 <div className="min-w-0">
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <p className="font-medium capitalize">{formatJobType(job)}</p>
                     <StatusBadge variant={jobStatusVariant(job.status)}>{job.status}</StatusBadge>
                   </div>
-                  <p className="text-xs text-muted-foreground font-mono-data truncate">{formatJobDetail(job)}</p>
-                  <p className="text-xs text-muted-foreground font-mono-data">{formatJobTiming(job)}</p>
+                  <p className="text-xs text-muted-foreground font-mono-data break-all sm:break-normal sm:truncate">{formatJobDetail(job)}</p>
+                  <p className="text-xs text-muted-foreground font-mono-data break-words">{formatJobTiming(job)}</p>
                 </div>
                 <span className="text-xs font-mono-data text-muted-foreground">{Math.round((job.progress ?? 0) * 100)}%</span>
               </div>
@@ -382,6 +387,20 @@ function formatCoordinate(value: number) {
 
 function formatTimelineValue(value?: Date | null) {
   return isValidDate(value) ? format(value, "HH:mm") : "-";
+}
+
+function formatTimelineLabel(value: string) {
+  const labels: Record<string, string> = {
+    sunset: "Sunset",
+    civilDusk: "Civil dusk",
+    nauticalDusk: "Nautical dusk",
+    astronomicalDusk: "Astro dusk",
+    astronomicalDawn: "Astro dawn",
+    nauticalDawn: "Nautical dawn",
+    civilDawn: "Civil dawn",
+    sunrise: "Sunrise",
+  };
+  return labels[value] ?? value;
 }
 
 function isValidDate(value?: Date | null): value is Date {

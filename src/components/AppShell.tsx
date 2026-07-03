@@ -38,7 +38,7 @@ export function AppShell() {
   };
 
   return (
-    <div className="relative min-h-screen flex">
+    <div className="relative min-h-screen flex overflow-x-hidden">
       <Starfield />
 
       {/* Sidebar */}
@@ -100,7 +100,7 @@ export function AppShell() {
       )}
 
       {/* Main */}
-      <div className="flex-1 min-w-0 flex flex-col relative z-10">
+      <div className="flex-1 min-w-0 max-w-full flex flex-col relative z-10">
         <header className="h-16 lg:hidden flex items-center justify-between px-4 border-b border-border bg-background/80 backdrop-blur sticky top-0 z-20">
           <Button variant="ghost" size="icon" onClick={() => setOpen(!open)}>
             {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
@@ -111,7 +111,7 @@ export function AppShell() {
           </div>
           <div className="w-9" />
         </header>
-        <main className="flex-1 p-4 lg:p-8 max-w-[1600px] mx-auto w-full animate-fade-in">
+        <main className="flex-1 w-full max-w-[1600px] min-w-0 mx-auto overflow-x-hidden p-3 sm:p-4 lg:p-8 animate-fade-in">
           <Outlet />
         </main>
       </div>

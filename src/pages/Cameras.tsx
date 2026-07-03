@@ -112,15 +112,15 @@ export default function Cameras() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-end justify-between gap-4">
-        <div>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div className="min-w-0">
           <p className="text-xs uppercase tracking-widest text-muted-foreground">Hardware</p>
           <h1 className="text-3xl font-semibold tracking-tight">Cameras</h1>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={runDetect}><Radar className="h-4 w-4 mr-2" /> Detect</Button>
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:justify-end">
+          <Button variant="outline" onClick={runDetect} className="min-w-0"><Radar className="h-4 w-4 mr-2" /> Detect</Button>
           <Dialog open={dlgOpen} onOpenChange={setDlgOpen}>
-            <DialogTrigger asChild><Button onClick={() => setEditing(null)}><Plus className="h-4 w-4 mr-2" /> New camera</Button></DialogTrigger>
+            <DialogTrigger asChild><Button onClick={() => setEditing(null)} className="min-w-0"><Plus className="h-4 w-4 mr-2" /> New camera</Button></DialogTrigger>
             <CameraDialog editing={editing} onSave={saveCamera} />
           </Dialog>
         </div>
@@ -148,13 +148,13 @@ export default function Cameras() {
         </Card>
 
         {selected && (
-          <Card className="telemetry-card space-y-6">
-            <div className="flex items-start justify-between gap-4">
-              <div>
+          <Card className="telemetry-card min-w-0 space-y-6">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0">
                 <h2 className="text-xl font-semibold">{selected.name}</h2>
                 <p className="text-xs text-muted-foreground font-mono-data mt-1">{selected.model ?? "-"} - adapter {selected.adapter}</p>
               </div>
-              <div className="flex gap-2">
+              <div className="grid grid-cols-2 gap-2 sm:flex sm:shrink-0">
                 <Button variant="outline" size="sm" onClick={runTest}><TestIcon className="h-4 w-4 mr-2" /> Test shot</Button>
                 <Button variant="outline" size="sm" onClick={() => { setEditing(selected); setDlgOpen(true); }}><Pencil className="h-4 w-4 mr-2" /> Edit</Button>
               </div>
@@ -208,7 +208,7 @@ export default function Cameras() {
             )}
 
             <div className="flex justify-end">
-              <Button onClick={saveSettings} className="bg-gradient-primary text-primary-foreground">Save {profileMode === "nighttime" ? "night" : "day"} profile</Button>
+              <Button onClick={saveSettings} className="w-full bg-gradient-primary text-primary-foreground sm:w-auto">Save {profileMode === "nighttime" ? "night" : "day"} profile</Button>
             </div>
           </Card>
         )}
@@ -228,7 +228,7 @@ function ToggleRow({ label, description, help, checked, onChange }: { label: str
         <ConfigLabel label={label} help={help} />
         <p className="text-xs text-muted-foreground mt-0.5">{description}</p>
       </div>
-      <Switch checked={checked} onCheckedChange={onChange} />
+      <Switch checked={checked} onCheckedChange={onChange} className="shrink-0" />
     </div>
   );
 }

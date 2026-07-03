@@ -54,9 +54,16 @@ export default function Logs() {
         <div className="space-y-2"><Label>Level</Label><Select value={level} onValueChange={setLevel}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{["all", "debug", "info", "warning", "error"].map((l) => <SelectItem key={l} value={l}>{l}</SelectItem>)}</SelectContent></Select></div>
         <div className="space-y-2 md:col-span-2"><Label>Source filter</Label><Input value={source} onChange={(e) => setSource(e.target.value)} placeholder="camera, scheduler, api" /></div>
       </Card>
-      <Card className="telemetry-card p-0 overflow-hidden">
+      <Card className="telemetry-card min-w-0 p-0 overflow-hidden">
         <div className="font-mono-data text-xs divide-y divide-border/60">
-          {logs.map((l) => <div key={l.id} className="px-4 py-2 grid grid-cols-[170px_70px_120px_1fr] gap-3 hover:bg-muted/30"><span className="text-muted-foreground">{format(new Date(l.created_at), "yyyy-MM-dd HH:mm:ss")}</span><span className={`uppercase tracking-wider ${LEVEL_COLOR[l.level] ?? ""}`}>{l.level}</span><span className="text-primary truncate">{l.source}</span><span className="text-foreground truncate">{l.message}</span></div>)}
+          {logs.map((l) => (
+            <div key={l.id} className="grid grid-cols-2 gap-x-3 gap-y-1 px-4 py-3 hover:bg-muted/30 sm:grid-cols-[170px_76px_120px_minmax(0,1fr)] sm:items-center sm:py-2">
+              <span className="text-muted-foreground">{format(new Date(l.created_at), "yyyy-MM-dd HH:mm:ss")}</span>
+              <span className={`text-right uppercase tracking-wider sm:text-left ${LEVEL_COLOR[l.level] ?? ""}`}>{l.level}</span>
+              <span className="min-w-0 text-primary sm:truncate">{l.source}</span>
+              <span className="col-span-2 min-w-0 break-words text-foreground sm:col-span-1 sm:truncate">{l.message}</span>
+            </div>
+          ))}
           {logs.length === 0 && <p className="p-6 text-sm text-muted-foreground">No log entries.</p>}
         </div>
         {nextCursor && <div className="border-t border-border/60 p-3"><Button variant="outline" className="w-full" onClick={loadMore} disabled={loadingMore}>{loadingMore ? "Loading..." : "Load more"}</Button></div>}
