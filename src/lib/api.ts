@@ -71,11 +71,13 @@ export const SkyApi = {
   putSchedule: (body: ScheduleRow) => api<ScheduleRow>("/api/v1/schedule", { method: "PUT", body: JSON.stringify(body) }),
   schedulePreview: (body: Partial<ScheduleRow> = {}) => api<SchedulePreview>("/api/v1/schedule/preview-tonight", { method: "POST", body: JSON.stringify(body) }),
   products: () => api<ProductRow[]>("/api/v1/products"),
+  productsPage: (query = "") => api<ProductPage>(`/api/v1/products/page${query}`),
   darkFrames: () => api<DarkFrameRow[]>("/api/v1/dark-frames"),
   captureDarkFrameSet: (body: DarkFrameCapturePayload) => api<CaptureJob>("/api/v1/dark-frames/capture", { method: "POST", body: JSON.stringify(body) }),
   activateDarkFrame: (id: string) => api<{ id: string; camera_id: string; active: boolean; settings: Record<string, any> }>(`/api/v1/dark-frames/${id}/activate`, { method: "POST" }),
   deleteDarkFrame: (id: string) => api<ImageDeleteResult>(`/api/v1/dark-frames/${id}`, { method: "DELETE" }),
   processingJobs: () => api<ProcessingJob[]>("/api/v1/processing/jobs"),
+  processingJobsPage: (query = "") => api<ProcessingJobPage>(`/api/v1/processing/jobs/page${query}`),
   createProduct: (type: string, body: any) => api<ProcessingJob>(`/api/v1/products/${type}`, { method: "POST", body: JSON.stringify(body) }),
   deleteProduct: (id: string) => api<ProductDeleteResult>(`/api/v1/products/${id}`, { method: "DELETE" }),
   runProductRetention: (days?: number) => api<ProductRetentionResult>(`/api/v1/products/retention/run${days === undefined ? "" : `?days=${encodeURIComponent(days)}`}`, { method: "POST" }),
@@ -160,6 +162,7 @@ export interface SchedulePreview {
   seconds_until_due?: number | null;
 }
 export interface ProductRow { id: string; type: string; day_key: string; file_path: string | null; thumbnail_path: string | null; status: string; metadata: any; created_at: string; }
+export interface ProductPage { items: ProductRow[]; next_cursor: string | null; has_more: boolean; limit: number; filters: { type: string | null; status: string | null; day_key: string | null; created_from: string | null; created_to: string | null; }; }
 export interface DarkFrameRow { id: string; camera_id?: string | null; captured_at: string; day_key: string; file_path: string; thumbnail_path?: string | null; format: string; width?: number | null; height?: number | null; size_bytes?: number | null; exposure_ms?: number | null; gain?: number | null; frame_count?: number | null; pixel_format?: string | null; bit_depth?: number | null; label?: string | null; active?: boolean; metadata: any; created_at: string; }
 export interface DarkFrameCapturePayload { camera_id?: string | null; label?: string | null; exposure_ms: number; gain: number; width?: number | null; height?: number | null; format?: string; mode?: string; count: number; set_active?: boolean; settings?: Record<string, any>; }
 export interface ProductDeleteResult { deleted: string; deleted_files: string[]; missing_files: string[]; skipped_files: ImageSkippedFile[]; }
@@ -179,6 +182,7 @@ export interface UploadRetryResult { status: string; processing_job_id: string |
 export interface AllskyPreview { path: string; exists: boolean; counts: Record<string, number>; settings: Record<string, any>; unsupported_settings: { path: string; key?: string; keys?: string[]; count?: number; reason: string }[]; will_delete_original: boolean; import_plan: Record<string, any>; }
 export interface AllskyRollbackResult { migration_job_id: string; deleted_images: number; deleted_dark_frames: number; deleted_products: number; deleted_image_ids: string[]; deleted_dark_frame_ids: string[]; deleted_product_ids: string[]; deleted_files: string[]; missing_files: string[]; skipped_files: ImageSkippedFile[]; }
 export interface ProcessingJob { id: string; type: string; status: string; input: any; output?: any; error?: string | null; progress: number; created_at: string; started_at?: string | null; completed_at?: string | null; }
+export interface ProcessingJobPage { items: ProcessingJob[]; next_cursor: string | null; has_more: boolean; limit: number; filters: { type: string | null; status: string | null; created_from: string | null; created_to: string | null; }; }
 export interface CaptureJob { id: string; type: string; status: string; request: any; result?: any; error?: string | null; progress: number; created_at: string; started_at?: string | null; completed_at?: string | null; }
 export interface LogRow { id: string; level: string; source: string; message: string; context: any; created_at: string; }
 export interface LogPage { items: LogRow[]; next_cursor: string | null; has_more: boolean; limit: number; filters: { level: string | null; source: string | null; }; }

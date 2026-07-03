@@ -928,6 +928,59 @@ def test_private_download_routes_require_read_images_scope(tmp_path):
         assert allowed.status_code == 200, allowed.text
 
 
+def test_processing_and_product_page_filters_and_cursors(tmp_path):
+    client = make_client(tmp_path)
+    token = login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+    from skyweaver.db import json_dumps, session
+
+    product_file = tmp_path / "page-product.jpg"
+    product_file.write_bytes(b"product")
+    with session() as conn:
+        conn.execute(
+            "INSERT INTO processing_jobs (id, type, status, input, progress, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            ("job-old", "timelapse", "completed", json_dumps({"day_key": "20260701"}), 1, "2026-07-01T01:00:00+00:00"),
+        )
+        conn.execute(
+            "INSERT INTO processing_jobs (id, type, status, input, progress, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            ("job-new", "timelapse", "completed", json_dumps({"day_key": "20260702"}), 1, "2026-07-02T01:00:00+00:00"),
+        )
+        conn.execute(
+            "INSERT INTO processing_jobs (id, type, status, input, progress, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            ("job-skipped", "keogram", "pending", json_dumps({"day_key": "20260702"}), 0, "2026-07-03T01:00:00+00:00"),
+        )
+        conn.execute(
+            "INSERT INTO night_products (id, type, day_key, file_path, thumbnail_path, status, metadata, created_at) VALUES (?, ?, ?, ?, NULL, ?, ?, ?)",
+            ("product-old", "keogram", "20260701", str(product_file), "completed", json_dumps({}), "2026-07-01T02:00:00+00:00"),
+        )
+        conn.execute(
+            "INSERT INTO night_products (id, type, day_key, file_path, thumbnail_path, status, metadata, created_at) VALUES (?, ?, ?, ?, NULL, ?, ?, ?)",
+            ("product-new", "keogram", "20260702", str(product_file), "completed", json_dumps({}), "2026-07-02T02:00:00+00:00"),
+        )
+        conn.execute(
+            "INSERT INTO night_products (id, type, day_key, file_path, thumbnail_path, status, metadata, created_at) VALUES (?, ?, ?, ?, NULL, ?, ?, ?)",
+            ("product-skipped", "startrail", "20260702", str(product_file), "failed", json_dumps({}), "2026-07-03T02:00:00+00:00"),
+        )
+
+    jobs_page = client.get("/api/v1/processing/jobs/page?limit=1&type=timelapse&status=completed", headers=headers)
+    assert jobs_page.status_code == 200, jobs_page.text
+    jobs_data = jobs_page.json()["data"]
+    assert [item["id"] for item in jobs_data["items"]] == ["job-new"]
+    assert jobs_data["has_more"] is True
+    assert jobs_data["filters"]["type"] == "timelapse"
+    next_jobs = client.get(f"/api/v1/processing/jobs/page?limit=1&type=timelapse&status=completed&cursor={jobs_data['next_cursor']}", headers=headers)
+    assert [item["id"] for item in next_jobs.json()["data"]["items"]] == ["job-old"]
+    assert client.get("/api/v1/processing/jobs/page?cursor=not-a-cursor", headers=headers).status_code == 400
+
+    products_page = client.get("/api/v1/products/page?limit=1&type=keogram&status=completed&day_key=20260702", headers=headers)
+    assert products_page.status_code == 200, products_page.text
+    products_data = products_page.json()["data"]
+    assert [item["id"] for item in products_data["items"]] == ["product-new"]
+    assert products_data["has_more"] is False
+    assert products_data["filters"]["day_key"] == "20260702"
+    assert client.get("/api/v1/products/page?cursor=not-a-cursor", headers=headers).status_code == 400
+
+
 def test_setup_environment_seeds_admin_camera_schedule_and_settings(tmp_path, monkeypatch):
     monkeypatch.setenv("SKYWEAVER_ADMIN_USERNAME", "setup-admin")
     monkeypatch.setenv("SKYWEAVER_ADMIN_PASSWORD", "setup-secret")

@@ -1681,6 +1681,10 @@ def images_page(
 
 
 def parse_image_time_filter(value: str | None, field_name: str) -> str | None:
+    return parse_iso_time_filter(value, field_name)
+
+
+def parse_iso_time_filter(value: str | None, field_name: str) -> str | None:
     if value is None:
         return None
     try:
@@ -1708,6 +1712,24 @@ def decode_image_cursor(cursor: str) -> tuple[str, str]:
     if not isinstance(captured_at, str) or not captured_at or not isinstance(image_id, str) or not image_id:
         raise HTTPException(400, "Invalid image cursor")
     return captured_at, image_id
+
+
+def encode_created_cursor(row: dict[str, Any]) -> str:
+    payload = json.dumps({"created_at": row["created_at"], "id": row["id"]}, separators=(",", ":")).encode("utf-8")
+    return base64.urlsafe_b64encode(payload).decode("ascii").rstrip("=")
+
+
+def decode_created_cursor(cursor: str, label: str) -> tuple[str, str]:
+    try:
+        padded = cursor + "=" * (-len(cursor) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8"))
+    except (binascii.Error, UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+        raise HTTPException(400, f"Invalid {label} cursor") from exc
+    created_at = payload.get("created_at") if isinstance(payload, dict) else None
+    row_id = payload.get("id") if isinstance(payload, dict) else None
+    if not isinstance(created_at, str) or not created_at or not isinstance(row_id, str) or not row_id:
+        raise HTTPException(400, f"Invalid {label} cursor")
+    return created_at, row_id
 
 
 @router.get("/images/latest")
@@ -1969,6 +1991,58 @@ def processing_jobs(_principal: Annotated[dict, Depends(require_scope("read:imag
     return ok(rows)
 
 
+@router.get("/processing/jobs/page")
+def processing_jobs_page(
+    limit: int = Query(50, ge=1, le=200),
+    cursor: Annotated[str | None, Query(min_length=1, max_length=500)] = None,
+    type: Annotated[str | None, Query(min_length=1, max_length=80)] = None,
+    status: Annotated[str | None, Query(min_length=1, max_length=40)] = None,
+    created_from: Annotated[str | None, Query(min_length=1, max_length=80)] = None,
+    created_to: Annotated[str | None, Query(min_length=1, max_length=80)] = None,
+    _principal: Annotated[dict, Depends(require_scope("read:images"))] = None,
+):
+    created_from_value = parse_iso_time_filter(created_from, "created_from")
+    created_to_value = parse_iso_time_filter(created_to, "created_to")
+    if created_from_value and created_to_value and created_from_value > created_to_value:
+        raise HTTPException(400, "created_from must be before created_to")
+    clauses: list[str] = []
+    params: list[Any] = []
+    if type:
+        clauses.append("type=?")
+        params.append(type.replace("-", "_"))
+    if status:
+        clauses.append("status=?")
+        params.append(status)
+    if created_from_value:
+        clauses.append("created_at>=?")
+        params.append(created_from_value)
+    if created_to_value:
+        clauses.append("created_at<=?")
+        params.append(created_to_value)
+    if cursor:
+        created_at, row_id = decode_created_cursor(cursor, "processing job")
+        clauses.append("(created_at < ? OR (created_at = ? AND id < ?))")
+        params.extend([created_at, created_at, row_id])
+    where = "WHERE " + " AND ".join(clauses) if clauses else ""
+    with session() as conn:
+        rows = all_rows(conn, f"SELECT * FROM processing_jobs {where} ORDER BY created_at DESC, id DESC LIMIT ?", (*params, limit + 1))
+    items = rows[:limit]
+    has_more = len(rows) > limit
+    next_cursor = encode_created_cursor(items[-1]) if has_more and items else None
+    return ok({
+        "items": items,
+        "next_cursor": next_cursor,
+        "has_more": has_more,
+        "limit": limit,
+        "filters": {
+            "type": type,
+            "status": status,
+            "created_from": created_from_value,
+            "created_to": created_to_value,
+        },
+    })
+
+
 @router.get("/processing/jobs/{job_id}")
 def processing_job(job_id: str, _principal: Annotated[dict, Depends(require_scope("read:images"))]):
     with session() as conn:
@@ -1983,6 +2057,63 @@ def products(_principal: Annotated[dict, Depends(require_scope("read:images"))])
     with session() as conn:
         rows = all_rows(conn, "SELECT * FROM night_products ORDER BY created_at DESC")
     return ok(rows)
+
+
+@router.get("/products/page")
+def products_page(
+    limit: int = Query(50, ge=1, le=200),
+    cursor: Annotated[str | None, Query(min_length=1, max_length=500)] = None,
+    type: Annotated[str | None, Query(min_length=1, max_length=80)] = None,
+    status: Annotated[str | None, Query(min_length=1, max_length=40)] = None,
+    day_key: Annotated[str | None, Query(min_length=1, max_length=20)] = None,
+    created_from: Annotated[str | None, Query(min_length=1, max_length=80)] = None,
+    created_to: Annotated[str | None, Query(min_length=1, max_length=80)] = None,
+    _principal: Annotated[dict, Depends(require_scope("read:images"))] = None,
+):
+    created_from_value = parse_iso_time_filter(created_from, "created_from")
+    created_to_value = parse_iso_time_filter(created_to, "created_to")
+    if created_from_value and created_to_value and created_from_value > created_to_value:
+        raise HTTPException(400, "created_from must be before created_to")
+    clauses: list[str] = []
+    params: list[Any] = []
+    if type:
+        clauses.append("type=?")
+        params.append(type.replace("-", "_"))
+    if status:
+        clauses.append("status=?")
+        params.append(status)
+    if day_key:
+        clauses.append("day_key=?")
+        params.append(day_key)
+    if created_from_value:
+        clauses.append("created_at>=?")
+        params.append(created_from_value)
+    if created_to_value:
+        clauses.append("created_at<=?")
+        params.append(created_to_value)
+    if cursor:
+        created_at, row_id = decode_created_cursor(cursor, "product")
+        clauses.append("(created_at < ? OR (created_at = ? AND id < ?))")
+        params.extend([created_at, created_at, row_id])
+    where = "WHERE " + " AND ".join(clauses) if clauses else ""
+    with session() as conn:
+        rows = all_rows(conn, f"SELECT * FROM night_products {where} ORDER BY created_at DESC, id DESC LIMIT ?", (*params, limit + 1))
+    items = rows[:limit]
+    has_more = len(rows) > limit
+    next_cursor = encode_created_cursor(items[-1]) if has_more and items else None
+    return ok({
+        "items": items,
+        "next_cursor": next_cursor,
+        "has_more": has_more,
+        "limit": limit,
+        "filters": {
+            "type": type,
+            "status": status,
+            "day_key": day_key,
+            "created_from": created_from_value,
+            "created_to": created_to_value,
+        },
+    })
 
 
 @router.post("/products/retention/run")

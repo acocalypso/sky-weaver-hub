@@ -51,7 +51,7 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 - Capture state/start/stop/pause/resume/test-shot/single/sequence/jobs
 - Schedule get/put/preview/recalculate
 - Image list/latest/detail/download/delete/reprocess/days/day and retention cleanup
-- Cursor-paged authenticated image and log feeds for mobile/operator clients at `/api/v1/images/page` and `/api/v1/logs/page`
+- Cursor-paged authenticated image, log, processing-job, and product feeds for mobile/operator clients at `/api/v1/images/page`, `/api/v1/logs/page`, `/api/v1/processing/jobs/page`, and `/api/v1/products/page`
 - Public latest and public product metadata/download/thumbnail endpoints gated by `public_page.enabled`
 - Products list/detail/queue/download/delete and retention cleanup
 - Dark-frame calibration settings, list/delete endpoints, daemon-owned dark-frame set capture, active set selection, median master generation, and capture-time dark subtraction
@@ -239,7 +239,7 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 
 ### API and Mobile Readiness
 
-- Cursor pagination exists for authenticated images and logs; authenticated image pages support date range, camera, mode, and bad-image filters. Add cursor pagination to additional large collections where useful.
+- Cursor pagination exists for authenticated images, logs, processing jobs, and products. Authenticated image pages support date range, camera, mode, and bad-image filters; processing/product pages support type/status/date filters, with products also supporting `day_key`.
 - Expand filters:
   - product type
   - processing status
