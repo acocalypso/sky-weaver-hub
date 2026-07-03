@@ -56,6 +56,31 @@ def test_analyze_image_ignores_large_bright_blobs_for_star_count(tmp_path: Path)
     assert analysis["star_count"] == 1
 
 
+def test_analyze_image_estimates_cloud_score(tmp_path: Path):
+    from skyweaver.services.capture import analyze_image
+
+    clear_path = tmp_path / "clear.png"
+    clear = Image.new("RGB", (128, 96), (4, 5, 9))
+    clear_draw = ImageDraw.Draw(clear)
+    for x, y in [(12, 10), (36, 22), (70, 40), (100, 80), (50, 70), (118, 16)]:
+        clear_draw.point((x, y), fill=(255, 255, 255))
+    clear.save(clear_path)
+
+    cloudy_path = tmp_path / "cloudy.png"
+    cloudy = Image.new("RGB", (128, 96), (88, 92, 98))
+    cloudy_draw = ImageDraw.Draw(cloudy)
+    for x in range(0, 128, 8):
+        cloudy_draw.line((x, 0, min(127, x + 30), 95), fill=(128, 132, 136), width=6)
+    cloudy.save(cloudy_path)
+
+    clear_analysis = analyze_image(clear_path)
+    cloudy_analysis = analyze_image(cloudy_path)
+
+    assert clear_analysis["cloud_score"] < 0.25
+    assert cloudy_analysis["cloud_score"] > clear_analysis["cloud_score"]
+    assert cloudy_analysis["cloud_score"] > 0.35
+
+
 def test_daemon_respects_interval(tmp_path: Path):
     client = make_client(tmp_path)
     token = login(client)

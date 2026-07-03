@@ -1055,7 +1055,8 @@ def analyze_image(path: Path) -> dict[str, Any]:
         stat = ImageStat.Stat(gray)
         mean = stat.mean[0] / 255
         star_count = estimate_star_count(gray)
-    return {"mean_brightness": round(mean, 4), "star_count": star_count, "cloud_score": None, "bad_image": mean < 0.01 or mean > 0.98}
+        cloud_score = estimate_cloud_score(gray, mean, star_count)
+    return {"mean_brightness": round(mean, 4), "star_count": star_count, "cloud_score": cloud_score, "bad_image": mean < 0.01 or mean > 0.98}
 
 
 def estimate_star_count(gray: Image.Image) -> int:
@@ -1069,8 +1070,7 @@ def estimate_star_count(gray: Image.Image) -> int:
     mean = stat.mean[0]
     stddev = stat.stddev[0]
     threshold = min(250, max(180, int(mean + max(30, stddev * 2.8))))
-    flattened_data = getattr(image, "get_flattened_data", None)
-    pixels = list(flattened_data() if flattened_data else image.getdata())
+    pixels = image_pixels(image)
     width, height = image.size
     visited = bytearray(width * height)
     stars = 0
@@ -1099,6 +1099,43 @@ def estimate_star_count(gray: Image.Image) -> int:
         if 1 <= count <= 24 and peak >= threshold:
             stars += 1
     return stars
+
+
+def estimate_cloud_score(gray: Image.Image, mean_brightness: float | None = None, star_count: int | None = None) -> float:
+    image = gray.convert("L")
+    max_dimension = max(image.size)
+    if max_dimension > 256:
+        scale = 256 / max_dimension
+        image = image.resize((max(1, int(image.width * scale)), max(1, int(image.height * scale))), Image.Resampling.BILINEAR)
+
+    stat = ImageStat.Stat(image)
+    mean = mean_brightness if mean_brightness is not None else stat.mean[0] / 255
+    contrast = min(1.0, (stat.stddev[0] / 64.0))
+    pixels = image_pixels(image)
+    width, height = image.size
+    if width < 2 or height < 2:
+        return round(max(0.0, min(1.0, mean)), 4)
+
+    total_delta = 0
+    samples = 0
+    for y in range(0, height - 1, 2):
+        row = y * width
+        next_row = (y + 1) * width
+        for x in range(0, width - 1, 2):
+            value = pixels[row + x]
+            total_delta += abs(value - pixels[row + x + 1])
+            total_delta += abs(value - pixels[next_row + x])
+            samples += 2
+    texture = min(1.0, (total_delta / max(samples, 1)) / 48.0)
+    star_factor = max(0.0, 1.0 - min((star_count or 0), 60) / 60.0)
+    brightness_factor = min(1.0, max(0.0, (mean - 0.03) / 0.35))
+    score = 0.45 * brightness_factor + 0.25 * contrast + 0.2 * texture + 0.1 * star_factor
+    return round(max(0.0, min(1.0, score)), 4)
+
+
+def image_pixels(image: Image.Image) -> list[int]:
+    flattened_data = getattr(image, "get_flattened_data", None)
+    return list(flattened_data() if flattened_data else image.getdata())
 
 
 def metadata_value(value: Any) -> Any:
