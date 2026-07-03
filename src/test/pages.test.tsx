@@ -670,6 +670,8 @@ describe("main pages", () => {
     expect(await screen.findByText("Auto exposure")).toBeInTheDocument();
     expect(screen.getByText("Auto gain")).toBeInTheDocument();
     expect(screen.getByText("Auto white balance")).toBeInTheDocument();
+    expect(screen.getByText("Ramp min exposure (ms)")).toBeInTheDocument();
+    expect(screen.getByText("Saturation limit (%)")).toBeInTheDocument();
     expect(screen.getAllByDisplayValue("1").some((field) => field instanceof HTMLInputElement && field.disabled)).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: /test shot/i }));
     await waitFor(() => expect(SkyApi.testShot).toHaveBeenCalledWith(expect.objectContaining({

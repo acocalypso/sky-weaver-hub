@@ -86,12 +86,17 @@ def test_analyze_image_respects_configured_bad_image_thresholds(tmp_path: Path):
 
     image_path = tmp_path / "midtone.png"
     Image.new("RGB", (64, 48), (128, 128, 128)).save(image_path)
+    saturated_path = tmp_path / "saturated.png"
+    Image.new("RGB", (64, 48), (255, 255, 255)).save(saturated_path)
 
     default_analysis = analyze_image(image_path)
     strict_brightness = analyze_image(image_path, {"bad_image_min_brightness": 0.75})
     strict_cloud = analyze_image(image_path, {"bad_image_max_cloud_score": 0.1})
+    saturated_analysis = analyze_image(saturated_path)
 
     assert default_analysis["bad_image"] is False
+    assert default_analysis["saturated_fraction"] == 0
+    assert saturated_analysis["saturated_fraction"] == 1
     assert strict_brightness["bad_image"] is True
     assert strict_cloud["bad_image"] is True
 
@@ -785,6 +790,88 @@ def test_scheduled_capture_due_uses_previous_start_time(tmp_path: Path):
     assert timing["capture_due"] is True
     assert timing["last_scheduled_capture_at"] == now.isoformat()
     assert timing["last_scheduled_capture_started_at"] == (now - timedelta(seconds=101)).isoformat()
+
+
+def test_schedule_command_uses_exposure_ramp_state(tmp_path: Path):
+    client = make_client(tmp_path)
+    token = login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+    assert client.put(
+        "/api/v1/schedule",
+        headers=headers,
+        json={
+            "enabled": True,
+            "start_mode": "fixed",
+            "end_mode": "fixed",
+            "fixed_start_time": "00:00",
+            "fixed_end_time": "23:59",
+            "sun_angle": -6,
+            "timezone": "UTC",
+            "latitude": 0,
+            "longitude": 0,
+            "interval_seconds": 30,
+            "exposure_ramping_enabled": True,
+        },
+    ).status_code == 200
+
+    from skyweaver.db import json_dumps, now_iso, session
+    from skyweaver.services.capture import schedule_command, write_exposure_ramp_state
+
+    with session() as conn:
+        camera = conn.execute("SELECT id FROM cameras WHERE is_primary=1 LIMIT 1").fetchone()
+        profile = conn.execute("SELECT id FROM camera_profiles WHERE camera_id=? AND mode='nighttime'", (camera["id"],)).fetchone()
+        settings = {
+            "capture_enabled": True,
+            "save_enabled": True,
+            "interval_seconds": 30,
+            "manual_exposure_ms": 10000,
+            "gain": 4,
+            "ramp_min_exposure_ms": 1,
+            "ramp_max_exposure_ms": 10000,
+            "ramp_min_gain": 1,
+            "ramp_max_gain": 4,
+        }
+        conn.execute("UPDATE camera_profiles SET settings=? WHERE id=?", (json_dumps(settings), profile["id"]))
+
+    command = schedule_command(camera_id=camera["id"], mode="night")
+    assert command.exposure_ms == 1
+    assert command.gain == 1
+    assert command.settings["auto_exposure"] is False
+    assert command.settings["exposure_ramping_active"] is True
+
+    write_exposure_ramp_state(camera["id"], "night", {"next_exposure_ms": 256, "next_gain": 2, "updated_at": now_iso()})
+    command = schedule_command(camera_id=camera["id"], mode="night")
+    assert command.exposure_ms == 256
+    assert command.gain == 2
+
+
+def test_exposure_ramp_updates_next_exposure_from_brightness(tmp_path: Path):
+    client = make_client(tmp_path)
+    assert client.get("/api/v1/health").status_code == 200
+
+    from skyweaver.services.capture import CaptureCommand, read_exposure_ramp_state, update_exposure_ramp_state
+
+    command = CaptureCommand(
+        camera_id="camera-1",
+        exposure_ms=100,
+        gain=1,
+        mode="night",
+        settings={
+            "exposure_ramping_active": True,
+            "mean_target": 0.25,
+            "mean_threshold": 0.02,
+            "ramp_max_step_factor": 4,
+            "ramp_bounds": {"min_exposure_ms": 1, "max_exposure_ms": 10000, "min_gain": 1, "max_gain": 4},
+        },
+    )
+    state = update_exposure_ramp_state("camera-1", command, {"analysis": {"mean_brightness": 0.05, "saturated_fraction": 0}})
+    assert state is not None
+    assert state["next_exposure_ms"] == 400
+    assert read_exposure_ramp_state("camera-1", "night")["next_exposure_ms"] == 400
+
+    bright_state = update_exposure_ramp_state("camera-1", command, {"analysis": {"mean_brightness": 0.8, "saturated_fraction": 0.2}})
+    assert bright_state is not None
+    assert bright_state["next_exposure_ms"] == 25
 
 
 def test_daemon_heartbeat_is_reported_by_services(tmp_path: Path):

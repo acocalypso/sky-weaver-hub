@@ -23,6 +23,9 @@ CAPTURE_MODE_TO_PROFILE = {"day": "daytime", "night": "nighttime"}
 DEFAULT_BAD_IMAGE_MIN_BRIGHTNESS = 0.01
 DEFAULT_BAD_IMAGE_MAX_BRIGHTNESS = 0.98
 DEFAULT_BAD_IMAGE_MAX_CLOUD_SCORE: float | None = None
+DEFAULT_RAMP_MIN_EXPOSURE_MS = 1.0
+DEFAULT_RAMP_MAX_STEP_FACTOR = 4.0
+DEFAULT_RAMP_SATURATION_LIMIT = 0.02
 
 
 @dataclass
@@ -735,6 +738,10 @@ async def execute_capture(command: CaptureCommand, job_type: str = "manual", job
             "overlay": overlay_result,
             **result.metadata,
         }
+        if job_type == "scheduled":
+            ramp_state = update_exposure_ramp_state(cam["id"], command, metadata)
+            if ramp_state:
+                metadata["exposure_ramp"] = ramp_state
         sidecar = Path(str(result.file_path) + ".json")
         sidecar.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
         thumb = make_thumbnail(
@@ -887,17 +894,131 @@ def schedule_command(camera_id: str | None = None, mode: str = "night") -> Captu
     with session() as conn:
         camera = get_primary_camera(conn, camera_id)
         profile = profile_for_mode(conn, camera["id"], mode)
+        schedule = current_schedule()
     settings = profile["settings"] if profile else {}
+    exposure_ms = float(settings.get("manual_exposure_ms", 1000))
+    gain = float(settings.get("gain", 1.0))
+    if schedule.get("exposure_ramping_enabled"):
+        exposure_ms, gain, settings = apply_exposure_ramp_settings(camera["id"], mode, exposure_ms, gain, settings)
     return CaptureCommand(
         camera_id=camera["id"],
-        exposure_ms=float(settings.get("manual_exposure_ms", 1000)),
-        gain=float(settings.get("gain", 1.0)),
+        exposure_ms=exposure_ms,
+        gain=gain,
         width=settings.get("width", 1280),
         height=settings.get("height", 960),
         format=settings.get("format", "jpg"),
         mode=mode,
         settings=settings,
     )
+
+
+def ramp_state_key(camera_id: str, mode: str) -> str:
+    return f"capture_exposure_ramp:{camera_id}:{mode}"
+
+
+def read_exposure_ramp_state(camera_id: str, mode: str) -> dict[str, Any] | None:
+    with session() as conn:
+        row = conn.execute("SELECT value FROM system_settings WHERE key=?", (ramp_state_key(camera_id, mode),)).fetchone()
+    value = json_loads(row["value"], None) if row else None
+    return value if isinstance(value, dict) else None
+
+
+def write_exposure_ramp_state(camera_id: str, mode: str, value: dict[str, Any]) -> None:
+    with session() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO system_settings (key, value, updated_at) VALUES (?, ?, ?)",
+            (ramp_state_key(camera_id, mode), json_dumps(value), now_iso()),
+        )
+
+
+def numeric_setting(settings: dict[str, Any], key: str, default: float, minimum: float | None = None, maximum: float | None = None) -> float:
+    try:
+        value = float(settings.get(key, default))
+    except (TypeError, ValueError):
+        value = default
+    if minimum is not None:
+        value = max(minimum, value)
+    if maximum is not None:
+        value = min(maximum, value)
+    return value
+
+
+def ramp_bounds(settings: dict[str, Any], fallback_exposure_ms: float, fallback_gain: float) -> dict[str, float]:
+    max_exposure = numeric_setting(settings, "ramp_max_exposure_ms", numeric_setting(settings, "max_auto_exposure_ms", fallback_exposure_ms, 1), 1)
+    min_exposure = numeric_setting(settings, "ramp_min_exposure_ms", DEFAULT_RAMP_MIN_EXPOSURE_MS, 0.001, max_exposure)
+    max_gain = numeric_setting(settings, "ramp_max_gain", numeric_setting(settings, "max_auto_gain", fallback_gain, 0), 0)
+    min_gain = numeric_setting(settings, "ramp_min_gain", 1.0, 0, max_gain)
+    return {"min_exposure_ms": min_exposure, "max_exposure_ms": max_exposure, "min_gain": min_gain, "max_gain": max_gain}
+
+
+def apply_exposure_ramp_settings(camera_id: str, mode: str, exposure_ms: float, gain: float, settings: dict[str, Any]) -> tuple[float, float, dict[str, Any]]:
+    adjusted = dict(settings)
+    bounds = ramp_bounds(adjusted, exposure_ms, gain)
+    state = read_exposure_ramp_state(camera_id, mode) or {}
+    state_updated_at = parse_timestamp(str(state.get("updated_at"))) if state.get("updated_at") else None
+    max_age_seconds = numeric_setting(adjusted, "ramp_state_max_age_seconds", 1800.0, 1.0)
+    if state_updated_at is None or (datetime.now(UTC) - state_updated_at).total_seconds() > max_age_seconds:
+        state = {}
+    next_exposure = numeric_setting(state, "next_exposure_ms", numeric_setting(adjusted, "ramp_start_exposure_ms", bounds["min_exposure_ms"], bounds["min_exposure_ms"], bounds["max_exposure_ms"]), bounds["min_exposure_ms"], bounds["max_exposure_ms"])
+    next_gain = numeric_setting(state, "next_gain", numeric_setting(adjusted, "ramp_start_gain", bounds["min_gain"], bounds["min_gain"], bounds["max_gain"]), bounds["min_gain"], bounds["max_gain"])
+    adjusted.update(
+        {
+            "auto_exposure": False,
+            "auto_gain": False,
+            "exposure_ramping_active": True,
+            "ramp_bounds": bounds,
+            "ramp_previous_state": state or None,
+        }
+    )
+    return next_exposure, next_gain, adjusted
+
+
+def update_exposure_ramp_state(camera_id: str, command: CaptureCommand, metadata: dict[str, Any]) -> dict[str, Any] | None:
+    if not command.settings.get("exposure_ramping_active"):
+        return None
+    analysis = metadata.get("analysis") if isinstance(metadata.get("analysis"), dict) else {}
+    mean = analysis.get("mean_brightness")
+    if mean is None:
+        return None
+    target = numeric_setting(command.settings, "mean_target", 0.28, 0.001, 1.0)
+    threshold = numeric_setting(command.settings, "mean_threshold", 0.08, 0.0, 1.0)
+    step_limit = numeric_setting(command.settings, "ramp_max_step_factor", DEFAULT_RAMP_MAX_STEP_FACTOR, 1.01, 100.0)
+    saturation_limit = numeric_setting(command.settings, "max_saturated_pixels_percent", DEFAULT_RAMP_SATURATION_LIMIT * 100, 0.0, 100.0) / 100.0
+    saturated_fraction = float(analysis.get("saturated_fraction") or 0.0)
+    bounds = command.settings.get("ramp_bounds") if isinstance(command.settings.get("ramp_bounds"), dict) else ramp_bounds(command.settings, command.exposure_ms, command.gain)
+
+    current_exposure = max(0.001, float(command.exposure_ms))
+    current_gain = max(0.0, float(command.gain))
+    ratio = target / max(0.001, float(mean))
+    if saturated_fraction > saturation_limit:
+        ratio = min(ratio, 0.25)
+    elif abs(float(mean) - target) <= threshold:
+        ratio = 1.0
+    ratio = max(1.0 / step_limit, min(step_limit, ratio))
+
+    next_exposure = max(float(bounds["min_exposure_ms"]), min(float(bounds["max_exposure_ms"]), current_exposure * ratio))
+    next_gain = current_gain
+    if next_exposure >= float(bounds["max_exposure_ms"]) and ratio > 1.0:
+        next_gain = max(float(bounds["min_gain"]), min(float(bounds["max_gain"]), current_gain * ratio))
+    elif ratio < 1.0 and current_gain > float(bounds["min_gain"]):
+        next_gain = max(float(bounds["min_gain"]), min(current_gain, current_gain * ratio))
+        if next_gain > float(bounds["min_gain"]):
+            next_exposure = current_exposure
+
+    state = {
+        "camera_id": camera_id,
+        "mode": command.mode,
+        "target_brightness": target,
+        "mean_brightness": round(float(mean), 4),
+        "saturated_fraction": round(saturated_fraction, 6),
+        "current_exposure_ms": round(current_exposure, 3),
+        "current_gain": round(current_gain, 3),
+        "next_exposure_ms": round(next_exposure, 3),
+        "next_gain": round(next_gain, 3),
+        "updated_at": now_iso(),
+    }
+    write_exposure_ramp_state(camera_id, command.mode, state)
+    return state
 
 
 def capture_interval_seconds(mode: str | None = None, camera_id: str | None = None) -> int:
@@ -1066,10 +1187,12 @@ def analyze_image(path: Path, quality_settings: dict[str, Any] | None = None) ->
         gray = img.convert("L")
         stat = ImageStat.Stat(gray)
         mean = stat.mean[0] / 255
+        saturated_fraction = estimate_saturated_fraction(gray)
         star_count = estimate_star_count(gray)
         cloud_score = estimate_cloud_score(gray, mean, star_count)
     return {
         "mean_brightness": round(mean, 4),
+        "saturated_fraction": saturated_fraction,
         "star_count": star_count,
         "cloud_score": cloud_score,
         "bad_image": is_bad_image(mean, cloud_score, quality_settings),
@@ -1176,6 +1299,18 @@ def estimate_cloud_score(gray: Image.Image, mean_brightness: float | None = None
     brightness_factor = min(1.0, max(0.0, (mean - 0.03) / 0.35))
     score = 0.45 * brightness_factor + 0.25 * contrast + 0.2 * texture + 0.1 * star_factor
     return round(max(0.0, min(1.0, score)), 4)
+
+
+def estimate_saturated_fraction(gray: Image.Image) -> float:
+    image = gray.convert("L")
+    if max(image.size) > 512:
+        scale = 512 / max(image.size)
+        image = image.resize((max(1, int(image.width * scale)), max(1, int(image.height * scale))), Image.Resampling.BILINEAR)
+    pixels = image_pixels(image)
+    if not pixels:
+        return 0.0
+    saturated = sum(1 for value in pixels if value >= 250)
+    return round(saturated / len(pixels), 6)
 
 
 def image_pixels(image: Image.Image) -> list[int]:
