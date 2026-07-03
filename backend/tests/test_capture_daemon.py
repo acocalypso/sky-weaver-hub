@@ -822,6 +822,24 @@ def test_daemon_lock_recovers_stale_pid_file(tmp_path: Path):
     assert not lock_path.exists()
 
 
+def test_daemon_lock_recovers_reused_pid_for_non_daemon_process(tmp_path: Path, monkeypatch):
+    client = make_client(tmp_path)
+    assert client.get("/api/v1/health").status_code == 200
+
+    from skyweaver.config import get_settings
+    from skyweaver import capture_daemon
+
+    lock_path = get_settings().data_dir / "capture-daemon.lock"
+    lock_path.write_text("919", encoding="ascii")
+    monkeypatch.setattr(capture_daemon, "_pid_is_running", lambda pid: True)
+    monkeypatch.setattr(capture_daemon, "_pid_command_line", lambda pid: "/usr/bin/python unrelated.py")
+
+    with capture_daemon.daemon_lock():
+        assert lock_path.read_text(encoding="ascii") != "919"
+
+    assert not lock_path.exists()
+
+
 def test_mock_overnight_simulation_updates_latest_gallery_and_recovers(tmp_path: Path):
     client = make_client(tmp_path)
     token = login(client)

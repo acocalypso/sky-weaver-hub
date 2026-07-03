@@ -38,6 +38,28 @@ def _pid_is_running(pid: int) -> bool:
     return True
 
 
+def _pid_command_line(pid: int) -> str | None:
+    proc_root = Path("/proc")
+    if not proc_root.exists():
+        return None
+    try:
+        raw = (proc_root / str(pid) / "cmdline").read_bytes()
+    except FileNotFoundError:
+        return ""
+    except OSError:
+        return None
+    return raw.replace(b"\x00", b" ").decode("utf-8", errors="replace").strip()
+
+
+def _pid_is_capture_daemon(pid: int) -> bool:
+    if not _pid_is_running(pid):
+        return False
+    command_line = _pid_command_line(pid)
+    if command_line is None:
+        return True
+    return "skyweaver.capture_daemon" in command_line
+
+
 class CaptureDaemon:
     def __init__(self) -> None:
         self.last_scheduled_mode: str | None = None
@@ -102,7 +124,7 @@ def daemon_lock() -> Iterator[None]:
         except FileExistsError:
             pid_text = Path(lock_path).read_text(encoding="ascii").strip()
             pid = int(pid_text) if pid_text.isdigit() else 0
-            if pid > 0 and _pid_is_running(pid):
+            if pid > 0 and _pid_is_capture_daemon(pid):
                 raise
             Path(lock_path).unlink(missing_ok=True)
             fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
