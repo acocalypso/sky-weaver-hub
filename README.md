@@ -6,22 +6,24 @@ Sky Weaver Hub is a local-first, REST API first all-sky camera platform for Rasp
 
 This repository now contains a working local-first platform slice:
 
-- Vite/React admin UI using the local `/api/v1` service.
+- Vite/React 19 admin UI using the local `/api/v1` service, Tailwind 4, shadcn/Radix UI, responsive operator pages, and click-to-open help on configuration controls.
 - FastAPI backend under `backend/` with SQLite storage and versioned schema migrations.
-- Bootstrap admin login, guided first-setup completion, and API-key ready auth model.
-- Mock camera adapter plus initial rpicam/libcamera and ZWO ASI camera support.
-- Raspberry Pi `rpicam-still` / `libcamera-still` adapter path, validated with an IMX290 camera.
+- Bootstrap admin login, guided first-setup completion, API-key scopes, auth audit logs, and local-only admin operation.
+- Mock camera adapter plus rpicam/libcamera and initial native ZWO ASI camera support through `libASICamera2`.
+- Raspberry Pi `rpicam-still` / `libcamera-still` adapter path, validated with an IMX290 camera, including persistent signal-mode capture with one-shot fallback.
 - Versioned REST endpoints, OpenAPI docs at `/api/docs`, and SSE events at `/api/v1/events/stream`.
 - Daemon-owned scheduled capture loop with day/night profile selection, fixed/sun/twilight windows, restart-safe per-mode capture intervals, next-capture preview, latest-only unsaved captures, queued test/single/sequence captures, pause/resume/stop queue semantics, best-effort rpicam hard-cancel wiring, heartbeat reporting, interrupted job recovery, and stale daemon lock recovery.
+- Dark-frame calibration with daemon-owned dark-frame set capture, median master generation, camera/settings-specific matching, manual active selection, and capture-time subtraction before downstream processing.
 - Processing worker for thumbnail reprocess, keogram JPEGs, ffmpeg timelapses, mini timelapses, and startrail JPEGs, with end-of-night product jobs queued from the nighttime profile.
 - Built-in overlay module with editable lines, colors, placement controls, a trusted post-capture module flow, and external manifest registration; custom code uploads stay disabled until sandboxing/signing is implemented.
-- Remote upload page and worker-backed filesystem, rsync-over-SSH, SCP-over-SSH, SFTP-over-SSH, FTP, and FTPS target execution for latest images and generated products.
+- Remote upload page and worker-backed filesystem, rsync-over-SSH, SCP-over-SSH, SFTP-over-SSH, FTP, and FTPS target execution for latest images and generated products. Remote target secrets are stored in a local encrypted envelope and redacted from API responses/logs.
 - Public unauthenticated sky page at `/public`, backed by stable latest-image artifacts and public latest/product API endpoints that honor the public-page enabled setting, including latest-only captures that are not saved to the gallery.
-- System Health UI with service controls, per-service detail, recent journal output, diagnostics export, and queue/metric summaries.
-- Systemd units and installer scripts for Pi deployment, with first-setup prompts, constrained service-control permissions, and dry-run/idempotency tests.
+- Settings UI for observatory/storage/public/API/processing options, image/product retention cleanup, dark-frame management, browser-to-Pi time sync for offline Pis without RTC, and NetworkManager Wi-Fi scan/connect.
+- System Health UI with service controls, per-service detail, recent journal output, failure analysis, diagnostics export, and queue/metric summaries.
+- Systemd units and installer scripts for Pi deployment, with first-setup prompts, constrained service-control/time-sync/Wi-Fi permissions, dry-run/idempotency tests, and upgrade skips for unchanged Python/npm dependency manifests.
 - Allsky migration detection, preview, worker-backed image/product/dark-frame/overlay-asset import, selected settings/profile import, basic overlay text import, rollback, and Migration UI. Original Allsky files are copied, never deleted.
 
-Some Allsky parity items are intentionally scaffolded for later phases: overlay live previews/presets, dark-frame median combine/subtraction, full Allsky settings parity, and custom module sandboxing.
+Some Allsky parity items are intentionally still future work: overlay image rendering/live previews/presets, full Allsky settings parity, temperature-aware dark-frame matching controls, richer product options/progress, broader real-camera validation beyond rpicam/IMX290, and custom module sandboxing.
 
 ## Supported Targets
 
@@ -38,7 +40,7 @@ Development and partial support:
 - Raspberry Pi Zero 2 W with reduced processing
 - Debian/Ubuntu Linux. A Raspberry Pi 3 Model B on Debian 13/trixie has passed install, repeat-install, service restart, reboot, API, mock capture, and IMX290 rpicam capture acceptance.
 - Mock camera
-- ZWO ASI cameras through the native SDK library from Debian `libasi`; real hardware validation is pending
+- ZWO ASI cameras through the native SDK library from Debian `libasi` or a vendor SDK install; fake-SDK tests exist, real ZWO hardware validation is pending
 - gPhoto2, V4L2/webcam, INDI, and custom command adapters as extension points
 
 ## Raspberry Pi Quickstart
@@ -60,7 +62,9 @@ On first login, the admin UI requires setup completion so you can replace the bo
 
 When public page mode is disabled, `/public` shows a disabled state and `/api/v1/public/latest` plus public product endpoints return `403 Public page is disabled`. When enabled, `/public` can show the latest image plus completed keograms, startrails, timelapses, and mini timelapses within the configured public product day window.
 
-The installer creates `/opt/skyweaver`, `/etc/skyweaver`, `/var/lib/skyweaver`, and `/var/log/skyweaver`, installs Node/npm and Python dependencies, grants the service user camera hardware groups, builds the frontend, installs systemd units, grants narrow sudoers permissions for Sky Weaver service controls, and starts `skyweaver.target`. On a fresh interactive install it asks for admin credentials, observatory location, timezone, primary camera adapter, and public page mode. Re-running the installer preserves the existing `/etc/skyweaver/skyweaver.env`.
+The installer creates `/opt/skyweaver`, `/etc/skyweaver`, `/var/lib/skyweaver`, and `/var/log/skyweaver`, installs Node/npm and Python dependencies, grants the service user camera hardware groups, builds the frontend, installs systemd units, grants narrow sudoers permissions for Sky Weaver service controls, browser time sync, and NetworkManager Wi-Fi actions, and starts `skyweaver.target`. On a fresh interactive install it asks for admin credentials, observatory location, timezone, primary camera adapter, and public page mode. Re-running the installer preserves the existing `/etc/skyweaver/skyweaver.env`.
+
+`upgrade.sh` backs up config/database state, refreshes the install, and restarts `skyweaver.target`. It skips backend `pip install` when `backend/requirements.txt` is unchanged and the virtualenv is usable, and skips frontend `npm ci` when `package.json` plus `package-lock.json` are unchanged and `node_modules` exists. Use `SKYWEAVER_FORCE_PIP_INSTALL=1` or `SKYWEAVER_FORCE_NPM_INSTALL=1` to force dependency reinstall.
 
 To inspect installer actions without root or filesystem writes:
 
@@ -148,6 +152,17 @@ Individual services:
 
 The admin Health page can start, stop, restart, inspect `systemctl show` details, read recent `journalctl` output, and show capture/worker heartbeat plus recent job activity for the Sky Weaver units when systemd is available.
 
+## Offline and Network Behavior
+
+Sky Weaver is designed to keep core all-sky operation local. Once installed, capture, scheduling, local dashboard/API, public LAN page, dark-frame calibration, processing products, gallery, and local filesystem storage do not require internet access.
+
+Network-dependent features are explicit and optional:
+
+- Remote upload targets use the configured filesystem/SSH/FTP destination and can fail independently of capture if the destination is unreachable.
+- Wi-Fi scan/connect requires NetworkManager and Wi-Fi hardware, but not internet access.
+- Browser-to-Pi time sync uses the browser clock and does not require NTP.
+- Installer and upgrade dependency downloads require package/network access unless dependencies are already available.
+
 ## Verification
 
 Common checks:
@@ -177,6 +192,16 @@ The migration command is idempotent and records applied versions in `schema_migr
 ## Allsky Migration
 
 Sky Weaver detects common Allsky directories such as `~/allsky`, `~/allsky-OLD`, `~/allsky-SAVED`, `/home/pi/allsky`, and `/var/www/html/allsky`. Current migration support provides detection, dry-run counts, unsupported-setting reporting, queued image/product/dark-frame/overlay-asset import jobs, selected settings/profile import, basic overlay text import, camera hints, and rollback of Sky Weaver-created rows/files plus restored settings snapshots. The scanner imports recognized capture/product/dark-frame paths and excludes Allsky web, documentation, config, and overlay asset trees from gallery imports; overlay image assets are preserved separately for future overlay tooling. The original Allsky data is never deleted.
+
+## Current Limitations
+
+- Real outdoor overnight image quality and environmental stability still need more field validation.
+- ZWO ASI support is adapter-backed but still needs real hardware validation in this environment.
+- gPhoto2, V4L2/webcam, INDI, and custom command adapters are extension points, not complete camera support.
+- Imported Allsky overlay image assets are preserved, but rendering those assets in Sky Weaver overlays is future work.
+- Custom module code upload/execution remains disabled until sandboxing/signing is designed.
+- Remote uploads are optional worker jobs; unreachable remote targets can delay upload processing until their timeouts expire.
+- Temperature-aware dark-frame matching and richer calibration guidance remain future hardening.
 
 ## Documentation
 
