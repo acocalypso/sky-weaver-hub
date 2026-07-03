@@ -434,7 +434,10 @@ class RpiCamAdapter(CameraAdapter):
         sigusr1 = SIGUSR1
         if sigusr1 is None:
             raise RuntimeError("Persistent rpicam capture requires SIGUSR1 support on this platform.")
-        session = await self._session_for_request(still, request)
+        try:
+            session = await self._session_for_request(still, request)
+        except Exception as exc:
+            return await self._capture_once_after_persistent_failure(still, request, exc)
         job_key = request.job_id or str(request.output_path)
         self._active_processes[job_key] = (session.process, request.output_path)
         self._job_sessions[job_key] = session.key
@@ -454,6 +457,15 @@ class RpiCamAdapter(CameraAdapter):
             if job_key in self._canceled_jobs:
                 request.output_path.unlink(missing_ok=True)
                 raise CaptureCanceled("Capture canceled by operator stop")
+        except CaptureCanceled:
+            raise
+        except Exception as exc:
+            if job_key in self._canceled_jobs:
+                raise CaptureCanceled("Capture canceled by operator stop") from exc
+            self._active_processes.pop(job_key, None)
+            self._job_sessions.pop(job_key, None)
+            self._canceled_jobs.discard(job_key)
+            return await self._capture_once_after_persistent_failure(still, request, exc)
         finally:
             self._active_processes.pop(job_key, None)
             self._job_sessions.pop(job_key, None)
@@ -466,6 +478,14 @@ class RpiCamAdapter(CameraAdapter):
             gain=request.gain,
             metadata={"adapter": self.backend, "command": Path(still).name, "capture_mode": "persistent_signal"},
         )
+
+    async def _capture_once_after_persistent_failure(self, still: str, request: CaptureRequest, exc: Exception) -> CaptureResult:
+        if request.settings.get("persistent") is True:
+            raise exc
+        result = await self._capture_once(still, request)
+        result.metadata["capture_mode"] = "one_shot_after_persistent_failure"
+        result.metadata["persistent_error"] = str(exc)[:500]
+        return result
 
     async def _capture_once(self, still: str, request: CaptureRequest) -> CaptureResult:
         path: Path = request.output_path

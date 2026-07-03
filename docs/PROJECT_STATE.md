@@ -72,7 +72,7 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
   - capture state update
   - realtime event
 - When enabled, capture-time dark-frame calibration selects a matching master by camera/exposure/gain/resolution/pixel format and subtracts it before overlay, metadata analysis, thumbnails, latest publishing, and downstream processing.
-- `rpicam`/`libcamera` adapter can detect and capture through command-line tools when available, parses camera list output into sensor/device/mode metadata, uses headless preview mode, maps common libcamera controls such as AWB/white-balance gains, JPEG quality, denoise, tuning file, sensor mode, flips, rotation, ROI, and basic image adjustments, and keeps a persistent `rpicam-still --signal` session for repeated compatible captures to avoid restarting the camera stack for every frame.
+- `rpicam`/`libcamera` adapter can detect and capture through command-line tools when available, parses camera list output into sensor/device/mode metadata, uses headless preview mode, maps common libcamera controls such as AWB/white-balance gains, JPEG quality, denoise, tuning file, sensor mode, flips, rotation, ROI, and basic image adjustments, and keeps a persistent `rpicam-still --signal` session for repeated compatible captures to avoid restarting the camera stack for every frame. If the persistent session exits before producing a frame, the adapter falls back to the one-shot rpicam path instead of failing the scheduled capture.
 - `zwo` adapter can detect and capture through the native ZWO ASI SDK when `libASICamera2` is installed.
 - Subprocess calls use argv lists instead of shell string interpolation.
 
@@ -326,21 +326,22 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 
 Most recent local checks on 2026-07-03:
 
-- `backend\\.venv\\Scripts\\python -m pytest backend\\tests`: passed with 110 tests and 1 Windows-only POSIX-permission skip.
+- `backend\\.venv\\Scripts\\python -m pytest backend\\tests`: passed with 111 tests and 1 Windows-only POSIX-permission skip.
 - `npm run lint`: passed with zero warnings.
 - `npm test`: passed with 26 tests.
 - `npm run test:smoke`: passed with 9 tests and 1 expected desktop skip for the mobile-only assertion.
 - `npm run build`: passed.
-- `git diff --check`: passed for the current dark-frame calibration changes.
+- `git diff --check`: passed.
 - `shellcheck install.sh scripts/test_install.sh upgrade.sh uninstall.sh support.sh`: not run locally because ShellCheck is not installed on this Windows host; CI installs ShellCheck on Ubuntu.
 
 Raspberry Pi rpicam capture-speed investigation on 2026-07-02:
 
 - Direct one-shot `rpicam-still` outside Sky Weaver reproduced the slow runtime: a `1000 ms` exposure took about `10.9 s`, and a `10000 ms` exposure took about `95-101 s`, independent of tested output resolution.
 - `rpicam-still --signal` kept the camera process open and avoided repeated camera stack startup. After startup, repeated signaled captures completed substantially faster than launching a fresh process per frame.
-- The rpicam adapter now uses `--nopreview` and supports a persistent signal session for compatible repeated JPG/PNG captures. The existing one-shot command path remains available by setting adapter request setting `persistent=false` or for unsupported formats.
+- The rpicam adapter now uses `--nopreview` and supports a persistent signal session for compatible repeated JPG/PNG captures. The existing one-shot command path remains available by setting adapter request setting `persistent=false`, for unsupported formats, or as an automatic fallback when the persistent session exits before producing a frame.
 - Patched runtime validation on the Pi passed after restarting `skyweaver-capture.service`: queued 1-second IMX290 captures `3143d5fb-4865-4957-b36b-85836dd7ebb5` and `94ae6331-0ae2-48b9-9dfe-0558c8324356` completed with image metadata `capture_mode=persistent_signal`; execution time from job start to completion was about `4.8 s` for session startup plus first capture and about `3.6 s` for the immediately repeated capture.
 - Follow-up adapter hardening added safe argv mappings for rpicam AWB mode, explicit red/blue gains, JPEG quality, denoise, tuning file, sensor mode, horizontal/vertical flip, rotation, ROI, brightness, contrast, saturation, and sharpness.
+- Persistent-session fallback validation on the Pi passed on 2026-07-03 after patching `/opt/skyweaver/backend/skyweaver/camera/rpicam.py` and restarting `skyweaver-capture.service`: a forced persistent timeout completed as daemon job `d02e1dec-8805-49bc-84fb-bdede8c1763b` with image metadata `capture_mode=one_shot_after_persistent_failure`, and a normal daemon test job `7dd7a216-7ab2-47e8-b6de-902bfb495e14` completed with `capture_mode=persistent_signal`.
 
 Raspberry Pi covered-sensor dark-frame calibration acceptance on 2026-07-02:
 

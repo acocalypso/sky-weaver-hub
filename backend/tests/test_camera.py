@@ -358,6 +358,67 @@ async def test_rpicam_persistent_signal_session_reuses_process(tmp_path: Path, m
 
 
 @pytest.mark.asyncio
+async def test_rpicam_persistent_failure_falls_back_to_one_shot(tmp_path: Path, monkeypatch):
+    output = tmp_path / "fallback.jpg"
+    calls: list[list[str]] = []
+
+    class FailingPersistentProcess:
+        stdout = None
+        stderr = None
+        returncode = None
+
+        def send_signal(self, _signum: int) -> None:
+            self.returncode = 1
+
+        def terminate(self) -> None:
+            self.returncode = -15
+
+        def kill(self) -> None:
+            self.returncode = -9
+
+        async def wait(self) -> int:
+            return self.returncode or 0
+
+    class OneShotProcess:
+        stdout = None
+        stderr = None
+        returncode = 0
+
+        async def communicate(self):
+            output.write_bytes(b"one-shot")
+            return b"", b""
+
+    async def fake_exec(*args, **_kwargs):
+        calls.append(list(args))
+        if "--signal" in args:
+            return FailingPersistentProcess()
+        return OneShotProcess()
+
+    monkeypatch.setattr("skyweaver.camera.rpicam.shutil.which", lambda name: "/usr/bin/rpicam-still" if name == "rpicam-still" else None)
+    monkeypatch.setattr("skyweaver.camera.rpicam.asyncio.create_subprocess_exec", fake_exec)
+    monkeypatch.setattr("skyweaver.camera.rpicam.SIGUSR1", 10)
+
+    result = await RpiCamAdapter().capture(
+        CaptureRequest(
+            output_path=output,
+            job_id="job-fallback",
+            exposure_ms=1000,
+            gain=1,
+            width=1280,
+            height=960,
+            image_format="jpg",
+            settings={"persistent_warmup_seconds": 0},
+        )
+    )
+
+    assert output.read_bytes() == b"one-shot"
+    assert result.metadata["capture_mode"] == "one_shot_after_persistent_failure"
+    assert "persistent capture process exited before writing an image" in result.metadata["persistent_error"]
+    assert "--signal" in calls[0]
+    assert "--immediate" in calls[1]
+
+
+@pytest.mark.asyncio
 async def test_zwo_detect_reports_sdk_camera():
     adapter = ZwoAsiAdapter(sdk=FakeZwoSdk())
 
