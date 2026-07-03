@@ -98,7 +98,7 @@ def active_window(schedule: dict[str, Any], now: datetime | None = None) -> dict
     today = local_now.date()
 
     candidates: list[tuple[datetime, datetime]] = []
-    for start_day in (today - timedelta(days=1), today):
+    for start_day in (today - timedelta(days=1), today, today + timedelta(days=1)):
         start = _start_for(start_day, schedule, tz)
         end = _end_for(start_day, schedule, tz)
         if start is None or end is None:
@@ -106,6 +106,7 @@ def active_window(schedule: dict[str, Any], now: datetime | None = None) -> dict
         if end <= start:
             end = _end_for(start_day + timedelta(days=1), schedule, tz) or (end + timedelta(days=1))
         candidates.append((start, end))
+    candidates.sort(key=lambda item: item[0])
 
     active = next(((start, end) for start, end in candidates if start <= local_now < end), None)
     future_starts = sorted(start for start, _end in candidates if start > local_now)
@@ -118,8 +119,12 @@ def active_window(schedule: dict[str, Any], now: datetime | None = None) -> dict
     else:
         next_transition = future_starts[0] if future_starts else None
         next_state = "active" if next_transition else "unknown"
-        start = None
-        end = future_ends[0] if future_ends else None
+        upcoming = next(((candidate_start, candidate_end) for candidate_start, candidate_end in candidates if candidate_start > local_now), None)
+        if upcoming:
+            start, end = upcoming
+        else:
+            start = None
+            end = future_ends[0] if future_ends else None
 
     return {
         "enabled": bool(schedule.get("enabled")),

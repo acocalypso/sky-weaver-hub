@@ -58,6 +58,32 @@ def test_named_twilight_to_sunrise_window_is_active_overnight():
     assert preview["window_start"] < now.isoformat() < preview["window_end"]
 
 
+def test_inactive_schedule_reports_upcoming_fixed_window():
+    now = datetime(2026, 6, 29, 12, 0, tzinfo=ZoneInfo("Europe/Berlin"))
+
+    preview = active_window(base_schedule(), now)
+
+    assert preview["active"] is False
+    assert preview["next_state"] == "active"
+    assert preview["window_start"] == "2026-06-29T22:00:00+02:00"
+    assert preview["window_end"] == "2026-06-30T06:00:00+02:00"
+    assert preview["next_transition_at"] == preview["window_start"]
+
+
+def test_inactive_schedule_reports_upcoming_named_twilight_window():
+    schedule = base_schedule(start_mode="sunset", end_mode="sunrise")
+    now = datetime(2026, 6, 29, 12, 0, tzinfo=ZoneInfo("Europe/Berlin"))
+
+    preview = active_window(schedule, now)
+
+    assert preview["active"] is False
+    assert preview["next_state"] == "active"
+    assert preview["window_start"].startswith("2026-06-29T")
+    assert preview["window_end"].startswith("2026-06-30T")
+    assert preview["next_transition_at"] == preview["window_start"]
+    assert preview["window_start"] < preview["window_end"]
+
+
 def test_independent_start_and_end_sun_angles_change_transitions():
     now = datetime(2026, 6, 30, 1, 30, tzinfo=ZoneInfo("Europe/Berlin"))
     split_angles = base_schedule(start_mode="sun_angle", end_mode="sun_angle", start_sun_angle=-12, end_sun_angle=-3)
