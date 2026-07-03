@@ -24,6 +24,29 @@ def test_daemon_run_once_creates_scheduled_capture(tmp_path: Path):
     assert Path(images[0]["file_path"]).exists()
 
 
+def test_latest_payload_enriches_quality_from_metadata():
+    from skyweaver.services.capture import enrich_latest_payload
+
+    payload = {
+        "id": "latest-1",
+        "metadata": {
+            "analysis": {
+                "mean_brightness": 0.102,
+                "star_count": 3,
+                "cloud_score": 0.2304,
+                "bad_image": False,
+            }
+        },
+    }
+
+    enriched = enrich_latest_payload(payload)
+
+    assert enriched["mean_brightness"] == 0.102
+    assert enriched["star_count"] == 3
+    assert enriched["cloud_score"] == 0.2304
+    assert enriched["bad_image"] is False
+
+
 def test_analyze_image_estimates_star_count(tmp_path: Path):
     from skyweaver.services.capture import analyze_image
 
@@ -218,6 +241,10 @@ def test_daemon_day_profile_can_update_latest_without_saving(tmp_path: Path):
     latest_data = public_latest.json()["data"]
     assert latest_data["mode"] == "day"
     assert latest_data["download_url"] == "/api/v1/public/latest/download"
+    assert latest_data["mean_brightness"] is not None
+    assert latest_data["star_count"] is not None
+    assert latest_data["cloud_score"] is not None
+    assert latest_data["bad_image"] is False
     assert client.get("/api/v1/public/latest/download").status_code == 200
 
 

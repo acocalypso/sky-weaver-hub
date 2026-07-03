@@ -28,6 +28,8 @@ Successful captures also publish stable latest artifacts under the local data di
 - `latest/latest-thumbnail.<format>` when thumbnail generation succeeds
 - `latest/latest.json`
 
+`GET /api/v1/public/latest` includes safe capture quality fields (`mean_brightness`, `star_count`, `cloud_score`, and `bad_image`) for both saved gallery images and latest-only scheduled captures.
+
 Image row `metadata` includes capture context, environment readings, analysis values, adapter metadata, and `storage` metadata. `metadata.storage` contains JSON-safe file details, image format/mode/dimensions, and readable EXIF tags when the source image provides them. Large binary EXIF values such as maker notes are not stored.
 
 `GET /api/v1/images` remains the legacy offset-based image list and returns a data array. New mobile clients should prefer `GET /api/v1/images/page?limit=50`, which returns:

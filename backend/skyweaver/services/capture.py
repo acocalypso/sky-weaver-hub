@@ -167,6 +167,10 @@ def public_latest_payload(image: dict[str, Any], latest_image: Path | None = Non
         "size_bytes": image["size_bytes"],
         "exposure_ms": image.get("exposure_ms"),
         "gain": image.get("gain"),
+        "mean_brightness": image.get("mean_brightness"),
+        "star_count": image.get("star_count"),
+        "cloud_score": image.get("cloud_score"),
+        "bad_image": bool(image.get("bad_image", False)),
         "camera_id": image.get("camera_id"),
         "download_url": "/api/v1/public/latest/download",
         "metadata_url": "/api/v1/public/latest",
@@ -212,9 +216,19 @@ def read_latest_payload() -> dict[str, Any] | None:
     if not path.exists():
         return None
     try:
-        return json_loads(path.read_text(encoding="utf-8"), None)
+        payload = json_loads(path.read_text(encoding="utf-8"), None)
     except (OSError, json.JSONDecodeError):
         return None
+    return enrich_latest_payload(payload) if isinstance(payload, dict) else None
+
+
+def enrich_latest_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+    analysis = metadata.get("analysis") if isinstance(metadata.get("analysis"), dict) else {}
+    for key in ("mean_brightness", "star_count", "cloud_score", "bad_image"):
+        if payload.get(key) is None and key in analysis:
+            payload[key] = analysis[key]
+    return payload
 
 
 def _storage_delete_roots() -> list[Path]:
