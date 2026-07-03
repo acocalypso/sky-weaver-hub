@@ -394,6 +394,7 @@ def default_settings(settings: Settings | None = None) -> dict[str, Any]:
             "bad_image_min_brightness": 0.01,
             "bad_image_max_brightness": 0.98,
             "bad_image_max_cloud_score": None,
+            "skip_bad_images": True,
         },
         "dark_frames": {"enabled": False, "selection_mode": "auto", "active_dark_frame_id": None},
     }

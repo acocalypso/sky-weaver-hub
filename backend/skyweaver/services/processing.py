@@ -10,7 +10,7 @@ from PIL import Image, ImageChops
 from ..config import get_settings
 from ..db import event, json_dumps, log, now_iso, row_to_dict, session
 from .allsky_migration import execute_allsky_import
-from .capture import decode_row, delete_storage_paths, make_thumbnail
+from .capture import decode_row, delete_storage_paths, make_thumbnail, processing_settings
 from .uploads import execute_upload_processing_job
 
 
@@ -128,14 +128,9 @@ def generate_keogram(job: dict[str, Any]) -> dict[str, Any]:
     if not day_key:
         raise ValueError("keogram job requires day_key or at least one image")
 
-    with session() as conn:
-        images = [
-            decode_row(row_to_dict(row))
-            for row in conn.execute("SELECT * FROM images WHERE day_key=? ORDER BY captured_at", (day_key,)).fetchall()
-        ]
-    images = [image for image in images if image and Path(image["file_path"]).exists()]
+    images, source_count, skipped_bad_images = product_images_for_day(day_key, job)
     if not images:
-        raise ValueError(f"No images found for day {day_key}")
+        raise ValueError(no_usable_images_message(day_key, source_count, skipped_bad_images))
 
     settings = get_settings()
     product_dir = settings.product_dir / day_key
@@ -164,13 +159,13 @@ def generate_keogram(job: dict[str, Any]) -> dict[str, Any]:
     keogram.save(output, quality=92)
 
     thumb = make_thumbnail(output, settings.thumbnail_dir / day_key / output.name)
-    metadata = {"day_key": day_key, "source_images": len(images), "kind": "center-column"}
+    metadata = {"day_key": day_key, "source_images": source_count, "used_images": len(images), "skipped_bad_images": skipped_bad_images, "kind": "center-column"}
     with session() as conn:
         conn.execute(
             "INSERT OR REPLACE INTO night_products (id, type, day_key, file_path, thumbnail_path, status, metadata, created_at) VALUES (?, 'keogram', ?, ?, ?, 'completed', ?, ?)",
             (product_id, day_key, str(output), str(thumb) if thumb else None, json_dumps(metadata), now_iso()),
         )
-    return {"product_id": product_id, "day_key": day_key, "file_path": str(output), "thumbnail_path": str(thumb) if thumb else None, "source_images": len(images), "progress_detail": completed_progress_detail("keogram", len(images), len(images))}
+    return {"product_id": product_id, "day_key": day_key, "file_path": str(output), "thumbnail_path": str(thumb) if thumb else None, "source_images": source_count, "used_images": len(images), "skipped_bad_images": skipped_bad_images, "progress_detail": completed_progress_detail("keogram", len(images), len(images))}
 
 
 def generate_startrail(job: dict[str, Any]) -> dict[str, Any]:
@@ -178,14 +173,9 @@ def generate_startrail(job: dict[str, Any]) -> dict[str, Any]:
     if not day_key:
         raise ValueError("startrail job requires day_key or at least one image")
 
-    with session() as conn:
-        images = [
-            decode_row(row_to_dict(row))
-            for row in conn.execute("SELECT * FROM images WHERE day_key=? ORDER BY captured_at", (day_key,)).fetchall()
-        ]
-    images = [image for image in images if image and Path(image["file_path"]).exists()]
+    images, source_count, skipped_bad_images = product_images_for_day(day_key, job)
     if not images:
-        raise ValueError(f"No images found for day {day_key}")
+        raise ValueError(no_usable_images_message(day_key, source_count, skipped_bad_images))
 
     settings = get_settings()
     product_dir = settings.product_dir / day_key
@@ -211,13 +201,13 @@ def generate_startrail(job: dict[str, Any]) -> dict[str, Any]:
     update_processing_progress(product_id, 0.9, stage="write", message="Writing startrail image", current=len(images), total=len(images))
     trail.save(output, quality=94)
     thumb = make_thumbnail(output, settings.thumbnail_dir / day_key / output.name)
-    metadata = {"day_key": day_key, "source_images": len(images), "kind": "lighten-blend", "max_width": max_width}
+    metadata = {"day_key": day_key, "source_images": source_count, "used_images": len(images), "skipped_bad_images": skipped_bad_images, "kind": "lighten-blend", "max_width": max_width}
     with session() as conn:
         conn.execute(
             "INSERT OR REPLACE INTO night_products (id, type, day_key, file_path, thumbnail_path, status, metadata, created_at) VALUES (?, 'startrail', ?, ?, ?, 'completed', ?, ?)",
             (product_id, day_key, str(output), str(thumb) if thumb else None, json_dumps(metadata), now_iso()),
         )
-    return {"product_id": product_id, "day_key": day_key, "file_path": str(output), "thumbnail_path": str(thumb) if thumb else None, "source_images": len(images), "progress_detail": completed_progress_detail("startrail", len(images), len(images))}
+    return {"product_id": product_id, "day_key": day_key, "file_path": str(output), "thumbnail_path": str(thumb) if thumb else None, "source_images": source_count, "used_images": len(images), "skipped_bad_images": skipped_bad_images, "progress_detail": completed_progress_detail("startrail", len(images), len(images))}
 
 
 def generate_timelapse(job: dict[str, Any], mini: bool = False) -> dict[str, Any]:
@@ -229,15 +219,9 @@ def generate_timelapse(job: dict[str, Any], mini: bool = False) -> dict[str, Any
     if not ffmpeg:
         raise RuntimeError("ffmpeg is required to generate timelapse products")
 
-    with session() as conn:
-        images = [
-            decode_row(row_to_dict(row))
-            for row in conn.execute("SELECT * FROM images WHERE day_key=? ORDER BY captured_at", (day_key,)).fetchall()
-        ]
-    images = [image for image in images if image and Path(image["file_path"]).exists()]
+    images, source_count, skipped_bad_images = product_images_for_day(day_key, job)
     if not images:
-        raise ValueError(f"No images found for day {day_key}")
-    source_count = len(images)
+        raise ValueError(no_usable_images_message(day_key, source_count, skipped_bad_images))
     if mini:
         max_frames = max(1, min(300, int(job["input"].get("max_frames", 60))))
         images = sample_evenly(images, max_frames)
@@ -273,13 +257,13 @@ def generate_timelapse(job: dict[str, Any], mini: bool = False) -> dict[str, Any
         update_processing_progress(product_id, 0.9, stage="thumbnail", message="Generating product thumbnail", current=len(images), total=len(images))
 
         thumb = make_thumbnail(Path(images[0]["file_path"]), settings.thumbnail_dir / day_key / f"{output.stem}.jpg")
-        metadata = {"day_key": day_key, "source_images": source_count, "used_images": len(images), "fps": fps, "codec": codec, "format": extension, "mini": mini}
+        metadata = {"day_key": day_key, "source_images": source_count, "used_images": len(images), "skipped_bad_images": skipped_bad_images, "fps": fps, "codec": codec, "format": extension, "mini": mini}
         with session() as conn:
             conn.execute(
                 "INSERT OR REPLACE INTO night_products (id, type, day_key, file_path, thumbnail_path, status, metadata, created_at) VALUES (?, ?, ?, ?, ?, 'completed', ?, ?)",
                 (product_id, product_type, day_key, str(output), str(thumb) if thumb else None, json_dumps(metadata), now_iso()),
             )
-        return {"product_id": product_id, "day_key": day_key, "file_path": str(output), "thumbnail_path": str(thumb) if thumb else None, "source_images": source_count, "used_images": len(images), "progress_detail": completed_progress_detail(product_type, len(images), len(images))}
+        return {"product_id": product_id, "day_key": day_key, "file_path": str(output), "thumbnail_path": str(thumb) if thumb else None, "source_images": source_count, "used_images": len(images), "skipped_bad_images": skipped_bad_images, "progress_detail": completed_progress_detail(product_type, len(images), len(images))}
     finally:
         shutil.rmtree(frame_dir, ignore_errors=True)
 
@@ -305,6 +289,32 @@ def sample_evenly(items: list[dict[str, Any]], max_items: int) -> list[dict[str,
     last = len(items) - 1
     indexes = sorted({round(index * last / (max_items - 1)) for index in range(max_items)})
     return [items[index] for index in indexes]
+
+
+def product_images_for_day(day_key: str, job: dict[str, Any]) -> tuple[list[dict[str, Any]], int, int]:
+    with session() as conn:
+        rows = [
+            decode_row(row_to_dict(row))
+            for row in conn.execute("SELECT * FROM images WHERE day_key=? ORDER BY captured_at", (day_key,)).fetchall()
+        ]
+    existing = [image for image in rows if image and Path(image["file_path"]).exists()]
+    source_count = len(existing)
+    if not product_should_skip_bad_images(job):
+        return existing, source_count, 0
+    usable = [image for image in existing if not bool(image.get("bad_image"))]
+    return usable, source_count, source_count - len(usable)
+
+
+def product_should_skip_bad_images(job: dict[str, Any]) -> bool:
+    if "skip_bad_images" in job.get("input", {}):
+        return bool(job["input"]["skip_bad_images"])
+    return bool(processing_settings().get("skip_bad_images", True))
+
+
+def no_usable_images_message(day_key: str, source_count: int, skipped_bad_images: int) -> str:
+    if source_count and skipped_bad_images == source_count:
+        return f"No usable images found for day {day_key}; skipped {skipped_bad_images} bad image(s)"
+    return f"No images found for day {day_key}"
 
 
 def normalize_still_frame(frame: Image.Image, max_width: int) -> Image.Image:

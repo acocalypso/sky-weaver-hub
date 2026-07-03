@@ -44,6 +44,38 @@ def test_worker_generates_keogram_product(tmp_path: Path):
     assert download.status_code == 200
 
 
+def test_worker_skips_bad_images_for_night_products(tmp_path: Path):
+    client = make_client(tmp_path)
+    token = login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    images = []
+    for _ in range(3):
+        _queued, _job, image = run_queued_test_capture(client, headers, {"exposure_ms": 250, "gain": 1, "format": "jpg", "mode": "night"})
+        images.append(image)
+    day_key = images[-1]["captured_at"][:10].replace("-", "")
+
+    from skyweaver.db import session
+
+    with session() as conn:
+        conn.execute("UPDATE images SET bad_image=1 WHERE id=?", (images[0]["id"],))
+
+    queued = client.post("/api/v1/products/keogram", headers=headers, json={"day_key": day_key}).json()["data"]
+
+    from skyweaver.services.processing import run_once
+
+    assert asyncio.run(run_once()) is True
+    completed_job = client.get(f"/api/v1/processing/jobs/{queued['id']}", headers=headers).json()["data"]
+    assert completed_job["output"]["source_images"] == 3
+    assert completed_job["output"]["used_images"] == 2
+    assert completed_job["output"]["skipped_bad_images"] == 1
+
+    product = client.get(f"/api/v1/products/{queued['id']}", headers=headers).json()["data"]
+    assert product["metadata"]["source_images"] == 3
+    assert product["metadata"]["used_images"] == 2
+    assert product["metadata"]["skipped_bad_images"] == 1
+
+
 def test_worker_activity_is_reported_by_system_services(tmp_path: Path):
     client = make_client(tmp_path)
     token = login(client)

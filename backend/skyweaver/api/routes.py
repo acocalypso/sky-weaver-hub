@@ -181,6 +181,7 @@ class ProcessingSettings(BaseModel):
     bad_image_min_brightness: float = Field(default=0.01, ge=0, le=1)
     bad_image_max_brightness: float = Field(default=0.98, ge=0, le=1)
     bad_image_max_cloud_score: float | None = Field(default=None, ge=0, le=1)
+    skip_bad_images: bool = True
 
     @model_validator(mode="after")
     def validate_brightness_range(self) -> "ProcessingSettings":

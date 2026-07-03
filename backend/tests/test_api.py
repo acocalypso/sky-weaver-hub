@@ -1025,7 +1025,7 @@ def test_settings_patch_validates_known_groups_and_preserves_extension_groups(tm
                 "observatory": {"latitude": 49.1012, "longitude": 10.121, "timezone": "Europe/Berlin"},
                 "storage": {"retention_days": 45, "min_free_gb": 5},
                 "public_page": {"enabled": True, "product_days": 14},
-                "processing": {"bad_image_min_brightness": 0.02, "bad_image_max_brightness": 0.97, "bad_image_max_cloud_score": 0.85},
+                "processing": {"bad_image_min_brightness": 0.02, "bad_image_max_brightness": 0.97, "bad_image_max_cloud_score": 0.85, "skip_bad_images": False},
                 "security": {"cors_origins": ["http://allsky.local"], "first_setup_required": True},
                 "allsky_camera_hints": {"adapter": "rpicam", "model": "imx290"},
             },
@@ -1039,6 +1039,7 @@ def test_settings_patch_validates_known_groups_and_preserves_extension_groups(tm
     assert payload["public_page"]["refresh_seconds"] == 30
     assert payload["processing"]["bad_image_min_brightness"] == 0.02
     assert payload["processing"]["bad_image_max_cloud_score"] == 0.85
+    assert payload["processing"]["skip_bad_images"] is False
     assert payload["security"]["cors_origins"] == ["http://allsky.local"]
     assert payload["allsky_camera_hints"]["model"] == "imx290"
 
@@ -1047,6 +1048,7 @@ def test_settings_patch_validates_known_groups_and_preserves_extension_groups(tm
     assert stored["storage"]["min_free_gb"] == 5.0
     assert stored["public_page"]["product_days"] == 14
     assert stored["processing"]["bad_image_max_brightness"] == 0.97
+    assert stored["processing"]["skip_bad_images"] is False
     assert stored["allsky_camera_hints"]["adapter"] == "rpicam"
 
     invalid_latitude = client.patch("/api/v1/settings", headers=headers, json={"values": {"observatory": {"latitude": 120}}})
