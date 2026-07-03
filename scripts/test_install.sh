@@ -111,6 +111,7 @@ case "$dest" in
   */install/)
     mkdir -p "$dest/backend" "$dest/scripts/systemd"
     printf '{}\n' >"$dest/package.json"
+    printf '{"lockfileVersion":3}\n' >"$dest/package-lock.json"
     printf '# test requirements\n' >"$dest/backend/requirements.txt"
     if [[ -d "$src/scripts/systemd" ]]; then
       cp "$src/scripts/systemd/"* "$dest/scripts/systemd/"
@@ -198,5 +199,36 @@ assert_contains "SupplementaryGroups=video render input gpio i2c spi" "$TMP_DIR/
 
 bash -n "$ROOT_DIR/upgrade.sh"
 assert_contains "usermod -a -G i2c" "$COMMAND_LOG"
+mkdir -p "$TMP_DIR/install/node_modules"
+mkdir -p "$TMP_DIR/upgrade-backup"
+cp "$TMP_DIR/install/package.json" "$TMP_DIR/upgrade-backup/package.json"
+cp "$TMP_DIR/install/package-lock.json" "$TMP_DIR/upgrade-backup/package-lock.json"
+(
+  PATH="$FAKE_BIN:$PATH"
+  export SKYWEAVER_TEST_COMMAND_LOG="$COMMAND_LOG"
+  export SKYWEAVER_INSTALL_DIR="$TMP_DIR/install"
+  export SKYWEAVER_BACKUP_DIR="$TMP_DIR/upgrade-backup"
+  # shellcheck source=../upgrade.sh
+  source "$ROOT_DIR/upgrade.sh"
+  frontend_dependencies_unchanged
+  install_frontend_dependencies
+) >"$TMP_DIR/upgrade-skip.out"
+assert_contains "Frontend package manifests unchanged; skipping npm ci." "$TMP_DIR/upgrade-skip.out"
+: >"$COMMAND_LOG"
+rm -rf "$TMP_DIR/install/node_modules"
+(
+  PATH="$FAKE_BIN:$PATH"
+  export SKYWEAVER_TEST_COMMAND_LOG="$COMMAND_LOG"
+  export SKYWEAVER_INSTALL_DIR="$TMP_DIR/install"
+  export SKYWEAVER_BACKUP_DIR="$TMP_DIR/upgrade-backup"
+  # shellcheck source=../upgrade.sh
+  source "$ROOT_DIR/upgrade.sh"
+  if frontend_dependencies_unchanged; then
+    echo "Expected missing node_modules to force npm ci"
+    exit 1
+  fi
+  install_frontend_dependencies
+)
+assert_contains "npm ci --prefix $TMP_DIR/install" "$COMMAND_LOG"
 
 echo "install.sh dry-run and idempotency checks passed"

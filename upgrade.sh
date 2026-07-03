@@ -13,6 +13,8 @@ ZWO_SDK_INSTALL="${SKYWEAVER_INSTALL_ZWO_SDK:-auto}"
 ZWO_SDK_URL="${SKYWEAVER_ZWO_SDK_URL:-}"
 ZWO_SDK_DIR="${SKYWEAVER_ZWO_SDK_DIR:-/opt/skyweaver/vendor/zwo}"
 PREVIOUS_REQUIREMENTS_FILE="$BACKUP_DIR/backend-requirements.txt"
+PREVIOUS_PACKAGE_FILE="$BACKUP_DIR/package.json"
+PREVIOUS_PACKAGE_LOCK_FILE="$BACKUP_DIR/package-lock.json"
 
 env_line() {
   local escaped
@@ -189,12 +191,33 @@ save_previous_backend_requirements() {
   fi
 }
 
+save_previous_frontend_manifests() {
+  local package_file="$INSTALL_DIR/package.json"
+  local package_lock_file="$INSTALL_DIR/package-lock.json"
+  if [[ -f "$package_file" ]]; then
+    cp -a "$package_file" "$PREVIOUS_PACKAGE_FILE"
+  fi
+  if [[ -f "$package_lock_file" ]]; then
+    cp -a "$package_lock_file" "$PREVIOUS_PACKAGE_LOCK_FILE"
+  fi
+}
+
 backend_requirements_unchanged() {
   local requirements="$INSTALL_DIR/backend/requirements.txt"
   [[ "${SKYWEAVER_FORCE_PIP_INSTALL:-0}" != "1" ]] || return 1
   [[ -x "$INSTALL_DIR/backend/.venv/bin/pip" ]] || return 1
   [[ -f "$PREVIOUS_REQUIREMENTS_FILE" && -f "$requirements" ]] || return 1
   cmp -s "$PREVIOUS_REQUIREMENTS_FILE" "$requirements"
+}
+
+frontend_dependencies_unchanged() {
+  local package_file="$INSTALL_DIR/package.json"
+  local package_lock_file="$INSTALL_DIR/package-lock.json"
+  [[ "${SKYWEAVER_FORCE_NPM_INSTALL:-0}" != "1" ]] || return 1
+  [[ -d "$INSTALL_DIR/node_modules" ]] || return 1
+  [[ -f "$PREVIOUS_PACKAGE_FILE" && -f "$package_file" ]] || return 1
+  [[ -f "$PREVIOUS_PACKAGE_LOCK_FILE" && -f "$package_lock_file" ]] || return 1
+  cmp -s "$PREVIOUS_PACKAGE_FILE" "$package_file" && cmp -s "$PREVIOUS_PACKAGE_LOCK_FILE" "$package_lock_file"
 }
 
 install_backend_dependencies() {
@@ -207,21 +230,36 @@ install_backend_dependencies() {
   "$INSTALL_DIR/backend/.venv/bin/pip" install -r "$INSTALL_DIR/backend/requirements.txt"
 }
 
-if [[ "${EUID}" -ne 0 ]]; then echo "Please run with sudo"; exit 1; fi
-mkdir -p "$BACKUP_DIR"
-systemctl stop skyweaver.target || true
-cp -a /etc/skyweaver "$BACKUP_DIR/config" 2>/dev/null || true
-cp -a /var/lib/skyweaver/skyweaver.db "$BACKUP_DIR/skyweaver.db" 2>/dev/null || true
-save_previous_backend_requirements
-grant_hardware_groups
-install_zwo_sdk
-install_service_controls
-rsync -a --delete --exclude .git --exclude node_modules --exclude backend/.venv --exclude data --exclude logs "$ROOT_DIR/" "$INSTALL_DIR/"
-install_backend_dependencies
-npm ci --prefix "$INSTALL_DIR"
-npm run build --prefix "$INSTALL_DIR"
-rsync -a --delete "$INSTALL_DIR/dist/" /var/lib/skyweaver/web/
-cp "$INSTALL_DIR/scripts/systemd/"*.service "$INSTALL_DIR/scripts/systemd/skyweaver.target" /etc/systemd/system/
-systemctl daemon-reload
-systemctl restart skyweaver.target
-echo "Upgrade complete. Backup: $BACKUP_DIR"
+install_frontend_dependencies() {
+  if frontend_dependencies_unchanged; then
+    echo "Frontend package manifests unchanged; skipping npm ci."
+    return
+  fi
+  npm ci --prefix "$INSTALL_DIR"
+}
+
+main() {
+  if [[ "${EUID}" -ne 0 ]]; then echo "Please run with sudo"; exit 1; fi
+  mkdir -p "$BACKUP_DIR"
+  systemctl stop skyweaver.target || true
+  cp -a /etc/skyweaver "$BACKUP_DIR/config" 2>/dev/null || true
+  cp -a /var/lib/skyweaver/skyweaver.db "$BACKUP_DIR/skyweaver.db" 2>/dev/null || true
+  save_previous_backend_requirements
+  save_previous_frontend_manifests
+  grant_hardware_groups
+  install_zwo_sdk
+  install_service_controls
+  rsync -a --delete --exclude .git --exclude node_modules --exclude backend/.venv --exclude data --exclude logs "$ROOT_DIR/" "$INSTALL_DIR/"
+  install_backend_dependencies
+  install_frontend_dependencies
+  npm run build --prefix "$INSTALL_DIR"
+  rsync -a --delete "$INSTALL_DIR/dist/" /var/lib/skyweaver/web/
+  cp "$INSTALL_DIR/scripts/systemd/"*.service "$INSTALL_DIR/scripts/systemd/skyweaver.target" /etc/systemd/system/
+  systemctl daemon-reload
+  systemctl restart skyweaver.target
+  echo "Upgrade complete. Backup: $BACKUP_DIR"
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi

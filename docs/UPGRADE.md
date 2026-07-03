@@ -4,7 +4,7 @@
 sudo ./upgrade.sh
 ```
 
-The upgrade script backs up config/database, refreshes `/opt/skyweaver`, refreshes backend/frontend dependencies, copies systemd units, reapplies camera hardware groups and constrained service-control sudoers permissions for the `skyweaver` service user, reloads systemd, and restarts `skyweaver.target`. Backend `pip install` is skipped when the installed `backend/requirements.txt` is unchanged and the existing virtualenv has a `pip` executable. Set `SKYWEAVER_FORCE_PIP_INSTALL=1` to force a backend dependency reinstall.
+The upgrade script backs up config/database, refreshes `/opt/skyweaver`, refreshes backend/frontend dependencies, copies systemd units, reapplies camera hardware groups and constrained service-control sudoers permissions for the `skyweaver` service user, reloads systemd, and restarts `skyweaver.target`. Backend `pip install` is skipped when the installed `backend/requirements.txt` is unchanged and the existing virtualenv has a `pip` executable. Frontend `npm ci` is skipped when installed `package.json` and `package-lock.json` are unchanged and `node_modules` exists. Set `SKYWEAVER_FORCE_PIP_INSTALL=1` to force a backend dependency reinstall, or `SKYWEAVER_FORCE_NPM_INSTALL=1` to force a frontend dependency reinstall.
 
 If the configured primary camera adapter is `zwo`, `upgrade.sh` also installs Debian package `libasi`, installs the USB udev permission rule, and verifies `libASICamera2.so` is available. It can also install `libASICamera2.so` from `SKYWEAVER_ZWO_SDK_URL` when the distro package is unavailable.
 
