@@ -14,7 +14,7 @@ from typing import Any, Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse, StreamingResponse
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from ..camera.registry import adapters, get_adapter
 from ..config import get_settings
@@ -157,6 +157,25 @@ class PublicPageSettings(BaseModel):
     refresh_seconds: int = Field(default=30, ge=5, le=3600)
     iframe_enabled: bool = True
     product_days: int = Field(default=7, ge=1, le=3650)
+
+
+class ProcessingSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    thumbnails: bool = True
+    keogram: bool = True
+    startrails: bool = True
+    timelapse: bool = True
+    mini_timelapse: bool = True
+    bad_image_min_brightness: float = Field(default=0.01, ge=0, le=1)
+    bad_image_max_brightness: float = Field(default=0.98, ge=0, le=1)
+    bad_image_max_cloud_score: float | None = Field(default=None, ge=0, le=1)
+
+    @model_validator(mode="after")
+    def validate_brightness_range(self) -> "ProcessingSettings":
+        if self.bad_image_min_brightness >= self.bad_image_max_brightness:
+            raise ValueError("bad_image_min_brightness must be less than bad_image_max_brightness")
+        return self
 
 
 class DarkFrameSettings(BaseModel):
@@ -302,6 +321,7 @@ SETTING_MODELS: dict[str, type[BaseModel]] = {
     "observatory": ObservatorySettings,
     "storage": StorageSettings,
     "public_page": PublicPageSettings,
+    "processing": ProcessingSettings,
     "dark_frames": DarkFrameSettings,
     "security": SecuritySettings,
 }

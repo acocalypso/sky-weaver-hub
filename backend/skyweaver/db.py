@@ -226,6 +226,12 @@ def seed_defaults(conn: sqlite3.Connection, settings: Settings) -> None:
             "INSERT OR IGNORE INTO system_settings (key, value, updated_at) VALUES (?, ?, ?)",
             (key, json_dumps(value), ts),
         )
+        row = conn.execute("SELECT value FROM system_settings WHERE key=?", (key,)).fetchone()
+        current = json_loads(row["value"], {}) if row else {}
+        if isinstance(current, dict) and isinstance(value, dict):
+            merged = {**value, **current}
+            if merged != current:
+                conn.execute("UPDATE system_settings SET value=?, updated_at=? WHERE key=?", (json_dumps(merged), ts, key))
     overlay = default_overlay_module(ts)
     conn.execute(
         """INSERT OR IGNORE INTO plugin_modules
@@ -379,7 +385,16 @@ def default_settings(settings: Settings | None = None) -> dict[str, Any]:
         "storage": {"images": "./data/images", "videos": "./data/videos", "retention_days": 30, "min_free_gb": 2},
         "public_page": {"enabled": settings.public_page_enabled if settings else True, "refresh_seconds": 30, "iframe_enabled": True, "product_days": 7},
         "security": {"cors_origins": ["http://localhost:8080"], "first_setup_required": settings.first_setup_required if settings else True},
-        "processing": {"thumbnails": True, "keogram": True, "startrails": True, "timelapse": True},
+        "processing": {
+            "thumbnails": True,
+            "keogram": True,
+            "startrails": True,
+            "timelapse": True,
+            "mini_timelapse": True,
+            "bad_image_min_brightness": 0.01,
+            "bad_image_max_brightness": 0.98,
+            "bad_image_max_cloud_score": None,
+        },
         "dark_frames": {"enabled": False, "selection_mode": "auto", "active_dark_frame_id": None},
     }
 

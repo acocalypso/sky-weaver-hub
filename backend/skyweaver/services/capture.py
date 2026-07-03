@@ -20,6 +20,9 @@ from .schedule import should_capture_now
 
 
 CAPTURE_MODE_TO_PROFILE = {"day": "daytime", "night": "nighttime"}
+DEFAULT_BAD_IMAGE_MIN_BRIGHTNESS = 0.01
+DEFAULT_BAD_IMAGE_MAX_BRIGHTNESS = 0.98
+DEFAULT_BAD_IMAGE_MAX_CLOUD_SCORE: float | None = None
 
 
 @dataclass
@@ -74,6 +77,12 @@ def decode_row(row: dict[str, Any] | None) -> dict[str, Any] | None:
 
 def all_rows(conn, sql: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
     return [decode_row(row_to_dict(row)) for row in conn.execute(sql, params).fetchall()]
+
+
+def processing_settings() -> dict[str, Any]:
+    with session() as conn:
+        row = conn.execute("SELECT value FROM system_settings WHERE key='processing'").fetchone()
+    return json_loads(row["value"], {}) if row else {}
 
 
 def capture_cancel_request(job_id: str) -> dict[str, Any] | None:
@@ -718,7 +727,7 @@ async def execute_capture(command: CaptureCommand, job_type: str = "manual", job
             "settings": {"exposure_ms": command.exposure_ms, "gain": command.gain, "format": command.format},
             "storage": extract_image_metadata(result.file_path),
             "environment": {"sensor_temperature_c": result.temperature_c, "system_temperature_c": read_pi_temp()},
-            "analysis": analyze_image(result.file_path),
+            "analysis": analyze_image(result.file_path, processing_settings()),
             "dark_frame": dark_frame_result,
             "overlay": overlay_result,
             **result.metadata,
@@ -1049,14 +1058,47 @@ def update_daemon_heartbeat(pid: int | None = None) -> None:
         )
 
 
-def analyze_image(path: Path) -> dict[str, Any]:
+def analyze_image(path: Path, quality_settings: dict[str, Any] | None = None) -> dict[str, Any]:
     with Image.open(path) as img:
         gray = img.convert("L")
         stat = ImageStat.Stat(gray)
         mean = stat.mean[0] / 255
         star_count = estimate_star_count(gray)
         cloud_score = estimate_cloud_score(gray, mean, star_count)
-    return {"mean_brightness": round(mean, 4), "star_count": star_count, "cloud_score": cloud_score, "bad_image": mean < 0.01 or mean > 0.98}
+    return {
+        "mean_brightness": round(mean, 4),
+        "star_count": star_count,
+        "cloud_score": cloud_score,
+        "bad_image": is_bad_image(mean, cloud_score, quality_settings),
+    }
+
+
+def is_bad_image(mean_brightness: float, cloud_score: float | None = None, quality_settings: dict[str, Any] | None = None) -> bool:
+    settings = quality_settings or {}
+    min_brightness = normalized_threshold(settings.get("bad_image_min_brightness"), DEFAULT_BAD_IMAGE_MIN_BRIGHTNESS)
+    max_brightness = normalized_threshold(settings.get("bad_image_max_brightness"), DEFAULT_BAD_IMAGE_MAX_BRIGHTNESS)
+    max_cloud_score = normalized_optional_threshold(settings.get("bad_image_max_cloud_score"), DEFAULT_BAD_IMAGE_MAX_CLOUD_SCORE)
+    if min_brightness >= max_brightness:
+        min_brightness = DEFAULT_BAD_IMAGE_MIN_BRIGHTNESS
+        max_brightness = DEFAULT_BAD_IMAGE_MAX_BRIGHTNESS
+    if mean_brightness < min_brightness or mean_brightness > max_brightness:
+        return True
+    return bool(max_cloud_score is not None and cloud_score is not None and cloud_score > max_cloud_score)
+
+
+def normalized_threshold(value: Any, default: float) -> float:
+    if value is None:
+        return default
+    try:
+        return max(0.0, min(1.0, float(value)))
+    except (TypeError, ValueError):
+        return default
+
+
+def normalized_optional_threshold(value: Any, default: float | None) -> float | None:
+    if value is None:
+        return default
+    return normalized_threshold(value, default if default is not None else 1.0)
 
 
 def estimate_star_count(gray: Image.Image) -> int:

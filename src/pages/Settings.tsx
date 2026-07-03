@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { StatusBadge } from "@/components/StatusBadge";
 import { SkyApi, type CameraRow, type DarkFrameRow } from "@/lib/api";
-import { Settings as SettingsIcon, MapPin, HardDrive, Shield, Trash2, Camera, Plus, CheckCircle2, RefreshCw } from "lucide-react";
+import { Settings as SettingsIcon, MapPin, HardDrive, Shield, Trash2, Camera, Plus, CheckCircle2, RefreshCw, SlidersHorizontal } from "lucide-react";
 import { toast } from "sonner";
 
 export default function SettingsPage() {
@@ -40,6 +40,7 @@ export default function SettingsPage() {
   const observatory = values.observatory ?? {};
   const storage = values.storage ?? {};
   const publicPage = values.public_page ?? {};
+  const processing = values.processing ?? {};
   const darkFrameSettings = values.dark_frames ?? {};
   const security = values.security ?? {};
   const updateGroup = (group: string, patch: any) => setValues({ ...values, [group]: { ...(values[group] ?? {}), ...patch } });
@@ -148,6 +149,12 @@ export default function SettingsPage() {
         <Field label="Public product days" type="number" min={1} max={3650} value={String(publicPage.product_days ?? 7)} onChange={(v) => updateGroup("public_page", { product_days: Number(v) })} />
         <Field label="CORS origins" value={(security.cors_origins ?? []).join(",")} onChange={(v) => updateGroup("security", { cors_origins: v.split(",").map((x) => x.trim()).filter(Boolean) })} />
         <Toggle label="First setup required" hint="Installer should force a password change before unattended use." value={Boolean(security.first_setup_required)} onChange={(v) => updateGroup("security", { first_setup_required: v })} />
+      </Section>
+
+      <Section icon={<SlidersHorizontal className="h-4 w-4 text-primary" />} title="Processing Quality">
+        <Field label="Minimum brightness" type="number" min={0} max={1} step="0.001" value={String(processing.bad_image_min_brightness ?? 0.01)} onChange={(v) => updateGroup("processing", { bad_image_min_brightness: Number(v) })} />
+        <Field label="Maximum brightness" type="number" min={0} max={1} step="0.001" value={String(processing.bad_image_max_brightness ?? 0.98)} onChange={(v) => updateGroup("processing", { bad_image_max_brightness: Number(v) })} />
+        <Field label="Maximum cloud score" type="number" min={0} max={1} step="0.001" placeholder="Off" value={processing.bad_image_max_cloud_score == null ? "" : String(processing.bad_image_max_cloud_score)} onChange={(v) => updateGroup("processing", { bad_image_max_cloud_score: v === "" ? null : Number(v) })} />
       </Section>
 
       <Section icon={<Camera className="h-4 w-4 text-primary" />} title="Dark Frame Calibration">

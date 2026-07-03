@@ -81,6 +81,21 @@ def test_analyze_image_estimates_cloud_score(tmp_path: Path):
     assert cloudy_analysis["cloud_score"] > 0.35
 
 
+def test_analyze_image_respects_configured_bad_image_thresholds(tmp_path: Path):
+    from skyweaver.services.capture import analyze_image
+
+    image_path = tmp_path / "midtone.png"
+    Image.new("RGB", (64, 48), (128, 128, 128)).save(image_path)
+
+    default_analysis = analyze_image(image_path)
+    strict_brightness = analyze_image(image_path, {"bad_image_min_brightness": 0.75})
+    strict_cloud = analyze_image(image_path, {"bad_image_max_cloud_score": 0.1})
+
+    assert default_analysis["bad_image"] is False
+    assert strict_brightness["bad_image"] is True
+    assert strict_cloud["bad_image"] is True
+
+
 def test_daemon_respects_interval(tmp_path: Path):
     client = make_client(tmp_path)
     token = login(client)

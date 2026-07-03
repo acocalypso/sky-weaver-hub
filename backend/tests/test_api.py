@@ -881,6 +881,7 @@ def test_settings_patch_validates_known_groups_and_preserves_extension_groups(tm
                 "observatory": {"latitude": 49.1012, "longitude": 10.121, "timezone": "Europe/Berlin"},
                 "storage": {"retention_days": 45, "min_free_gb": 5},
                 "public_page": {"enabled": True, "product_days": 14},
+                "processing": {"bad_image_min_brightness": 0.02, "bad_image_max_brightness": 0.97, "bad_image_max_cloud_score": 0.85},
                 "security": {"cors_origins": ["http://allsky.local"], "first_setup_required": True},
                 "allsky_camera_hints": {"adapter": "rpicam", "model": "imx290"},
             },
@@ -892,6 +893,8 @@ def test_settings_patch_validates_known_groups_and_preserves_extension_groups(tm
     assert payload["observatory"]["latitude"] == 49.1012
     assert payload["storage"]["retention_days"] == 45
     assert payload["public_page"]["refresh_seconds"] == 30
+    assert payload["processing"]["bad_image_min_brightness"] == 0.02
+    assert payload["processing"]["bad_image_max_cloud_score"] == 0.85
     assert payload["security"]["cors_origins"] == ["http://allsky.local"]
     assert payload["allsky_camera_hints"]["model"] == "imx290"
 
@@ -899,6 +902,7 @@ def test_settings_patch_validates_known_groups_and_preserves_extension_groups(tm
     assert stored["observatory"]["longitude"] == 10.121
     assert stored["storage"]["min_free_gb"] == 5.0
     assert stored["public_page"]["product_days"] == 14
+    assert stored["processing"]["bad_image_max_brightness"] == 0.97
     assert stored["allsky_camera_hints"]["adapter"] == "rpicam"
 
     invalid_latitude = client.patch("/api/v1/settings", headers=headers, json={"values": {"observatory": {"latitude": 120}}})
@@ -912,6 +916,14 @@ def test_settings_patch_validates_known_groups_and_preserves_extension_groups(tm
     invalid_extra = client.patch("/api/v1/settings", headers=headers, json={"values": {"public_page": {"enabled": True, "unexpected": True}}})
     assert invalid_extra.status_code == 422
     assert "Invalid settings for 'public_page'.unexpected" in invalid_extra.json()["error"]["message"]
+
+    invalid_processing = client.patch(
+        "/api/v1/settings",
+        headers=headers,
+        json={"values": {"processing": {"bad_image_min_brightness": 0.8, "bad_image_max_brightness": 0.7}}},
+    )
+    assert invalid_processing.status_code == 422
+    assert "Invalid settings for 'processing'" in invalid_processing.json()["error"]["message"]
 
 
 def test_created_camera_gets_day_and_night_profiles(tmp_path):

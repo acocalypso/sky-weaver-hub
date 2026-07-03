@@ -118,6 +118,7 @@ const mockSettings = {
   observatory: { name: "Test Observatory", latitude: 47.1, longitude: 15.4, timezone: "Europe/Berlin" },
   storage: { images: "./data/images", videos: "./data/videos", retention_days: 30, min_free_gb: 2 },
   public_page: { enabled: true, iframe_enabled: true, product_days: 7 },
+  processing: { thumbnails: true, keogram: true, startrails: true, timelapse: true, mini_timelapse: true, bad_image_min_brightness: 0.01, bad_image_max_brightness: 0.98, bad_image_max_cloud_score: null },
   dark_frames: { enabled: false, selection_mode: "auto", active_dark_frame_id: null, exposure_tolerance_ms: 1, gain_tolerance: 0.01 },
   security: { cors_origins: ["http://localhost:8080"], first_setup_required: true },
 };
@@ -738,8 +739,10 @@ describe("main pages", () => {
     expect(await screen.findByDisplayValue("Test Observatory")).toBeInTheDocument();
     expect(screen.getByText("Storage and retention")).toBeInTheDocument();
     expect(screen.getByText("Public and API")).toBeInTheDocument();
+    expect(screen.getByText("Processing Quality")).toBeInTheDocument();
     expect(screen.getByText("Dark Frame Calibration")).toBeInTheDocument();
     expect(screen.getByText("Night gain 2")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("0.98")).toBeInTheDocument();
     expect(screen.getByDisplayValue("7")).toBeInTheDocument();
   });
 
