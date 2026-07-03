@@ -29,6 +29,7 @@ def test_worker_generates_keogram_product(tmp_path: Path):
     completed_job = client.get(f"/api/v1/processing/jobs/{queued['id']}", headers=headers).json()["data"]
     assert completed_job["status"] == "completed"
     assert completed_job["progress"] == 1
+    assert completed_job["output"]["progress_detail"] == {"stage": "keogram", "message": "Completed", "current": 3, "total": 3}
 
     products = client.get("/api/v1/products", headers=headers).json()["data"]
     assert len(products) == 1
@@ -99,6 +100,7 @@ def test_thumbnail_processing_job_lifecycle_updates_status_and_output(tmp_path: 
     running_job = client.get(f"/api/v1/processing/jobs/{queued['id']}", headers=headers).json()["data"]
     assert running_job["status"] == "running"
     assert running_job["progress"] == 0.05
+    assert running_job["output"]["progress_detail"]["stage"] == "starting"
     assert running_job["started_at"]
     assert running_job["completed_at"] is None
 

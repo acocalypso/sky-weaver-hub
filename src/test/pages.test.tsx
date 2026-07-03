@@ -369,7 +369,7 @@ beforeEach(() => {
       type: "timelapse",
       status: "running",
       input: { day_key: "20260623" },
-      output: null,
+      output: { progress_detail: { stage: "frames", message: "Preparing video frames", current: 2, total: 4 } },
       error: null,
       progress: 0.5,
       created_at: "2026-06-24T05:00:00+00:00",
@@ -791,6 +791,7 @@ describe("main pages", () => {
     expect(await screen.findByRole("heading", { name: /night products/i })).toBeInTheDocument();
     expect(screen.getByText("Processing queue")).toBeInTheDocument();
     expect(screen.getByText("day 20260623 - job processing-1")).toBeInTheDocument();
+    expect(screen.getByText("Preparing video frames - frames - 2/4")).toBeInTheDocument();
     expect(screen.getByText("Generated products")).toBeInTheDocument();
     expect(screen.getByText("day 20260623 - 42 source images")).toBeInTheDocument();
     fireEvent.change(screen.getByPlaceholderText("20260623"), { target: { value: "20260624" } });

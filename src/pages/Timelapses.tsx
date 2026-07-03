@@ -87,6 +87,7 @@ export default function Timelapses() {
                 <StatusBadge variant={statusVariant(j.status)}>{j.status ?? "queued"}</StatusBadge>
               </div>
               <p className="text-xs text-muted-foreground font-mono-data mt-1">day {j.input?.day_key ?? j.output?.day_key ?? "-"} - job {j.id}</p>
+              {progressDetail(j) && <p className="text-xs text-muted-foreground mt-2">{progressDetail(j)}</p>}
               {j.error && <p className="text-xs text-status-error mt-2">{j.error}</p>}
               <Progress value={Math.round((j.progress ?? 0) * 100)} className="h-1 mt-3" />
             </div>
@@ -134,4 +135,15 @@ function statusVariant(status?: string): "ok" | "warn" | "error" | "idle" | "act
   if (status === "running") return "active";
   if (status === "pending") return "warn";
   return "idle";
+}
+
+function progressDetail(job: ProcessingJob) {
+  const detail = job.output?.progress_detail;
+  if (!detail || typeof detail !== "object") return null;
+  const message = typeof detail.message === "string" ? detail.message : null;
+  const stage = typeof detail.stage === "string" ? detail.stage.replaceAll("_", " ") : null;
+  const current = typeof detail.current === "number" ? detail.current : null;
+  const total = typeof detail.total === "number" ? detail.total : null;
+  const count = current != null && total != null ? `${current}/${total}` : null;
+  return [message, stage, count].filter(Boolean).join(" - ");
 }

@@ -53,7 +53,8 @@ def claim_next_processing_job(job_types: tuple[str, ...] = ("thumbnail", "keogra
         ).fetchone()
         if not row:
             return None
-        conn.execute("UPDATE processing_jobs SET status='running', progress=0.05, started_at=? WHERE id=?", (now_iso(), row["id"]))
+        detail = {"progress_detail": {"stage": "starting", "message": "Worker claimed job"}}
+        conn.execute("UPDATE processing_jobs SET status='running', progress=0.05, output=?, started_at=? WHERE id=?", (json_dumps(detail), now_iso(), row["id"]))
         event(conn, "processing_job_started", {"job_id": row["id"], "type": row["type"]})
         job = decode_row(row_to_dict(row))
         if job is None:
@@ -90,7 +91,7 @@ async def execute_processing_job(job: dict[str, Any]) -> dict[str, Any]:
         return result
     except Exception as exc:
         with session() as conn:
-            conn.execute("UPDATE processing_jobs SET status='failed', error=?, completed_at=? WHERE id=?", (str(exc), now_iso(), job["id"]))
+            conn.execute("UPDATE processing_jobs SET status='failed', output=NULL, error=?, completed_at=? WHERE id=?", (str(exc), now_iso(), job["id"]))
             log(conn, "error", "worker", "Processing job failed", {"job_id": job["id"], "type": job["type"], "error": str(exc)})
             event(conn, "processing_job_failed", {"job_id": job["id"], "type": job["type"], "error": str(exc)})
         raise
@@ -113,10 +114,11 @@ def regenerate_thumbnail(job: dict[str, Any]) -> dict[str, Any]:
         raise FileNotFoundError(source)
 
     target = settings.thumbnail_dir / image["day_key"] / source.name
+    update_processing_progress(job["id"], 0.35, stage="thumbnail", message="Generating thumbnail", current=1, total=1)
     thumb = make_thumbnail(source, target)
     with session() as conn:
         conn.execute("UPDATE images SET thumbnail_path=? WHERE id=?", (str(thumb) if thumb else None, image_id))
-    return {"image_id": image_id, "thumbnail_path": str(thumb) if thumb else None}
+    return {"image_id": image_id, "thumbnail_path": str(thumb) if thumb else None, "progress_detail": completed_progress_detail("thumbnail", 1, 1)}
 
 
 def generate_keogram(job: dict[str, Any]) -> dict[str, Any]:
@@ -143,7 +145,7 @@ def generate_keogram(job: dict[str, Any]) -> dict[str, Any]:
 
     height = int(job["input"].get("height", 360))
     columns: list[Image.Image] = []
-    for image in images:
+    for index, image in enumerate(images):
         with Image.open(image["file_path"]) as img:
             frame = img.convert("RGB")
             scale = height / frame.height
@@ -151,11 +153,14 @@ def generate_keogram(job: dict[str, Any]) -> dict[str, Any]:
             frame = frame.resize((width, height))
             center = frame.width // 2
             columns.append(frame.crop((center, 0, center + 1, height)))
+        update_processing_progress(product_id, 0.05 + ((index + 1) / len(images)) * 0.65, stage="frames", message="Extracting center columns", current=index + 1, total=len(images))
 
+    update_processing_progress(product_id, 0.78, stage="compose", message="Composing keogram", current=len(columns), total=len(columns))
     keogram = Image.new("RGB", (len(columns), height))
     for x, column in enumerate(columns):
         keogram.paste(column, (x, 0))
     keogram = keogram.resize((max(360, len(columns)), height))
+    update_processing_progress(product_id, 0.9, stage="write", message="Writing keogram image", current=len(columns), total=len(columns))
     keogram.save(output, quality=92)
 
     thumb = make_thumbnail(output, settings.thumbnail_dir / day_key / output.name)
@@ -165,7 +170,7 @@ def generate_keogram(job: dict[str, Any]) -> dict[str, Any]:
             "INSERT OR REPLACE INTO night_products (id, type, day_key, file_path, thumbnail_path, status, metadata, created_at) VALUES (?, 'keogram', ?, ?, ?, 'completed', ?, ?)",
             (product_id, day_key, str(output), str(thumb) if thumb else None, json_dumps(metadata), now_iso()),
         )
-    return {"product_id": product_id, "day_key": day_key, "file_path": str(output), "thumbnail_path": str(thumb) if thumb else None, "source_images": len(images)}
+    return {"product_id": product_id, "day_key": day_key, "file_path": str(output), "thumbnail_path": str(thumb) if thumb else None, "source_images": len(images), "progress_detail": completed_progress_detail("keogram", len(images), len(images))}
 
 
 def generate_startrail(job: dict[str, Any]) -> dict[str, Any]:
@@ -199,10 +204,11 @@ def generate_startrail(job: dict[str, Any]) -> dict[str, Any]:
             if frame.size != trail.size:
                 frame = frame.resize(trail.size)
             trail = ImageChops.lighter(trail, frame)
-        update_processing_progress(product_id, 0.05 + ((index + 1) / len(images)) * 0.8)
+        update_processing_progress(product_id, 0.05 + ((index + 1) / len(images)) * 0.8, stage="blend", message="Blending startrail frames", current=index + 1, total=len(images))
 
     if trail is None:
         raise ValueError(f"No readable images found for day {day_key}")
+    update_processing_progress(product_id, 0.9, stage="write", message="Writing startrail image", current=len(images), total=len(images))
     trail.save(output, quality=94)
     thumb = make_thumbnail(output, settings.thumbnail_dir / day_key / output.name)
     metadata = {"day_key": day_key, "source_images": len(images), "kind": "lighten-blend", "max_width": max_width}
@@ -211,7 +217,7 @@ def generate_startrail(job: dict[str, Any]) -> dict[str, Any]:
             "INSERT OR REPLACE INTO night_products (id, type, day_key, file_path, thumbnail_path, status, metadata, created_at) VALUES (?, 'startrail', ?, ?, ?, 'completed', ?, ?)",
             (product_id, day_key, str(output), str(thumb) if thumb else None, json_dumps(metadata), now_iso()),
         )
-    return {"product_id": product_id, "day_key": day_key, "file_path": str(output), "thumbnail_path": str(thumb) if thumb else None, "source_images": len(images)}
+    return {"product_id": product_id, "day_key": day_key, "file_path": str(output), "thumbnail_path": str(thumb) if thumb else None, "source_images": len(images), "progress_detail": completed_progress_detail("startrail", len(images), len(images))}
 
 
 def generate_timelapse(job: dict[str, Any], mini: bool = False) -> dict[str, Any]:
@@ -257,13 +263,14 @@ def generate_timelapse(job: dict[str, Any], mini: bool = False) -> dict[str, Any
             with Image.open(image["file_path"]) as img:
                 frame = normalize_video_frame(img.convert("RGB"), max_width)
                 frame.save(frame_dir / f"frame_{index:06d}.jpg", quality=92)
-            update_processing_progress(product_id, 0.05 + ((index + 1) / len(images)) * 0.65)
+            update_processing_progress(product_id, 0.05 + ((index + 1) / len(images)) * 0.65, stage="frames", message="Preparing video frames", current=index + 1, total=len(images))
 
         cmd = ffmpeg_command(ffmpeg, frame_dir / "frame_%06d.jpg", output, fps, codec)
+        update_processing_progress(product_id, 0.82, stage="encode", message="Encoding video with ffmpeg", current=len(images), total=len(images))
         completed = subprocess.run(cmd, capture_output=True, text=True, check=False)
         if completed.returncode != 0:
             raise RuntimeError(f"ffmpeg failed: {completed.stderr.strip() or completed.stdout.strip()}")
-        update_processing_progress(product_id, 0.9)
+        update_processing_progress(product_id, 0.9, stage="thumbnail", message="Generating product thumbnail", current=len(images), total=len(images))
 
         thumb = make_thumbnail(Path(images[0]["file_path"]), settings.thumbnail_dir / day_key / f"{output.stem}.jpg")
         metadata = {"day_key": day_key, "source_images": source_count, "used_images": len(images), "fps": fps, "codec": codec, "format": extension, "mini": mini}
@@ -272,7 +279,7 @@ def generate_timelapse(job: dict[str, Any], mini: bool = False) -> dict[str, Any
                 "INSERT OR REPLACE INTO night_products (id, type, day_key, file_path, thumbnail_path, status, metadata, created_at) VALUES (?, ?, ?, ?, ?, 'completed', ?, ?)",
                 (product_id, product_type, day_key, str(output), str(thumb) if thumb else None, json_dumps(metadata), now_iso()),
             )
-        return {"product_id": product_id, "day_key": day_key, "file_path": str(output), "thumbnail_path": str(thumb) if thumb else None, "source_images": source_count, "used_images": len(images)}
+        return {"product_id": product_id, "day_key": day_key, "file_path": str(output), "thumbnail_path": str(thumb) if thumb else None, "source_images": source_count, "used_images": len(images), "progress_detail": completed_progress_detail(product_type, len(images), len(images))}
     finally:
         shutil.rmtree(frame_dir, ignore_errors=True)
 
@@ -313,9 +320,26 @@ def ffmpeg_command(ffmpeg: str, input_pattern: Path, output: Path, fps: int, cod
     return [ffmpeg, "-y", "-framerate", str(fps), "-i", str(input_pattern), "-c:v", "libx264", "-pix_fmt", "yuv420p", "-movflags", "+faststart", str(output)]
 
 
-def update_processing_progress(job_id: str, progress: float) -> None:
+def update_processing_progress(job_id: str, progress: float, *, stage: str | None = None, message: str | None = None, current: int | None = None, total: int | None = None) -> None:
+    detail = None
+    if stage or message or current is not None or total is not None:
+        detail = {
+            "progress_detail": {
+                "stage": stage,
+                "message": message,
+                "current": current,
+                "total": total,
+            }
+        }
     with session() as conn:
-        conn.execute("UPDATE processing_jobs SET progress=? WHERE id=?", (max(0, min(1, progress)), job_id))
+        if detail is None:
+            conn.execute("UPDATE processing_jobs SET progress=? WHERE id=?", (max(0, min(1, progress)), job_id))
+        else:
+            conn.execute("UPDATE processing_jobs SET progress=?, output=? WHERE id=?", (max(0, min(1, progress)), json_dumps(detail), job_id))
+
+
+def completed_progress_detail(stage: str, current: int, total: int) -> dict[str, Any]:
+    return {"stage": stage, "message": "Completed", "current": current, "total": total}
 
 
 def latest_day_key() -> str | None:
