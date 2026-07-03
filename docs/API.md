@@ -39,13 +39,20 @@ Image row `metadata` includes capture context, environment readings, analysis va
     "next_cursor": null,
     "has_more": false,
     "limit": 50,
-    "filters": { "day_key": null, "mode": null, "camera_id": null, "bad_image": null }
+    "filters": {
+      "day_key": null,
+      "mode": null,
+      "camera_id": null,
+      "bad_image": null,
+      "captured_from": null,
+      "captured_to": null
+    }
   },
   "meta": { "request_id": "...", "timestamp": "..." }
 }
 ```
 
-Pass `cursor=<next_cursor>` to fetch the next page. Supported filters are `day_key`, `mode`, `camera_id`, and `bad_image`. Cursors are opaque client tokens and should not be parsed by mobile apps.
+Pass `cursor=<next_cursor>` to fetch the next page. Supported filters are `day_key`, `mode`, `camera_id`, `bad_image`, `captured_from`, and `captured_to`. Date range filters must be timezone-aware ISO datetimes, for example `2026-07-01T00:00:00Z`; the API echoes normalized `+00:00` values. Cursors are opaque client tokens and should not be parsed by mobile apps.
 
 `GET /api/v1/logs/page?limit=100` follows the same opaque-cursor pattern for operational logs. Supported filters are `level` and `source`. The legacy `GET /api/v1/logs` endpoint remains available for existing clients and returns a plain data array.
 

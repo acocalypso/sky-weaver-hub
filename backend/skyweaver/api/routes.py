@@ -1447,8 +1447,14 @@ def images_page(
     mode: str | None = None,
     camera_id: str | None = None,
     bad_image: bool | None = None,
+    captured_from: Annotated[str | None, Query(min_length=1, max_length=80)] = None,
+    captured_to: Annotated[str | None, Query(min_length=1, max_length=80)] = None,
     _principal: dict = Depends(require_scope("read:images")),
 ):
+    captured_from_value = parse_image_time_filter(captured_from, "captured_from")
+    captured_to_value = parse_image_time_filter(captured_to, "captured_to")
+    if captured_from_value and captured_to_value and captured_from_value > captured_to_value:
+        raise HTTPException(400, "captured_from must be before captured_to")
     clauses: list[str] = []
     params: list[Any] = []
     if day_key:
@@ -1463,6 +1469,12 @@ def images_page(
     if bad_image is not None:
         clauses.append("bad_image=?")
         params.append(1 if bad_image else 0)
+    if captured_from_value:
+        clauses.append("captured_at>=?")
+        params.append(captured_from_value)
+    if captured_to_value:
+        clauses.append("captured_at<=?")
+        params.append(captured_to_value)
     if cursor:
         captured_at, image_id = decode_image_cursor(cursor)
         clauses.append("(captured_at < ? OR (captured_at = ? AND id < ?))")
@@ -1483,8 +1495,22 @@ def images_page(
             "mode": mode,
             "camera_id": camera_id,
             "bad_image": bad_image,
+            "captured_from": captured_from_value,
+            "captured_to": captured_to_value,
         },
     })
+
+
+def parse_image_time_filter(value: str | None, field_name: str) -> str | None:
+    if value is None:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise HTTPException(400, f"Invalid {field_name}") from exc
+    if parsed.tzinfo is None:
+        raise HTTPException(400, f"{field_name} must include timezone")
+    return parsed.astimezone(UTC).isoformat()
 
 
 def encode_image_cursor(row: dict[str, Any]) -> str:

@@ -237,13 +237,9 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 
 ### API and Mobile Readiness
 
-- Cursor pagination exists for authenticated images and logs; add it to additional large collections where useful.
+- Cursor pagination exists for authenticated images and logs; authenticated image pages support date range, camera, mode, and bad-image filters. Add cursor pagination to additional large collections where useful.
 - Expand filters:
-  - date range
-  - camera
-  - mode
   - product type
-  - bad image
   - processing status
 - Add Swift/Kotlin response examples.
 - Expand generated OpenAPI artifact checks beyond upload-only validation.

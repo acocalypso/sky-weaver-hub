@@ -226,11 +226,56 @@ def test_images_page_filters_and_invalid_cursor(tmp_path):
     assert filtered.status_code == 200, filtered.text
     payload = filtered.json()["data"]
     assert [row["id"] for row in payload["items"]] == ["night-good"]
-    assert payload["filters"] == {"day_key": None, "mode": "night", "camera_id": "cam-a", "bad_image": False}
+    assert payload["filters"] == {
+        "day_key": None,
+        "mode": "night",
+        "camera_id": "cam-a",
+        "bad_image": False,
+        "captured_from": None,
+        "captured_to": None,
+    }
 
     invalid = client.get("/api/v1/images/page?cursor=not-a-valid-cursor", headers=headers)
     assert invalid.status_code == 400
     assert invalid.json()["error"]["message"] == "Invalid image cursor"
+
+
+def test_images_page_filters_by_capture_date_range(tmp_path):
+    client = make_client(tmp_path)
+    token = login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+    insert_image_row(image_id="newer", captured_at="2026-07-01T03:00:00+00:00")
+    insert_image_row(image_id="middle", captured_at="2026-07-01T02:00:00+00:00")
+    insert_image_row(image_id="older", captured_at="2026-07-01T01:00:00+00:00")
+
+    filtered = client.get(
+        "/api/v1/images/page",
+        headers=headers,
+        params={
+            "captured_from": "2026-07-01T01:30:00Z",
+            "captured_to": "2026-07-01T02:30:00Z",
+        },
+    )
+    assert filtered.status_code == 200, filtered.text
+    payload = filtered.json()["data"]
+    assert [row["id"] for row in payload["items"]] == ["middle"]
+    assert payload["filters"]["captured_from"] == "2026-07-01T01:30:00+00:00"
+    assert payload["filters"]["captured_to"] == "2026-07-01T02:30:00+00:00"
+
+    invalid = client.get("/api/v1/images/page", headers=headers, params={"captured_from": "not-a-date"})
+    assert invalid.status_code == 400
+    assert invalid.json()["error"]["message"] == "Invalid captured_from"
+
+    reversed_range = client.get(
+        "/api/v1/images/page",
+        headers=headers,
+        params={
+            "captured_from": "2026-07-01T03:00:00+00:00",
+            "captured_to": "2026-07-01T02:00:00+00:00",
+        },
+    )
+    assert reversed_range.status_code == 400
+    assert reversed_range.json()["error"]["message"] == "captured_from must be before captured_to"
 
 
 def test_extract_image_metadata_reads_exif_and_basic_file_data(tmp_path):
