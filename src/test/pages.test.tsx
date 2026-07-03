@@ -45,6 +45,11 @@ vi.mock("@/lib/api", async () => {
       systemServices: vi.fn(),
       serviceDetail: vi.fn(),
       diagnostics: vi.fn(),
+      systemTime: vi.fn(),
+      syncSystemTime: vi.fn(),
+      wifiStatus: vi.fn(),
+      scanWifi: vi.fn(),
+      connectWifi: vi.fn(),
       controlService: vi.fn(),
       restartService: vi.fn(),
       schedulePreview: vi.fn(),
@@ -266,6 +271,11 @@ beforeEach(() => {
     recent_logs: [],
     redaction: "Secrets redacted",
   });
+  vi.mocked(SkyApi.systemTime).mockResolvedValue({ server_time: "2026-06-23T22:16:00+00:00", server_epoch_ms: 1782252960000, timezone: "UTC" });
+  vi.mocked(SkyApi.syncSystemTime).mockResolvedValue({ status: "synced", server_time: "2026-06-23T22:16:00+00:00", previous_drift_seconds: 0.5 });
+  vi.mocked(SkyApi.wifiStatus).mockResolvedValue({ available: true, message: "nmcli is available.", devices: [{ device: "wlan0", type: "wifi", state: "connected", connection: "GardenNet" }], active: [{ active: "yes", ssid: "GardenNet", signal: "80", security: "WPA2" }] });
+  vi.mocked(SkyApi.scanWifi).mockResolvedValue({ available: true, message: "Wi-Fi scan completed.", networks: [{ ssid: "GardenNet", signal: 80, security: "WPA2", channel: "6", rate: "130 Mbit/s" }] });
+  vi.mocked(SkyApi.connectWifi).mockResolvedValue({ status: "connected", ssid: "GardenNet", message: "Wi-Fi connection activated." });
   vi.mocked(SkyApi.controlService).mockResolvedValue({ name: "skyweaver-capture", unit: "skyweaver-capture.service", action: "restart", status: "completed", note: "restart completed" });
   vi.mocked(SkyApi.schedulePreview).mockResolvedValue({
     enabled: true,
@@ -745,12 +755,18 @@ describe("main pages", () => {
 
     expect(await screen.findByDisplayValue("Test Observatory")).toBeInTheDocument();
     expect(screen.getByText("Storage and retention")).toBeInTheDocument();
+    expect(screen.getByText("Pi Device Access")).toBeInTheDocument();
     expect(screen.getByText("Public and API")).toBeInTheDocument();
     expect(screen.getByText("Processing Quality")).toBeInTheDocument();
     expect(screen.getByText("Dark Frame Calibration")).toBeInTheDocument();
+    expect(screen.getByText("Connected to GardenNet")).toBeInTheDocument();
     expect(screen.getByText("Night gain 2")).toBeInTheDocument();
     expect(screen.getByDisplayValue("0.98")).toBeInTheDocument();
     expect(screen.getByDisplayValue("7")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /scan/i }));
+    await waitFor(() => expect(SkyApi.scanWifi).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole("button", { name: /sync now/i }));
+    await waitFor(() => expect(SkyApi.syncSystemTime).toHaveBeenCalled());
   });
 
   it("renders API key rows", async () => {

@@ -689,6 +689,8 @@ def test_api_key_scope_boundaries_for_endpoint_groups(tmp_path):
         ("read:status", "GET", "/api/v1/system/services", None),
         ("read:status", "GET", "/api/v1/system/services/skyweaver-capture", None),
         ("read:status", "GET", "/api/v1/system/diagnostics", None),
+        ("read:status", "GET", "/api/v1/system/time", None),
+        ("read:status", "GET", "/api/v1/system/wifi/status", None),
         ("read:status", "GET", "/api/v1/logs", None),
         ("read:status", "GET", "/api/v1/logs/page", None),
         ("read:status", "GET", "/api/v1/capture/state", None),
@@ -1529,6 +1531,89 @@ def test_system_service_control_requires_admin_scope(tmp_path):
     api_key = key_res.json()["data"]["key"]
     res = client.post("/api/v1/system/services/skyweaver-capture/restart", headers={"Authorization": f"Bearer {api_key}"})
     assert res.status_code == 403
+
+
+def test_system_time_sync_uses_browser_epoch_and_requires_admin(tmp_path, monkeypatch):
+    from skyweaver.api import routes
+
+    client = make_client(tmp_path)
+    token = login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+    readonly_key = create_scoped_api_key(client, token, ["read:status"], "readonly-time")
+    calls = []
+
+    class Result:
+        returncode = 0
+        stdout = "Fri Jul 03 12:00:00 UTC 2026"
+        stderr = ""
+
+    def fake_run(command, **_kwargs):
+        calls.append(command)
+        return Result()
+
+    monkeypatch.setattr(routes, "date_command", lambda: ["sudo", "-n", "/usr/bin/date"])
+    monkeypatch.setattr(routes, "run_system_command", fake_run)
+
+    status = client.get("/api/v1/system/time", headers={"Authorization": f"Bearer {readonly_key}"})
+    assert status.status_code == 200, status.text
+
+    denied = client.post("/api/v1/system/time/sync", headers={"Authorization": f"Bearer {readonly_key}"}, json={"browser_epoch_ms": 1783080000123})
+    assert denied.status_code == 403
+
+    synced = client.post("/api/v1/system/time/sync", headers=headers, json={"browser_epoch_ms": 1783080000123, "browser_timezone": "Europe/Berlin"})
+    assert synced.status_code == 200, synced.text
+    assert synced.json()["data"]["status"] == "synced"
+    assert calls == [["sudo", "-n", "/usr/bin/date", "-u", "-s", "@1783080000.123"]]
+
+
+def test_wifi_scan_and_connect_use_nmcli_and_redact_password(tmp_path, monkeypatch):
+    from skyweaver.api import routes
+
+    client = make_client(tmp_path)
+    token = login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+    readonly_key = create_scoped_api_key(client, token, ["read:status"], "readonly-wifi")
+    calls = []
+
+    class Result:
+        def __init__(self, stdout: str = "", stderr: str = "", returncode: int = 0):
+            self.stdout = stdout
+            self.stderr = stderr
+            self.returncode = returncode
+
+    def fake_run(command, **_kwargs):
+        calls.append(command)
+        if command[-2:] == ["device", "status"]:
+            return Result("wlan0|wifi|connected|GardenNet\neth0|ethernet|unavailable|--\n")
+        if command[-3:] == ["device", "wifi", "list"] and "ACTIVE,SSID,SIGNAL,SECURITY" in command:
+            return Result("yes|GardenNet|80|WPA2\n")
+        if command[-3:] == ["device", "wifi", "rescan"]:
+            return Result()
+        if command[-3:] == ["device", "wifi", "list"]:
+            return Result("GardenNet|80|WPA2|6|130 Mbit/s\nGuest|45||1|65 Mbit/s\nGardenNet|70|WPA2|11|130 Mbit/s\n")
+        if "connect" in command:
+            return Result("Device 'wlan0' successfully activated\n")
+        return Result()
+
+    monkeypatch.setattr(routes, "wifi_command", lambda: ["sudo", "-n", "/usr/bin/nmcli"])
+    monkeypatch.setattr(routes, "run_system_command", fake_run)
+
+    status = client.get("/api/v1/system/wifi/status", headers={"Authorization": f"Bearer {readonly_key}"})
+    assert status.status_code == 200, status.text
+    assert status.json()["data"]["active"][0]["ssid"] == "GardenNet"
+
+    scan = client.post("/api/v1/system/wifi/scan", headers=headers)
+    assert scan.status_code == 200, scan.text
+    assert [network["ssid"] for network in scan.json()["data"]["networks"]] == ["GardenNet", "Guest"]
+
+    denied = client.post("/api/v1/system/wifi/connect", headers={"Authorization": f"Bearer {readonly_key}"}, json={"ssid": "GardenNet", "password": "secretpass"})
+    assert denied.status_code == 403
+
+    connected = client.post("/api/v1/system/wifi/connect", headers=headers, json={"ssid": "GardenNet", "password": "secretpass"})
+    assert connected.status_code == 200, connected.text
+    assert connected.json()["data"]["status"] == "connected"
+    assert any(command[-5:] == ["wifi", "connect", "GardenNet", "password", "secretpass"] for command in calls)
+    assert "secretpass" not in connected.text
 
 
 def test_allsky_preview(tmp_path):

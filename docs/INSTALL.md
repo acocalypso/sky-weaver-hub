@@ -6,7 +6,7 @@ Primary target is Raspberry Pi OS Bookworm 64-bit.
 sudo ./install.sh
 ```
 
-The installer detects OS and architecture, installs apt dependencies including Node/npm and Python, creates the `skyweaver` system user, adds it to available camera hardware groups (`video`, `render`, `input`, `gpio`, `i2c`, `spi`), creates `/opt/skyweaver`, `/etc/skyweaver`, `/var/lib/skyweaver`, and `/var/log/skyweaver`, builds the frontend, creates the Python virtualenv, installs systemd units, writes a constrained sudoers rule for Sky Weaver service controls, and starts `skyweaver.target`.
+The installer detects OS and architecture, installs apt dependencies including Node/npm and Python, creates the `skyweaver` system user, adds it to available camera hardware groups (`video`, `render`, `input`, `gpio`, `i2c`, `spi`), creates `/opt/skyweaver`, `/etc/skyweaver`, `/var/lib/skyweaver`, and `/var/log/skyweaver`, builds the frontend, creates the Python virtualenv, installs systemd units, writes constrained sudoers rules for Sky Weaver service controls, browser-to-Pi time sync, and NetworkManager Wi-Fi operations, and starts `skyweaver.target`.
 
 On a fresh interactive install, it asks for:
 
@@ -18,6 +18,10 @@ On a fresh interactive install, it asks for:
 - public sky page enabled/disabled
 
 The admin password is stored as a bcrypt hash in `/etc/skyweaver/skyweaver.env`, not as plaintext. Noninteractive installs use defaults or explicit `SKYWEAVER_*` environment values. Re-running the installer keeps the existing `skyweaver.env`.
+
+## Local Pi access
+
+The Settings page can sync Pi time from the browser clock for offline setups without RTC hardware. It can also scan and connect Wi-Fi networks through NetworkManager's `nmcli`. The backend uses argument-array subprocess calls and admin-scoped API routes; the installer grants only the required `date` and `nmcli` sudoers command families. Wi-Fi password values are not returned by the API.
 
 ## ZWO ASI
 

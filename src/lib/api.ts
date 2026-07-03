@@ -35,6 +35,11 @@ export const SkyApi = {
   controlService: (name: string, action: ServiceAction) => api<ServiceActionResult>(`/api/v1/system/services/${name}/${action}`, { method: "POST" }),
   restartService: (name: string) => api<ServiceActionResult>(`/api/v1/system/services/${name}/restart`, { method: "POST" }),
   diagnostics: () => api<SystemDiagnostics>("/api/v1/system/diagnostics"),
+  systemTime: () => api<SystemTime>("/api/v1/system/time"),
+  syncSystemTime: (body: TimeSyncPayload) => api<TimeSyncResult>("/api/v1/system/time/sync", { method: "POST", body: JSON.stringify(body) }),
+  wifiStatus: () => api<WifiStatus>("/api/v1/system/wifi/status"),
+  scanWifi: () => api<WifiScanResult>("/api/v1/system/wifi/scan", { method: "POST" }),
+  connectWifi: (body: WifiConnectPayload) => api<WifiConnectResult>("/api/v1/system/wifi/connect", { method: "POST", body: JSON.stringify(body) }),
   logs: (query = "") => api<LogRow[]>(`/api/v1/logs${query}`),
   logsPage: (query = "") => api<LogPage>(`/api/v1/logs/page${query}`),
   cameras: () => api<CameraRow[]>("/api/v1/cameras"),
@@ -113,6 +118,15 @@ export interface ServiceFailureAnalysis { severity: "ok" | "warning" | "error"; 
 export interface ServiceUnitHistory { restarts: number | null; result: string | null; exec_main_status: string | null; recent_events: { label: string; value: string }[]; }
 export interface ServiceDetail { service: SystemService; unit: string; properties: Record<string, string>; systemctl_status: string; systemctl_error?: string | null; journal: string[]; journal_status: string; journal_error?: string | null; failure_analysis?: ServiceFailureAnalysis; unit_history?: ServiceUnitHistory; }
 export interface SystemDiagnostics { generated_at: string; app: Record<string, any>; platform: Record<string, any>; paths: Record<string, string>; database: Record<string, any>; metrics: SystemMetrics; services: SystemService[]; counts: Record<string, number>; recent_logs: LogRow[]; redaction: string; }
+export interface SystemTime { server_time: string; server_epoch_ms: number; timezone: string; }
+export interface TimeSyncPayload { browser_epoch_ms: number; browser_timezone?: string | null; }
+export interface TimeSyncResult { status: string; server_time: string; browser_timezone?: string | null; requested_epoch_ms?: number; previous_drift_seconds?: number; message?: string; }
+export interface WifiNetwork { ssid: string; signal: number | null; security: string; channel: string; rate: string; }
+export interface WifiDevice { device: string; type: string; state: string; connection: string; }
+export interface WifiStatus { available: boolean; message: string; devices: WifiDevice[]; active: { active: string; ssid: string; signal: string; security: string }[]; }
+export interface WifiScanResult { available: boolean; message: string; networks: WifiNetwork[]; }
+export interface WifiConnectPayload { ssid: string; password?: string | null; hidden?: boolean; }
+export interface WifiConnectResult { status: string; ssid?: string; message: string; }
 export interface CaptureStopResult { status: string; stop_mode: "graceful"; canceled_jobs: number; in_progress_jobs: number; in_progress_job_ids: string[]; adapter_cancel_mode: "best_effort"; cancel_requested_jobs: number; cancel_requested_job_ids: string[]; message: string; }
 export interface CameraRow { id: string; name: string; adapter: string; device_id?: string | null; model?: string | null; serial?: string | null; enabled: boolean; is_primary: boolean; capabilities?: any; created_at?: string; updated_at?: string; }
 export interface DetectedCamera { id: string; name: string; backend: string; model?: string | null; serial?: string | null; metadata?: any; }

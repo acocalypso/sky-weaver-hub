@@ -5,8 +5,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { StatusBadge } from "@/components/StatusBadge";
-import { SkyApi, type CameraRow, type DarkFrameRow } from "@/lib/api";
-import { Settings as SettingsIcon, MapPin, HardDrive, Shield, Trash2, Camera, Plus, CheckCircle2, RefreshCw, SlidersHorizontal } from "lucide-react";
+import { SkyApi, type CameraRow, type DarkFrameRow, type SystemTime, type WifiNetwork, type WifiStatus } from "@/lib/api";
+import { Settings as SettingsIcon, MapPin, HardDrive, Shield, Trash2, Camera, Plus, CheckCircle2, RefreshCw, SlidersHorizontal, Clock, Wifi } from "lucide-react";
 import { toast } from "sonner";
 
 export default function SettingsPage() {
@@ -17,13 +17,22 @@ export default function SettingsPage() {
   const [cleaningRetention, setCleaningRetention] = useState(false);
   const [capturingDark, setCapturingDark] = useState(false);
   const [activatingDarkId, setActivatingDarkId] = useState<string | null>(null);
+  const [systemTime, setSystemTime] = useState<SystemTime | null>(null);
+  const [wifiStatus, setWifiStatus] = useState<WifiStatus | null>(null);
+  const [wifiNetworks, setWifiNetworks] = useState<WifiNetwork[]>([]);
+  const [wifiForm, setWifiForm] = useState({ ssid: "", password: "", hidden: false });
+  const [syncingTime, setSyncingTime] = useState(false);
+  const [scanningWifi, setScanningWifi] = useState(false);
+  const [connectingWifi, setConnectingWifi] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const [nextValues, nextCameras, nextDarkFrames] = await Promise.all([SkyApi.settings(), SkyApi.cameras(), SkyApi.darkFrames()]);
+      const [nextValues, nextCameras, nextDarkFrames, nextTime, nextWifi] = await Promise.all([SkyApi.settings(), SkyApi.cameras(), SkyApi.darkFrames(), SkyApi.systemTime(), SkyApi.wifiStatus()]);
       setValues(nextValues);
       setCameras(nextCameras);
       setDarkFrames(nextDarkFrames);
+      setSystemTime(nextTime);
+      setWifiStatus(nextWifi);
       const primary = nextCameras.find((camera) => camera.is_primary) ?? nextCameras[0];
       if (primary && !darkForm.camera_id) setDarkForm((current) => ({ ...current, camera_id: primary.id }));
     } catch (e: any) {
@@ -117,6 +126,50 @@ export default function SettingsPage() {
     }
   }
 
+  async function syncTimeFromBrowser() {
+    setSyncingTime(true);
+    try {
+      const result = await SkyApi.syncSystemTime({
+        browser_epoch_ms: Date.now(),
+        browser_timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      });
+      toast.success(`Pi time synced; previous drift ${result.previous_drift_seconds ?? 0}s`);
+      setSystemTime(await SkyApi.systemTime());
+    } catch (e: any) {
+      toast.error(e.message ?? "Time sync failed");
+    } finally {
+      setSyncingTime(false);
+    }
+  }
+
+  async function scanWifiNetworks() {
+    setScanningWifi(true);
+    try {
+      const result = await SkyApi.scanWifi();
+      setWifiNetworks(result.networks);
+      if (!wifiForm.ssid && result.networks[0]?.ssid) setWifiForm((current) => ({ ...current, ssid: result.networks[0].ssid }));
+      toast.message(result.message);
+    } catch (e: any) {
+      toast.error(e.message ?? "Wi-Fi scan failed");
+    } finally {
+      setScanningWifi(false);
+    }
+  }
+
+  async function connectWifiNetwork() {
+    setConnectingWifi(true);
+    try {
+      const result = await SkyApi.connectWifi({ ssid: wifiForm.ssid, password: wifiForm.password || null, hidden: wifiForm.hidden });
+      if (result.status === "connected") toast.success(result.message);
+      else toast.error(result.message);
+      setWifiStatus(await SkyApi.wifiStatus());
+    } catch (e: any) {
+      toast.error(e.message ?? "Wi-Fi connect failed");
+    } finally {
+      setConnectingWifi(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -129,6 +182,45 @@ export default function SettingsPage() {
         <Field label="Latitude" type="number" step="0.0001" value={String(observatory.latitude ?? 0)} onChange={(v) => updateGroup("observatory", { latitude: Number(v) })} />
         <Field label="Longitude" type="number" step="0.0001" value={String(observatory.longitude ?? 0)} onChange={(v) => updateGroup("observatory", { longitude: Number(v) })} />
         <Field label="Timezone" value={observatory.timezone ?? "UTC"} onChange={(v) => updateGroup("observatory", { timezone: v })} />
+      </Section>
+
+      <Section icon={<Wifi className="h-4 w-4 text-primary" />} title="Pi Device Access">
+        <div className="space-y-3 rounded-md border border-border bg-muted/20 p-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <p className="text-sm font-medium flex items-center gap-2"><Clock className="h-4 w-4 text-primary" /> Browser time sync</p>
+              <p className="mt-1 text-xs text-muted-foreground font-mono-data">{systemTime?.server_time ? new Date(systemTime.server_time).toLocaleString() : "Pi time unavailable"}</p>
+            </div>
+            <Button type="button" variant="outline" onClick={syncTimeFromBrowser} disabled={syncingTime}>
+              <Clock className="h-4 w-4 mr-2" />{syncingTime ? "Syncing..." : "Sync now"}
+            </Button>
+          </div>
+        </div>
+        <div className="space-y-3 rounded-md border border-border bg-muted/20 p-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <p className="text-sm font-medium flex items-center gap-2"><Wifi className="h-4 w-4 text-primary" /> Wi-Fi</p>
+              <p className="mt-1 text-xs text-muted-foreground">{wifiStatus?.available ? (wifiStatus.active[0]?.ssid ? `Connected to ${wifiStatus.active[0].ssid}` : "No active Wi-Fi connection reported") : (wifiStatus?.message ?? "Wi-Fi status unavailable")}</p>
+            </div>
+            <Button type="button" variant="outline" onClick={scanWifiNetworks} disabled={scanningWifi}>
+              <RefreshCw className="h-4 w-4 mr-2" />{scanningWifi ? "Scanning..." : "Scan"}
+            </Button>
+          </div>
+          <div className="grid grid-cols-1 gap-3">
+            <div className="space-y-2">
+              <Label>Network</Label>
+              <select className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={wifiForm.ssid} onChange={(event) => setWifiForm({ ...wifiForm, ssid: event.target.value })}>
+                <option value="">Select network</option>
+                {wifiNetworks.map((network) => <option key={`${network.ssid}-${network.security}-${network.channel}`} value={network.ssid}>{network.ssid} {network.signal == null ? "" : `(${network.signal}%)`} {network.security || "open"}</option>)}
+              </select>
+            </div>
+            <Field label="Password" type="password" value={wifiForm.password} onChange={(v) => setWifiForm({ ...wifiForm, password: v })} placeholder="Open network: leave empty" />
+            <Toggle label="Hidden SSID" hint="Use hidden network connection mode for the selected SSID." value={wifiForm.hidden} onChange={(v) => setWifiForm({ ...wifiForm, hidden: v })} />
+            <Button type="button" onClick={connectWifiNetwork} disabled={connectingWifi || !wifiForm.ssid}>
+              <Wifi className="h-4 w-4 mr-2" />{connectingWifi ? "Connecting..." : "Connect"}
+            </Button>
+          </div>
+        </div>
       </Section>
 
       <Section icon={<HardDrive className="h-4 w-4 text-primary" />} title="Storage and retention">

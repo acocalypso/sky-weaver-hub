@@ -9,6 +9,8 @@ Mobile clients should use:
 - `GET /api/v1/public/products`
 - `GET /api/v1/images/page?limit=50`
 - `GET /api/v1/logs/page?limit=100`
+- `GET /api/v1/system/time`
+- `GET /api/v1/system/wifi/status`
 - `POST /api/v1/capture/start`
 - `POST /api/v1/capture/stop`
 - `GET /api/v1/events/stream`
@@ -20,3 +22,5 @@ Use API keys with least-privilege scopes. CORS is local-only by default and conf
 For authenticated gallery browsing, prefer `/api/v1/images/page` over the legacy offset endpoint. It preserves the standard success envelope and returns `items`, `next_cursor`, `has_more`, `limit`, and the applied `filters`. Pass the opaque `next_cursor` value back as `cursor` to load the next page. Supported filters are `day_key`, `mode`, `camera_id`, `bad_image`, `captured_from`, and `captured_to`. Date range filters must be timezone-aware ISO datetimes, for example `2026-07-01T00:00:00Z`.
 
 For authenticated operator logs, prefer `/api/v1/logs/page` over the legacy list endpoint. It uses the same `items`, `next_cursor`, `has_more`, `limit`, and `filters` shape and supports `level` and `source` filters.
+
+Admin-capable mobile clients can use `POST /api/v1/system/time/sync` to set Pi time from the device clock and `POST /api/v1/system/wifi/scan` plus `POST /api/v1/system/wifi/connect` to switch Wi-Fi networks. These routes require the `admin` scope and are intended for local operator setup flows.

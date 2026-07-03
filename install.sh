@@ -12,6 +12,8 @@ SERVICE_USER="${SKYWEAVER_SERVICE_USER:-skyweaver}"
 SERVICE_GROUP="${SKYWEAVER_SERVICE_GROUP:-skyweaver}"
 CONFIG_OWNER="${SKYWEAVER_CONFIG_OWNER:-root}"
 SYSTEMCTL_BIN="${SKYWEAVER_SYSTEMCTL_BIN:-/usr/bin/systemctl}"
+DATE_BIN="${SKYWEAVER_DATE_BIN:-/usr/bin/date}"
+NMCLI_BIN="${SKYWEAVER_NMCLI_BIN:-/usr/bin/nmcli}"
 DRY_RUN="${SKYWEAVER_DRY_RUN:-0}"
 ALLOW_NON_ROOT="${SKYWEAVER_ALLOW_NON_ROOT:-0}"
 HARDWARE_GROUPS="${SKYWEAVER_HARDWARE_GROUPS:-video,render,input,gpio,i2c,spi}"
@@ -359,6 +361,11 @@ install_service_controls() {
         fi
       done
     done
+    printf ", %s -u -s @*" "$DATE_BIN"
+    printf ", %s device wifi rescan" "$NMCLI_BIN"
+    printf ", %s -t --separator * -f * device status" "$NMCLI_BIN"
+    printf ", %s -t --separator * -f * device wifi list" "$NMCLI_BIN"
+    printf ", %s device wifi connect *" "$NMCLI_BIN"
     printf "\n"
   } >"$sudoers_tmp"
   chmod 440 "$sudoers_tmp"

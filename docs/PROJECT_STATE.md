@@ -6,7 +6,7 @@ This document tracks the current implementation state against the all-sky platfo
 
 ## Current Summary
 
-Sky Weaver Hub has moved from a mock dashboard toward a local-first Raspberry Pi/Linux all-sky platform. The repository now has a FastAPI backend, SQLite persistence, a camera adapter interface, mock capture with real image artifacts, Raspberry Pi camera support, initial native ZWO ASI support, a daemon-owned scheduled capture loop, API-key authentication, systemd and installer support, and a React UI wired to the local API.
+Sky Weaver Hub has moved from a mock dashboard toward a local-first Raspberry Pi/Linux all-sky platform. The repository now has a FastAPI backend, SQLite persistence, a camera adapter interface, mock capture with real image artifacts, Raspberry Pi camera support, initial native ZWO ASI support, a daemon-owned scheduled capture loop, API-key authentication, systemd and installer support, local Pi time/Wi-Fi administration, and a React UI wired to the local API.
 
 The product is not yet Allsky feature-complete. The main missing areas are longer real outdoor overnight soak validation, richer image-product options, full Allsky settings parity, overlay image rendering, temperature-aware dark-frame matching controls, real-sky quality calibration, and broader validated camera adapter coverage beyond Raspberry Pi libcamera hardware.
 
@@ -21,7 +21,7 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 | Auth | Local admin JWT login plus hashed API keys with scopes. Installer can seed a configured admin password hash during first setup, and the app now enforces guided setup completion before normal admin use, including bootstrap-password detection, stronger password guidance, rate limiting, and local auth audit logs. |
 | Camera abstraction | `CameraAdapter` base class plus working `mock` adapter, initial `rpicam`/`libcamera` adapter, and initial ZWO ASI adapter using the native `libASICamera2` SDK library from Debian `libasi` or a vendor SDK install. Other adapters are placeholders with actionable errors. |
 | UI/API integration | Public Sky, Dashboard, Cameras, Schedule, Gallery, Night Products, Logs, Settings, API Keys, Modules, Remote Upload, Migration, Deployment, and Developer API call the local backend. |
-| Deployment | `install.sh`, `upgrade.sh`, `uninstall.sh`, `support.sh`, and systemd units exist. Fresh interactive installs prompt for first-setup values. Installer/upgrade can provision Debian `libasi`, ZWO USB rules, and optional vendor SDK library support when ZWO is configured. Upgrade skips backend `pip install` when requirements are unchanged and the virtualenv exists, and skips frontend `npm ci` when package manifests are unchanged and `node_modules` exists. |
+| Deployment | `install.sh`, `upgrade.sh`, `uninstall.sh`, `support.sh`, and systemd units exist. Fresh interactive installs prompt for first-setup values. Installer/upgrade can provision Debian `libasi`, ZWO USB rules, optional vendor SDK library support when ZWO is configured, and constrained sudoers allowances for Sky Weaver service control, browser-to-Pi time sync, and NetworkManager Wi-Fi operations. Upgrade skips backend `pip install` when requirements are unchanged and the virtualenv exists, and skips frontend `npm ci` when package manifests are unchanged and `node_modules` exists. |
 | Tests | Backend pytest coverage for health/status, login, diagnostics redaction and file-permission reporting, cursor-paged logs, subprocess safety scanning, auth audit logs, API keys, admin-route auth boundaries, settings validation, configurable bad-image thresholds, schedule calculation, mock capture, image cursor pagination, dark-frame capture/activation/subtraction, image/product/dark-frame delete and cleanup policy, retention cleanup, first-setup hardening, system service controls, scheduled daemon capture, day/night profile scheduling, latest-only unsaved captures, end-of-night product queuing, queued test/single/sequence capture execution, pause/resume/stop queue semantics, schedule preview, daemon heartbeat/activity, interrupted job recovery, mock overnight acceptance flow, night product generation, public product archive visibility including mini timelapses, filesystem, rsync-over-SSH, SCP-over-SSH, SFTP-over-SSH, FTP/FTPS upload execution/retry with encrypted target configs, Allsky migration preview/import/rollback/settings restore including dark frames, overlay assets, and camera profiles, module/overlay flows, external module manifests, mock adapter, and fake-SDK ZWO adapter behavior. Frontend component tests cover Public Sky latest/disabled/product archive/mobile-compact states, Dashboard, Schedule, Gallery, Night Products, Health, Logs with cursor paging, Settings including dark-frame calibration and processing quality controls, API Keys, Developer API, Modules, Remote Upload, Migration, Deployment, and first setup, with route smoke coverage for public, auth, protected, and setup-required flows. Playwright browser smoke tests cover `/public` enabled, disabled, product archive, mobile compact layout states, authenticated Migration preview/import flow, and authenticated Remote Upload target/job/action flow against mocked API responses. Shell tests cover installer dry-run, service-control sudoers generation, and repeat-install idempotency with mocked system commands. |
 
 ## Implemented Capabilities
@@ -34,6 +34,8 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 - `/api/v1/system/services`
 - `/api/v1/system/services/{name}` for per-service `systemctl show` detail, recent `journalctl` output, failure analysis, and unit history when available
 - `/api/v1/system/services/{name}/{action}` for allowlisted start/stop/restart controls
+- `/api/v1/system/time` and `/api/v1/system/time/sync` for offline Pi clock inspection and admin-scoped browser time sync
+- `/api/v1/system/wifi/status`, `/api/v1/system/wifi/scan`, and `/api/v1/system/wifi/connect` for admin-scoped NetworkManager Wi-Fi setup
 - `/api/v1/system/diagnostics`
 - `/api/v1/logs`
 - `/api/v1/logs/page`
@@ -322,11 +324,14 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 
 Most recent local checks on 2026-07-03:
 
-- `backend\\.venv\\Scripts\\python -m pytest backend\\tests`: passed with 111 tests and 1 Windows-only POSIX-permission skip.
+- `backend\\.venv\\Scripts\\python -m pytest backend\\tests`: passed with 114 tests and 1 Windows-only POSIX-permission skip.
 - `npm run lint`: passed with zero warnings.
 - `npm test`: passed with 26 tests.
+- `npm test -- --run src/test/pages.test.tsx`: passed with 20 tests.
 - `npm run test:smoke`: passed with 9 tests and 1 expected desktop skip for the mobile-only assertion.
 - `npm run build`: passed.
+- `bash -n install.sh upgrade.sh scripts/test_install.sh`: passed.
+- `bash scripts/test_install.sh`: passed.
 - `git diff --check`: passed.
 - `shellcheck install.sh scripts/test_install.sh upgrade.sh uninstall.sh support.sh`: not run locally because ShellCheck is not installed on this Windows host; CI installs ShellCheck on Ubuntu.
 

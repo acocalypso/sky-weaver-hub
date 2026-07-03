@@ -102,6 +102,14 @@ Allsky migration endpoints require admin scope. Detection and preview do not mod
 
 `GET /api/v1/system/services` returns Sky Weaver service rows, including capture daemon and processing worker heartbeat, PID, last claimed job, and last success timestamps when those processes have reported activity. `GET /api/v1/system/services/{name}` returns per-service `systemctl show` properties, recent `journalctl` output, a `failure_analysis` summary, and `unit_history` timestamps/restart metadata when systemd tooling is available. These fields are read-only diagnostics for operators and mobile clients; service actions remain separate admin-scoped `POST /api/v1/system/services/{name}/{action}` calls.
 
+Local Pi administration endpoints support field operation when the Pi has no RTC or needs Wi-Fi changes:
+
+- `GET /api/v1/system/time` returns the API host UTC time and epoch milliseconds.
+- `POST /api/v1/system/time/sync` requires `admin` and accepts `browser_epoch_ms` plus optional `browser_timezone`; the backend sets system UTC time using the installer-managed `date` sudoers allowance.
+- `GET /api/v1/system/wifi/status` reports `nmcli` availability, network devices, and active Wi-Fi rows.
+- `POST /api/v1/system/wifi/scan` requires `admin`, asks NetworkManager to rescan, and returns visible SSIDs with signal/security metadata.
+- `POST /api/v1/system/wifi/connect` requires `admin` and accepts `ssid`, optional `password`, and `hidden`; responses never echo the password.
+
 Private image and product download routes under `/api/v1/images/{image_id}/download`, `/api/v1/images/{image_id}/thumbnail`, and `/api/v1/products/{product_id}/download` require `read:images`. Public download routes remain unauthenticated only under `/api/v1/public/...` and still honor the public-page enabled setting.
 
 `POST /api/v1/capture/stop` cancels pending/claimed capture jobs immediately and reports any already-running exposure in `in_progress_jobs`/`in_progress_job_ids`. It also records best-effort cancel intent in `cancel_requested_jobs`/`cancel_requested_job_ids`; adapters with safe hard-cancel support, currently the rpicam/libcamera adapter, may interrupt the exposure in the capture daemon process and mark the job `canceled` with `stop_mode: hard_cancel`. Unsupported adapters finish gracefully and are marked `stopped` with `completed_after_stop` and `stop_mode: graceful`.

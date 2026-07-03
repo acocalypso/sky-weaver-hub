@@ -132,6 +132,17 @@ class SettingsPatch(BaseModel):
     values: dict[str, Any]
 
 
+class TimeSyncBody(BaseModel):
+    browser_epoch_ms: int = Field(gt=0)
+    browser_timezone: str | None = Field(default=None, max_length=120)
+
+
+class WifiConnectBody(BaseModel):
+    ssid: str = Field(min_length=1, max_length=32)
+    password: str | None = Field(default=None, min_length=8, max_length=64)
+    hidden: bool = False
+
+
 class ObservatorySettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -658,6 +669,38 @@ def diagnostics(_principal: Annotated[dict, Depends(require_scope("read:status")
     })
 
 
+@router.get("/system/time")
+def system_time(_principal: Annotated[dict, Depends(require_scope("read:status"))]):
+    current = datetime.now(UTC)
+    return ok({"server_time": current.isoformat(), "server_epoch_ms": int(current.timestamp() * 1000), "timezone": "UTC"})
+
+
+@router.post("/system/time/sync")
+def sync_time(body: TimeSyncBody, request: Request, principal: Annotated[dict, Depends(require_scope("admin"))]):
+    result = sync_system_time(body)
+    with session() as conn:
+        audit_security_event(conn, "warning", "system_time_synced", "System time synced from browser", request, principal, {"browser_timezone": body.browser_timezone, "previous_drift_seconds": result.get("previous_drift_seconds")})
+    return ok(result)
+
+
+@router.get("/system/wifi/status")
+def wifi_status(_principal: Annotated[dict, Depends(require_scope("read:status"))]):
+    return ok(wifi_status_payload())
+
+
+@router.post("/system/wifi/scan")
+def wifi_scan(_principal: Annotated[dict, Depends(require_scope("admin"))]):
+    return ok(scan_wifi_networks())
+
+
+@router.post("/system/wifi/connect")
+def wifi_connect(body: WifiConnectBody, request: Request, principal: Annotated[dict, Depends(require_scope("admin"))]):
+    result = connect_wifi_network(body)
+    with session() as conn:
+        audit_security_event(conn, "warning", "wifi_connect_requested", "Wi-Fi connection requested", request, principal, {"ssid": body.ssid, "status": result.get("status")})
+    return ok(result)
+
+
 def file_permission_status(path: Path, expected: str) -> dict[str, Any]:
     result: dict[str, Any] = {
         "path": str(path),
@@ -725,6 +768,119 @@ def systemctl_command() -> list[str] | None:
     if sudo:
         return [sudo, "-n", systemctl]
     return [systemctl]
+
+
+def privileged_command(binary_name: str) -> list[str] | None:
+    binary = shutil.which(binary_name)
+    if not binary:
+        return None
+    if hasattr(os, "geteuid") and os.geteuid() == 0:
+        return [binary]
+    sudo = shutil.which("sudo")
+    if sudo:
+        return [sudo, "-n", binary]
+    return [binary]
+
+
+def run_system_command(command: list[str], timeout: int = 20) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(command, capture_output=True, text=True, timeout=timeout, check=False)
+
+
+def parse_nmcli_rows(output: str, fields: list[str], separator: str = "|") -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    for line in output.splitlines():
+        if not line.strip():
+            continue
+        values = line.split(separator)
+        if len(values) < len(fields):
+            values.extend([""] * (len(fields) - len(values)))
+        rows.append({field: values[index].strip() for index, field in enumerate(fields)})
+    return rows
+
+
+def wifi_command() -> list[str] | None:
+    return privileged_command("nmcli")
+
+
+def date_command() -> list[str] | None:
+    return privileged_command("date")
+
+
+def wifi_status_payload() -> dict[str, Any]:
+    command = wifi_command()
+    if not command:
+        return {"available": False, "message": "nmcli is not available on this host.", "devices": [], "active": []}
+    devices_result = run_system_command([*command, "-t", "--separator", "|", "-f", "DEVICE,TYPE,STATE,CONNECTION", "device", "status"])
+    if devices_result.returncode != 0:
+        return {"available": False, "message": redact_operational_text((devices_result.stderr or devices_result.stdout or "nmcli device status failed").strip()), "devices": [], "active": []}
+    active_result = run_system_command([*command, "-t", "--separator", "|", "-f", "ACTIVE,SSID,SIGNAL,SECURITY", "device", "wifi", "list"])
+    active_rows = parse_nmcli_rows(active_result.stdout, ["active", "ssid", "signal", "security"]) if active_result.returncode == 0 else []
+    return {
+        "available": True,
+        "message": "nmcli is available.",
+        "devices": parse_nmcli_rows(devices_result.stdout, ["device", "type", "state", "connection"]),
+        "active": [row for row in active_rows if row.get("active") == "yes"],
+    }
+
+
+def scan_wifi_networks() -> dict[str, Any]:
+    command = wifi_command()
+    if not command:
+        return {"available": False, "message": "nmcli is not available on this host.", "networks": []}
+    rescan = run_system_command([*command, "device", "wifi", "rescan"], timeout=30)
+    list_result = run_system_command([*command, "-t", "--separator", "|", "-f", "SSID,SIGNAL,SECURITY,CHAN,RATE", "device", "wifi", "list"], timeout=30)
+    if list_result.returncode != 0:
+        raise HTTPException(500, redact_operational_text((list_result.stderr or list_result.stdout or "Wi-Fi scan failed").strip()))
+    networks: dict[str, dict[str, Any]] = {}
+    for row in parse_nmcli_rows(list_result.stdout, ["ssid", "signal", "security", "channel", "rate"]):
+        ssid = row.get("ssid", "")
+        if not ssid:
+            continue
+        signal = int(row["signal"]) if row.get("signal", "").isdigit() else None
+        current = networks.get(ssid)
+        if current is None or (signal or 0) > (current.get("signal") or 0):
+            networks[ssid] = {**row, "signal": signal}
+    return {
+        "available": True,
+        "message": "Wi-Fi scan completed." if rescan.returncode == 0 else redact_operational_text((rescan.stderr or rescan.stdout or "Wi-Fi rescan failed; showing cached networks.").strip()),
+        "networks": sorted(networks.values(), key=lambda item: item.get("signal") or 0, reverse=True),
+    }
+
+
+def connect_wifi_network(body: WifiConnectBody) -> dict[str, Any]:
+    command = wifi_command()
+    if not command:
+        return {"status": "unavailable", "message": "nmcli is not available on this host."}
+    full_command = [*command, "device", "wifi", "connect", body.ssid]
+    if body.password:
+        full_command.extend(["password", body.password])
+    if body.hidden:
+        full_command.append("hidden")
+        full_command.append("yes")
+    result = run_system_command(full_command, timeout=60)
+    if result.returncode != 0:
+        message = redact_operational_text((result.stderr or result.stdout or "Wi-Fi connect failed").strip())
+        return {"status": "failed", "ssid": body.ssid, "message": message}
+    return {"status": "connected", "ssid": body.ssid, "message": "Wi-Fi connection activated."}
+
+
+def sync_system_time(body: TimeSyncBody) -> dict[str, Any]:
+    command = date_command()
+    if not command:
+        return {"status": "unavailable", "message": "date command is not available on this host.", "server_time": now_iso()}
+    target_seconds = body.browser_epoch_ms / 1000
+    before = datetime.now(UTC)
+    result = run_system_command([*command, "-u", "-s", f"@{target_seconds:.3f}"], timeout=20)
+    after = datetime.now(UTC)
+    if result.returncode != 0:
+        raise HTTPException(500, redact_operational_text((result.stderr or result.stdout or "System time sync failed").strip()))
+    return {
+        "status": "synced",
+        "server_time": after.isoformat(),
+        "browser_timezone": body.browser_timezone,
+        "requested_epoch_ms": body.browser_epoch_ms,
+        "previous_drift_seconds": round(target_seconds - before.timestamp(), 3),
+    }
 
 
 def run_service_action(name: str, action: str) -> dict[str, str]:
