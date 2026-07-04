@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { StatusBadge } from "@/components/StatusBadge";
-import { SkyApi, type ProcessingJob, type ProductRow } from "@/lib/api";
+import { getToken, SkyApi, type ProcessingJob, type ProductRow } from "@/lib/api";
 import { Download, Film, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -14,6 +14,7 @@ export default function Timelapses() {
   const [products, setProducts] = useState<ProductRow[]>([]);
   const [form, setForm] = useState({ day_key: new Date().toISOString().slice(0, 10).replaceAll("-", ""), fps: 30, codec: "h264" });
   const [deletingProductId, setDeletingProductId] = useState<string | null>(null);
+  const [downloadingProductId, setDownloadingProductId] = useState<string | null>(null);
 
   useEffect(() => {
     document.title = "Night products - Sky Weaver Hub";
@@ -54,6 +55,32 @@ export default function Timelapses() {
       toast.error(e.message ?? "Delete failed");
     } finally {
       setDeletingProductId(null);
+    }
+  }
+
+  async function downloadProduct(product: ProductRow) {
+    if (downloadingProductId) return;
+    setDownloadingProductId(product.id);
+    let objectUrl: string | null = null;
+    try {
+      const token = getToken();
+      const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
+      const response = await fetch(`/api/v1/products/${product.id}/download`, { headers });
+      if (!response.ok) throw new Error(await downloadErrorMessage(response));
+      const blob = await response.blob();
+      objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = productFileName(product, response.headers.get("content-disposition"));
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      toast.success(`${prettyType(product.type)} download started`);
+    } catch (e: any) {
+      toast.error(e.message ?? "Download failed");
+    } finally {
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      setDownloadingProductId(null);
     }
   }
 
@@ -107,8 +134,8 @@ export default function Timelapses() {
               </div>
               <p className="text-xs text-muted-foreground font-mono-data mt-1">day {product.day_key} - {product.metadata?.source_images ?? "-"} source images</p>
             </div>
-            <Button asChild variant="outline" size="sm">
-              <a href={`/api/v1/products/${product.id}/download`} target="_blank" rel="noreferrer"><Download className="h-4 w-4 mr-2" /> Download</a>
+            <Button variant="outline" size="sm" onClick={() => downloadProduct(product)} disabled={downloadingProductId === product.id}>
+              <Download className="h-4 w-4 mr-2" /> {downloadingProductId === product.id ? "Downloading" : "Download"}
             </Button>
             <Button variant="destructive" size="sm" onClick={() => deleteProduct(product)} disabled={deletingProductId === product.id}>
               <Trash2 className="h-4 w-4 mr-2" />{deletingProductId === product.id ? "Deleting" : "Delete"}
@@ -119,6 +146,22 @@ export default function Timelapses() {
       </div>
     </div>
   );
+}
+
+async function downloadErrorMessage(response: Response) {
+  try {
+    const payload = await response.json();
+    return payload?.error?.message ?? payload?.detail ?? response.statusText;
+  } catch {
+    return response.statusText;
+  }
+}
+
+function productFileName(product: ProductRow, contentDisposition: string | null) {
+  const match = contentDisposition?.match(/filename="?([^";]+)"?/i);
+  if (match?.[1]) return match[1];
+  const extension = product.type.includes("timelapse") ? "mp4" : "jpg";
+  return `${product.type}-${product.day_key}.${extension}`;
 }
 
 function Labelled({ label, children }: { label: string; children: React.ReactNode }) {

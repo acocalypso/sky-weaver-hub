@@ -788,6 +788,22 @@ describe("main pages", () => {
   });
 
   it("renders night products and queues product regeneration", async () => {
+    localStorage.setItem("skyweaver_token", "download-token");
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(new Blob(["product-bytes"], { type: "image/jpeg" }), { status: 200 }));
+    const originalCreateObjectUrl = URL.createObjectURL;
+    const originalRevokeObjectUrl = URL.revokeObjectURL;
+    const clickMock = vi.fn();
+    const originalCreateElement = document.createElement.bind(document);
+    vi.spyOn(document, "createElement").mockImplementation(((tagName: string, options?: ElementCreationOptions) => {
+      const element = originalCreateElement(tagName, options);
+      if (tagName.toLowerCase() === "a") {
+        Object.defineProperty(element, "click", { configurable: true, value: clickMock });
+      }
+      return element;
+    }) as typeof document.createElement);
+    Object.defineProperty(URL, "createObjectURL", { configurable: true, value: vi.fn(() => "blob:product-download") });
+    Object.defineProperty(URL, "revokeObjectURL", { configurable: true, value: vi.fn() });
+
     render(<Timelapses />);
 
     expect(await screen.findByRole("heading", { name: /night products/i })).toBeInTheDocument();
@@ -799,8 +815,16 @@ describe("main pages", () => {
     fireEvent.change(screen.getByPlaceholderText("20260623"), { target: { value: "20260624" } });
     fireEvent.click(screen.getByRole("button", { name: /^Timelapse$/i }));
     await waitFor(() => expect(SkyApi.createProduct).toHaveBeenCalledWith("timelapse", { day_key: "20260624", fps: 30, codec: "h264" }));
+    fireEvent.click(screen.getAllByRole("button", { name: /download/i })[0]);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/v1/products/product-1/download", { headers: { Authorization: "Bearer download-token" } }));
+    expect(clickMock).toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: /delete/i }));
     await waitFor(() => expect(SkyApi.deleteProduct).toHaveBeenCalledWith("product-1"));
+
+    fetchMock.mockRestore();
+    vi.mocked(document.createElement).mockRestore();
+    Object.defineProperty(URL, "createObjectURL", { configurable: true, value: originalCreateObjectUrl });
+    Object.defineProperty(URL, "revokeObjectURL", { configurable: true, value: originalRevokeObjectUrl });
   });
 
   it("renders settings groups from backend settings", async () => {

@@ -839,7 +839,7 @@ def test_scheduled_capture_due_uses_previous_start_time(tmp_path: Path):
     assert timing["last_scheduled_capture_started_at"] == (now - timedelta(seconds=101)).isoformat()
 
 
-def test_schedule_command_uses_exposure_ramp_state(tmp_path: Path):
+def test_schedule_command_uses_day_exposure_ramp_state(tmp_path: Path):
     client = make_client(tmp_path)
     token = login(client)
     headers = {"Authorization": f"Bearer {token}"}
@@ -866,6 +866,59 @@ def test_schedule_command_uses_exposure_ramp_state(tmp_path: Path):
 
     with session() as conn:
         camera = conn.execute("SELECT id FROM cameras WHERE is_primary=1 LIMIT 1").fetchone()
+        profile = conn.execute("SELECT id FROM camera_profiles WHERE camera_id=? AND mode='daytime'", (camera["id"],)).fetchone()
+        settings = {
+            "capture_enabled": True,
+            "save_enabled": False,
+            "interval_seconds": 30,
+            "manual_exposure_ms": 1000,
+            "gain": 1,
+            "ramp_min_exposure_ms": 1,
+            "ramp_max_exposure_ms": 1000,
+            "ramp_min_gain": 1,
+            "ramp_max_gain": 4,
+        }
+        conn.execute("UPDATE camera_profiles SET settings=? WHERE id=?", (json_dumps(settings), profile["id"]))
+
+    command = schedule_command(camera_id=camera["id"], mode="day")
+    assert command.exposure_ms == 1
+    assert command.gain == 1
+    assert command.settings["auto_exposure"] is False
+    assert command.settings["exposure_ramping_active"] is True
+
+    write_exposure_ramp_state(camera["id"], "day", {"next_exposure_ms": 256, "next_gain": 2, "updated_at": now_iso()})
+    command = schedule_command(camera_id=camera["id"], mode="day")
+    assert command.exposure_ms == 256
+    assert command.gain == 2
+
+
+def test_schedule_command_does_not_ramp_night_without_profile_opt_in(tmp_path: Path):
+    client = make_client(tmp_path)
+    token = login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+    assert client.put(
+        "/api/v1/schedule",
+        headers=headers,
+        json={
+            "enabled": True,
+            "start_mode": "fixed",
+            "end_mode": "fixed",
+            "fixed_start_time": "00:00",
+            "fixed_end_time": "23:59",
+            "sun_angle": -6,
+            "timezone": "UTC",
+            "latitude": 0,
+            "longitude": 0,
+            "interval_seconds": 30,
+            "exposure_ramping_enabled": True,
+        },
+    ).status_code == 200
+
+    from skyweaver.db import json_dumps, session
+    from skyweaver.services.capture import schedule_command
+
+    with session() as conn:
+        camera = conn.execute("SELECT id FROM cameras WHERE is_primary=1 LIMIT 1").fetchone()
         profile = conn.execute("SELECT id FROM camera_profiles WHERE camera_id=? AND mode='nighttime'", (camera["id"],)).fetchone()
         settings = {
             "capture_enabled": True,
@@ -881,15 +934,18 @@ def test_schedule_command_uses_exposure_ramp_state(tmp_path: Path):
         conn.execute("UPDATE camera_profiles SET settings=? WHERE id=?", (json_dumps(settings), profile["id"]))
 
     command = schedule_command(camera_id=camera["id"], mode="night")
+    assert command.exposure_ms == 10000
+    assert command.gain == 4
+    assert "exposure_ramping_active" not in command.settings
+
+    settings["exposure_ramping_enabled"] = True
+    with session() as conn:
+        conn.execute("UPDATE camera_profiles SET settings=? WHERE id=?", (json_dumps(settings), profile["id"]))
+
+    command = schedule_command(camera_id=camera["id"], mode="night")
     assert command.exposure_ms == 1
     assert command.gain == 1
-    assert command.settings["auto_exposure"] is False
     assert command.settings["exposure_ramping_active"] is True
-
-    write_exposure_ramp_state(camera["id"], "night", {"next_exposure_ms": 256, "next_gain": 2, "updated_at": now_iso()})
-    command = schedule_command(camera_id=camera["id"], mode="night")
-    assert command.exposure_ms == 256
-    assert command.gain == 2
 
 
 def test_exposure_ramp_updates_next_exposure_from_brightness(tmp_path: Path):

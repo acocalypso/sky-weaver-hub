@@ -913,7 +913,7 @@ def schedule_command(camera_id: str | None = None, mode: str = "night") -> Captu
     settings = profile["settings"] if profile else {}
     exposure_ms = float(settings.get("manual_exposure_ms", 1000))
     gain = float(settings.get("gain", 1.0))
-    if schedule.get("exposure_ramping_enabled"):
+    if exposure_ramping_enabled_for_mode(schedule, settings, mode):
         exposure_ms, gain, settings = apply_exposure_ramp_settings(camera["id"], mode, exposure_ms, gain, settings)
     return CaptureCommand(
         camera_id=camera["id"],
@@ -925,6 +925,15 @@ def schedule_command(camera_id: str | None = None, mode: str = "night") -> Captu
         mode=mode,
         settings=settings,
     )
+
+
+def exposure_ramping_enabled_for_mode(schedule: dict[str, Any], settings: dict[str, Any], mode: str) -> bool:
+    profile_value = settings.get("exposure_ramping_enabled")
+    if profile_value is not None:
+        return bool(profile_value)
+    # The schedule-level toggle is intended for daytime/twilight transition control.
+    # Night profiles keep their configured manual exposure unless explicitly opted in.
+    return bool(schedule.get("exposure_ramping_enabled")) and mode == "day"
 
 
 def ramp_state_key(camera_id: str, mode: str) -> str:
