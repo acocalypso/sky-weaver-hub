@@ -143,8 +143,8 @@ def daemon_lock() -> Iterator[None]:
 
 async def main() -> None:
     init_db()
-    recover_capture_jobs()
     with daemon_lock():
+        recover_capture_jobs()
         await CaptureDaemon().run_forever()
 
 

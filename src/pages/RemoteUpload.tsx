@@ -341,7 +341,7 @@ function Detail({ label, value }: { label: string; value: string }) {
   );
 }
 
-function Field({ label, help, value, onChange, ...rest }: { label: string; help?: React.ReactNode; value: string; onChange: (value: string) => void } & React.InputHTMLAttributes<HTMLInputElement>) {
+function Field({ label, help, value, onChange, ...rest }: { label: string; help?: React.ReactNode; value: string; onChange: (value: string) => void } & Omit<React.InputHTMLAttributes<HTMLInputElement>, "value" | "onChange">) {
   const generatedId = useId();
   const inputId = rest.id ?? generatedId;
   return (

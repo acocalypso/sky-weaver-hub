@@ -4,6 +4,8 @@ Sky Weaver Hub is a local-first, REST API first all-sky camera platform for Rasp
 
 ## Current Status
 
+Status reviewed on 2026-10-16 against source commit `1db48f4`. See [Project State](docs/PROJECT_STATE.md) for implementation and validation evidence.
+
 This repository now contains a working local-first platform slice:
 
 - Vite/React 19 admin UI using the local `/api/v1` service, Tailwind 4, shadcn/Radix UI, responsive operator pages, and click-to-open help on configuration controls.
@@ -23,7 +25,7 @@ This repository now contains a working local-first platform slice:
 - Systemd units and installer scripts for Pi deployment, with first-setup prompts, constrained service-control/time-sync/Wi-Fi permissions, dry-run/idempotency tests, and upgrade skips for unchanged Python/npm dependency manifests.
 - Allsky migration detection, preview, worker-backed image/product/dark-frame/overlay-asset import, selected settings/profile import, basic overlay text import, rollback, and Migration UI. Original Allsky files are copied, never deleted.
 
-Some Allsky parity items are intentionally still future work: overlay image rendering/live previews/presets, full Allsky settings parity, temperature-aware dark-frame matching controls, richer product options/progress, broader real-camera validation beyond rpicam/IMX290, and custom module sandboxing.
+Important remaining gaps include automatic upload triggers, scheduled retention/low-space protection, observing-night product windows, rolling mini timelapses, shared image transforms/masks, visual/image overlays, temperature-aware dark-frame matching, executable external module flows, sensors/charts/integrations, general backup/restore, and broader hardware/field validation. Product progress reporting already exists.
 
 ## Supported Targets
 
@@ -73,6 +75,8 @@ SKYWEAVER_DRY_RUN=1 ./install.sh
 ```
 
 ## Development
+
+Use Python 3.11+ and Node.js 22.x (22.22.2+), 24.x (24.15+), or 26+ as allowed by `package.json` (Node 24 is used in CI). OS-provided Node packages can be older; check `node --version` before installing or building. See [dependency maintenance](docs/DEPENDENCIES.md) for the current upgrade decisions and compatibility exceptions.
 
 Run the backend:
 
@@ -201,8 +205,17 @@ Sky Weaver detects common Allsky directories such as `~/allsky`, `~/allsky-OLD`,
 - Imported Allsky overlay image assets are preserved, but rendering those assets in Sky Weaver overlays is future work.
 - Custom module code upload/execution remains disabled until sandboxing/signing is designed.
 - Remote uploads are optional worker jobs; unreachable remote targets can delay upload processing until their timeouts expire.
+- Uploads and failed-upload retries require explicit API/UI actions; capture/product completion does not automatically queue publication.
+- Image/product retention cleanup is available through explicit API/UI actions. There is no scheduled cleanup or enforced `min_free_gb` capture policy.
+- Products select images by UTC calendar `day_key`, which can split a night crossing midnight. Mini timelapses sample a selected date; they do not continually rebuild from the latest N frames.
+- Shared post-capture resize/crop/stretch/mask processing is not implemented; rpicam capture controls and product frame resizing are narrower capabilities.
+- General backup/export/restore, sensor control, historical charts, meteor detection, and optional integrations are not implemented.
 - Temperature-aware dark-frame matching and richer calibration guidance remain future hardening.
 
 ## Documentation
 
 See `docs/` for install, upgrade, uninstall, camera, API, mobile API, plugin, security, migration, Raspberry Pi, agent guidelines, task templates, and troubleshooting notes.
+
+- [Current project state and verification](docs/PROJECT_STATE.md)
+- [Dependency/runtime requirements and verification](docs/DEPENDENCIES.md)
+- [Correctness fixes and regression coverage](docs/CORRECTNESS_REVIEW.md)

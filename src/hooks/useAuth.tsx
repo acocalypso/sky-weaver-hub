@@ -1,4 +1,4 @@
-import { useEffect, useState, ReactNode } from "react";
+import { useEffect, useRef, useState, ReactNode } from "react";
 import { getToken, setToken, SkyApi, type SkyUserPrincipal } from "@/lib/api";
 import { AuthContext, type AuthCtx, type Role } from "@/hooks/auth-context";
 
@@ -7,39 +7,59 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<SkyUserPrincipal | null>(null);
   const [roles, setRoles] = useState<Role[]>([]);
   const [loading, setLoading] = useState(true);
+  const authVersion = useRef(0);
 
   useEffect(() => {
     let alive = true;
+    const version = authVersion.current;
+    const token = getToken();
+    const isCurrent = () => alive && version === authVersion.current && getToken() === token;
     async function load() {
-      if (!getToken()) {
+      if (!token) {
         setLoading(false);
         return;
       }
       try {
         const principal = await SkyApi.me();
-        if (!alive) return;
+        if (!isCurrent()) return;
         setUser(principal);
         setRoles([principal.role as Role]);
       } catch {
+        if (!isCurrent()) return;
         setToken(null);
         setTokenState(null);
         setUser(null);
         setRoles([]);
       } finally {
-        if (alive) setLoading(false);
+        if (alive && version === authVersion.current) setLoading(false);
       }
     }
     load();
-    return () => { alive = false; };
+    return () => { alive = false; authVersion.current += 1; };
   }, []);
 
   async function signIn(username: string, password: string) {
-    const data = await SkyApi.login(username, password);
-    setToken(data.token);
-    setTokenState(data.token);
-    const principal = await SkyApi.me();
-    setUser(principal);
-    setRoles([principal.role as Role]);
+    const version = ++authVersion.current;
+    setLoading(true);
+    try {
+      const data = await SkyApi.login(username, password);
+      if (version !== authVersion.current) return;
+      setToken(data.token);
+      setTokenState(data.token);
+      const principal = await SkyApi.me();
+      if (version !== authVersion.current) return;
+      setUser(principal);
+      setRoles([principal.role as Role]);
+    } catch (error) {
+      if (version !== authVersion.current) return;
+      setToken(null);
+      setTokenState(null);
+      setUser(null);
+      setRoles([]);
+      throw error;
+    } finally {
+      if (version === authVersion.current) setLoading(false);
+    }
   }
 
   const value: AuthCtx = {
@@ -50,10 +70,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     isAdmin: roles.includes("admin"),
     signIn,
     signOut: async () => {
+      authVersion.current += 1;
       setToken(null);
       setTokenState(null);
       setUser(null);
       setRoles([]);
+      setLoading(false);
     },
   };
 

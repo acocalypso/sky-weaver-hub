@@ -1,5 +1,7 @@
 # Upgrade
 
+Before upgrading, check that Python is 3.11+ and Node matches `^22.22.2 || ^24.15.0 || >=26.0.0` (Node 24 recommended). Dependency updates can require a newer build/test runtime than the OS-provided Node package. `upgrade.sh` refreshes application dependencies; it does not upgrade Node itself. See [dependency maintenance](DEPENDENCIES.md) for compatibility decisions.
+
 ```bash
 sudo ./upgrade.sh
 ```

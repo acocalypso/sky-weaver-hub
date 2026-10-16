@@ -46,7 +46,10 @@ Sky Weaver Hub currently includes:
 - Public unauthenticated sky page and public latest-image API guarded by the public-page enabled setting.
 - System Health UI with service control, journal inspection, diagnostics export, and queue/metric summaries.
 - Installer/systemd scripts for Raspberry Pi deployment.
-- Allsky migration detection and dry-run preview, with real import/rollback still intentionally scaffolded.
+- Allsky migration detection, preview, worker-backed image/product/dark-frame/overlay-asset import, selected settings/profile translation, and rollback of Sky Weaver-created data and settings snapshots. Full upstream configuration/module compatibility remains incomplete.
+- Dark-frame master capture/subtraction, trusted text overlays, and worker-backed remote file uploads. Uploads and retention cleanup currently require explicit queue/API/UI actions; automatic publication and scheduled cleanup are not implemented.
+
+Use [PROJECT_STATE.md](PROJECT_STATE.md) for the dated implementation/validation record. Phase completion does not establish field validation.
 
 Do not describe scaffolded areas as complete. When changing behavior, update docs and API-facing contracts so the project state remains honest.
 
@@ -231,7 +234,7 @@ Keep implementation layers separated:
 - Database/storage: SQLite schema, migrations, filesystem paths, image/product/log/config storage.
 - Capture daemon: scheduled capture loop, capture queue ownership, heartbeat, job recovery, cancellation semantics.
 - Camera adapters: mock, rpicam/libcamera, ZWO, gPhoto2, V4L2/webcam, INDI, custom command.
-- Image processing worker: thumbnails, keograms, timelapses, startrails, future overlays/dark frames.
+- Image processing worker: thumbnails, keograms, timelapses, mini timelapses, startrails, uploads, and Allsky imports. Dark-frame subtraction and trusted text overlays currently run in the capture service before publication.
 - Installer/systemd scripts: install, upgrade, uninstall, support, units, sudoers, dry-run behavior.
 - Migration tools: Allsky detection, preview, import, rollback, unsupported-setting reports.
 - Public surface: `/public`, public latest-image APIs, unauthenticated assets, and disabled-state behavior.

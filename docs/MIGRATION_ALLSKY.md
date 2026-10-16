@@ -1,5 +1,7 @@
 # Migration From Allsky
 
+Status reviewed: 2026-10-16. Import and rollback are implemented; compatibility with every upstream version and setting is not established. No new migration acceptance run against a specific upstream release was performed during this review.
+
 Detection endpoint:
 
 ```bash
@@ -35,3 +37,5 @@ Current limitations:
 - imported dark frames are preserved as dark-frame rows; capture-time subtraction uses Sky Weaver-created calibrated master dark sets with matching metadata
 - overlay image/logo assets are preserved but not rendered by the text overlay module yet
 - camera hints are stored as migration hints and do not create or replace hardware camera adapters
+- full overlay layouts, executable modules/flows, chart definitions, device configuration, and integration credentials are not translated
+- settings discovery currently recognizes a fixed set of basenames (`config.sh`, `settings.json`, `options.json`, `camera_settings.json`, `ftp-settings.sh`, `ftp-settings.json`, `variables.sh`); version-specific layouts and other filenames need fixtures before compatibility can be claimed

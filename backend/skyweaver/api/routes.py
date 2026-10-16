@@ -1,4 +1,3 @@
-import asyncio
 import base64
 import binascii
 import json
@@ -14,14 +13,15 @@ from typing import Any, Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse, StreamingResponse
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 from ..camera.registry import adapters, get_adapter
 from ..config import get_settings
 from ..db import default_profile, event, json_dumps, json_loads, log, new_id, now_iso, row_to_dict, session
 from ..secrets import encrypt_config_envelope
 from ..rate_limit import InMemoryRateLimiter, RateLimitStatus
-from ..security import create_api_key, hash_password, make_token, verify_password
+from ..security import create_api_key, hash_password, make_token, parse_expiration, scopes_for_role, verify_password
+from ..services.events import event_cursor, stream_events
 from ..services.allsky_migration import preview_allsky_root, rollback_allsky_import
 from ..services.capture import CaptureCommand, all_rows, cleanup_images_by_retention, configured_image_retention_days, create_capture_job, current_schedule, dark_frame_settings, decode_row, delete_image_files, delete_storage_paths, enqueue_capture, get_primary_camera, public_latest_payload, publish_latest_image, read_latest_payload, scheduled_capture_timing, system_metrics, upsert_dark_frame_settings
 from ..services.modules import register_external_module, run_flow_preview, validate_module_order
@@ -81,6 +81,11 @@ class ApiKeyCreate(BaseModel):
     name: str
     scopes: list[str] = Field(default_factory=lambda: ["read:status", "read:images"])
     expires_at: str | None = None
+
+    @field_validator("expires_at")
+    @classmethod
+    def valid_expiration(cls, value: str | None) -> str | None:
+        return parse_expiration(value).isoformat() if value is not None else None
 
 
 class CameraCreate(BaseModel):
@@ -1033,7 +1038,7 @@ def login(body: LoginRequest, request: Request):
                 raise_rate_limited(failure_status.retry_after_seconds)
             raise HTTPException(401, "Invalid username or password")
         conn.execute("UPDATE users SET last_login_at=?, updated_at=? WHERE id=?", (now_iso(), now_iso(), row["id"]))
-        token = make_token({"sub": row["id"], "username": row["username"], "role": row["role"], "scopes": ["admin"]}, settings.secret_key)
+        token = make_token({"sub": row["id"], "username": row["username"], "role": row["role"], "scopes": scopes_for_role(row["role"])}, settings.secret_key)
         if limit_status.failure_count:
             audit_auth_event(conn, "info", "login", "Login succeeded after previous failures", request, body.username, limit_status)
     auth_rate_limiter.reset(limit_key)
@@ -1147,6 +1152,8 @@ def setup_complete(body: SetupComplete, request: Request, principal: Annotated[d
 
 @router.patch("/users/me/password")
 def change_password(body: LoginRequest, request: Request, principal: Annotated[dict, Depends(current_principal)]):
+    if principal["type"] != "user":
+        raise HTTPException(403, "Password changes require a user session")
     issues = password_issues(body.password)
     if issues:
         raise HTTPException(400, " ".join(issues))
@@ -2503,15 +2510,6 @@ def rollback_migration_job(job_id: str, _principal: Annotated[dict, Depends(requ
 
 
 @router.get("/events/stream")
-async def event_stream(_principal: Annotated[dict, Depends(require_scope("read:status"))]):
-    async def stream():
-        last_id = ""
-        while True:
-            with session() as conn:
-                rows = all_rows(conn, "SELECT * FROM events WHERE id > ? ORDER BY created_at LIMIT 20", (last_id,))
-            for row in rows:
-                last_id = row["id"]
-                yield f"event: {row['type']}\ndata: {json.dumps(row)}\n\n"
-            await asyncio.sleep(2)
-
-    return StreamingResponse(stream(), media_type="text/event-stream")
+async def event_stream(request: Request, _principal: Annotated[dict, Depends(require_scope("read:status"))]):
+    sequence = event_cursor(request.headers.get("last-event-id"))
+    return StreamingResponse(stream_events(sequence), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})

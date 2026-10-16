@@ -16,6 +16,20 @@ Errors use:
 
 External clients use `Authorization: Bearer <API_KEY>`. Admin UI login receives a bearer token from `/api/v1/auth/login`.
 
+User-session permissions follow the current database role on every request, including sessions issued before a role change:
+
+| Role | Scopes |
+| --- | --- |
+| admin | `admin` (all protected operations) |
+| operator | `read:status`, `read:images`, `read:settings`, `write:capture`, `write:settings`, `write:processing` |
+| viewer | `read:status`, `read:images`, `read:settings` |
+
+Deleted users receive `401` even if their signed token has not expired. User JWTs require `sub` and `exp`; a claimed role/scope does not override the current stored role. API keys retain their explicit scopes. Optional API-key `expires_at` must be an ISO datetime with a timezone; creation rejects invalid or timezone-free values with `422`. Expired keys and legacy keys with invalid expiry values return `401` without updating `last_used_at`. `null` means no expiry. Password changes require a user session rather than an API key.
+
+### Event stream and reconnects
+
+`GET /api/v1/events/stream` requires `read:status`. Events follow SQLite insertion order, so random UUID ordering or a corrected Pi clock does not cause skipped/repeated batches. Each SSE frame includes `id: <event UUID>`, `event: <type>` and the existing JSON `data` object. Reconnect with `Last-Event-ID: <event UUID>` to resume after that retained event. Without that header, retained event history is replayed. An unknown resume ID returns `400`; clients can explicitly reconnect without a cursor to replay retained history. Internal sequence values are not part of the public payload. There is currently no event-pruning API; do not treat internal SQLite rowids as client cursors.
+
 `GET /api/v1/logs?source=auth` exposes local auth audit entries to authenticated status readers, including failed login/setup attempts, rate-limit blocks, and successful login after previous failures. `GET /api/v1/logs?source=security` exposes privileged-change audit entries for setup completion, password changes, user/API-key lifecycle, settings, schedule, camera, and camera-profile changes. Audit contexts include actor/client metadata, target identifiers, scopes, and changed field names, but not submitted passwords, raw API keys, key hashes, or secret setting values. New clients should prefer `GET /api/v1/logs/page?limit=100`, which returns `items`, `next_cursor`, `has_more`, `limit`, and `filters` for cursor-paged log browsing with optional `level` and `source` filters.
 
 Capture requests that can touch hardware are queued. `/api/v1/capture/test-shot`, `/api/v1/capture/single`, and `/api/v1/capture/sequence` return a capture job immediately; clients should poll `/api/v1/capture/jobs` or `/api/v1/capture/jobs/{job_id}` and then read `/api/v1/images/latest` or image detail endpoints after completion.

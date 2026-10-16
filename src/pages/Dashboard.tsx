@@ -13,10 +13,12 @@ import { Play, Pause, Square, Camera, RefreshCw, Film, RotateCw, Cpu, MemoryStic
 import { toast } from "sonner";
 import { format, formatDistanceToNow } from "date-fns";
 
-type DashboardLatest = (ImageRow | (PublicLatestImage & { public_url: string; latest_only: true })) & {
+type DashboardLatest = (ImageRow | (PublicLatestImage & { public_url: string; latest_only: boolean })) & {
   exposure_ms?: number | null;
   gain?: number | null;
   metadata?: any;
+  latest_only?: boolean;
+  temperature_c?: number | null;
 };
 
 export default function Dashboard() {

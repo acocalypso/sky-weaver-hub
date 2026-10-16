@@ -1,6 +1,6 @@
 # Sky Weaver Hub Project State
 
-Last updated: 2026-07-03
+Last reviewed: 2026-10-16 (source baseline `1db48f4`).
 
 This document tracks the current implementation state against the all-sky platform prompt. It is intended to be updated after each implementation phase.
 
@@ -8,7 +8,36 @@ This document tracks the current implementation state against the all-sky platfo
 
 Sky Weaver Hub has moved from a mock dashboard toward a local-first Raspberry Pi/Linux all-sky platform. The repository now has a FastAPI backend, SQLite persistence, a camera adapter interface, mock capture with real image artifacts, Raspberry Pi camera support, initial native ZWO ASI support, a daemon-owned scheduled capture loop, API-key authentication, systemd and installer support, local Pi time/Wi-Fi administration, and a React UI wired to the local API.
 
-The product is not yet Allsky feature-complete. The main missing areas are longer real outdoor overnight soak validation, richer image-product options, full Allsky settings parity, overlay image rendering, temperature-aware dark-frame matching controls, real-sky quality calibration, and broader validated camera adapter coverage beyond Raspberry Pi libcamera hardware.
+The most important operational gaps are automatic image/product publication, scheduled retention and low-space enforcement, and observing-night product selection. Cleanup/upload primitives work, but require explicit actions. Product selection uses UTC calendar dates, and mini timelapses sample a selected date rather than rolling over the latest frames. Other gaps include shared image transforms/masks, visual/image overlays, temperature-aware dark matching, module execution beyond the trusted text overlay, sensors/charts/integrations, general backup/restore, and broader hardware/outdoor validation.
+
+## Review And Verification Baseline
+
+On 2026-10-16, local Windows checks at `1db48f4` produced:
+
+- Backend: `backend\.venv\Scripts\python.exe -m pytest backend/tests -q` — **125 passed, 1 skipped**.
+- Frontend: `npm test` — **27 passed on rerun**. The initial run had one unauthenticated-route timeout; both the isolated route suite and full suite then passed. This is not proof that the intermittent failure is resolved.
+- `npm run lint` and `npm run build` — passed.
+- Browser smoke, shell installer tests, fresh Pi installation, hardware acceptance, and outdoor overnight tests were not rerun during this investigation.
+
+These results precede the documentation-only update. Historical Pi acceptance below retains its original dates; it is not new October hardware validation.
+
+### Dependency refresh on 2026-10-16
+
+After that investigation, 58 direct npm versions and seven Python pins were updated; see [dependency maintenance](DEPENDENCIES.md) for versions, Context7 references and compatibility decisions. TypeScript remains 6.0.3 for typescript-eslint compatibility. After the local Node runtime moved to 24.22.0, jsdom was upgraded to 30.1.3. The project now declares Node `^22.22.2 || ^24.15.0 || >=26.0.0` and requires Python 3.11+. Global Python 3.15.0 was verified in an isolated environment; the existing backend virtualenv remains Python 3.12.10.
+
+Current verification after the dependency and correctness work: clean npm install, dependency tree, lint, production build, **41 frontend tests**, **142 backend tests with 1 skip on each of Python 3.12 and 3.15**, **11 browser smoke tests with 1 intentional skip**, `pip check`, typography parser/CSS compatibility and 96-path OpenAPI generation passed. npm audit reports zero vulnerabilities. `npm run typecheck` now passes for both the application and Node config; the 36 baseline diagnostics were repaired. CI now runs the type check. No new hardware acceptance is claimed.
+
+### Correctness hardening on 2026-10-16
+
+The [correctness review](CORRECTNESS_REVIEW.md) records targeted fixes for user-role scope escalation, ignored API-key expiration, stale/deleted user sessions, overlong password prefix acceptance, capture recovery before lock acquisition, UUID-based SSE ordering, frontend session races, setup lookup failure handling, incompatible UI adapters and chart payload/formatter bugs. New tests exercise the failure cases. [API](API.md) documents the role mapping and SSE reconnect/expiry contracts; [Security](SECURITY.md) distinguishes these fixes from unimplemented logout/password-change token revocation.
+
+## Runtime Architecture
+
+- API process: authenticates requests, validates configuration, reads state/artifacts, and persists queued work under `/api/v1`.
+- Capture daemon: owns camera execution and scheduled/manual/dark-frame capture queues. The shared capture service performs calibration, quality analysis, optional trusted text overlays, metadata, thumbnails, and latest publication.
+- Processing worker: consumes persistent jobs for thumbnails, keograms, videos, startrails, uploads, and Allsky imports. Long uploads/imports share this worker and can delay other processing work.
+- SQLite in WAL mode stores state, configuration, jobs, logs, and events; local files hold images, thumbnails, products, and latest artifacts. There are eight registered schema migrations at this baseline.
+- The UI mainly polls REST endpoints. An SSE endpoint exists; its presence does not mean the UI is driven by SSE.
 
 ## Repo Map
 
@@ -165,6 +194,8 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 
 ## Phase Status
 
+"Done" below describes the original bounded phase scope. It does not mean complete automation or field readiness; use the limitations and validation evidence for those assessments.
+
 | Phase | Status | Notes |
 | --- | --- | --- |
 | Phase 0: Repo inspection | Done | React/Vite frontend identified; local API direction established. |
@@ -190,7 +221,7 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 
 - Test `install.sh` on fresh Raspberry Pi OS Bookworm 64-bit; Raspberry Pi 3 Model B on Debian 13/trixie has passed install/repeat-install/service-restart/reboot acceptance.
 - Expand interactive setup as new deployment options are added.
-- Add explicit Raspberry Pi model and Bookworm detection messages.
+- Expand existing OS detection/warnings with explicit Raspberry Pi model reporting and acceptance evidence for fresh Bookworm images.
 - Add camera presence check during install.
 - Add optional nginx reverse proxy.
 - Add `skyweaver` convenience command or documented aliases for start/stop/restart/status.
@@ -202,12 +233,12 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 
 - Expand `rpicam`/`libcamera` adapter:
   - additional camera-specific controls as operator needs are discovered
-  - rotation/flip/crop/resize where supported
+  - validate existing output-size, ROI, rotation and flip mappings on more real sensors; shared post-capture transforms remain separate work
   - capture command compatibility across Bookworm naming
 - Implement V4L2/webcam capture through ffmpeg or OpenCV.
 - Implement gPhoto2 detection/capture for DSLR/mirrorless.
 - Validate the ZWO native-SDK backend on real ZWO ASI hardware and expand control coverage.
-- Add INDI adapter skeleton with expected integration contract.
+- Replace the existing INDI placeholder with a real integration contract and adapter if this extension is prioritized.
 - Design custom command adapter with explicit security controls and sandbox warnings.
 
 ### Image Pipeline
@@ -219,9 +250,10 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 
 ### Night Products
 
-- Expand keogram generation options and UI progress.
-- Add regenerate by date/date range.
-- Add download-ready UI states.
+- Correct UTC-date-only product selection to support an explicit observing-night/source window across midnight and timezone transitions.
+- Add rolling latest-N-frame mini timelapses with a capture-frequency trigger; current mini jobs sample the selected date.
+- Expand keogram options with time labels and rotation; add dedicated startrail source/brightness controls.
+- Single-date product queueing, downloads, and stage/current/total progress already exist. Add date-range/batch regeneration and richer processing options when needed.
 
 ### Web UI
 
@@ -229,7 +261,7 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 - Add overlay live preview and preset import/export.
 - Design future sandboxed/signed external module runtime.
 - Dark-frame calibration is available in Settings; a dedicated dark frames page remains optional future UX polish.
-- Add remote upload page.
+- Remote Upload page already exists; add automatic capture/product publication policy and bounded scheduled retry/backoff.
 - Expand system health views with deeper unit history, failure classification, and recovery guidance after more real Pi failures are observed.
 - Allsky migration page exists with preview loading, job polling, and browser smoke coverage; richer historical job browsing remains future UI polish.
 - Expand Deployment with optional nginx guidance after that install path exists.
@@ -239,9 +271,7 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 ### API and Mobile Readiness
 
 - Cursor pagination exists for authenticated images, logs, processing jobs, and products. Authenticated image pages support date range, camera, mode, and bad-image filters; processing/product pages support type/status/date filters, with products also supporting `day_key`.
-- Expand filters:
-  - product type
-  - processing status
+- Extend existing type/status/date filters to additional collections as needed; these already exist on paged processing/product feeds.
 - Add Swift/Kotlin response examples.
 - Expand generated OpenAPI artifact checks beyond upload-only validation.
 - Add websocket endpoint if SSE is insufficient.
@@ -251,8 +281,7 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 
 - Remove any permanent reliance on bootstrap `admin / skyweaver-change-me`.
 - Add CSRF protection if cookie auth is introduced.
-- Add better secret handling for remote targets.
-- Redact all secrets in diagnostics and logs.
+- Remote targets already use encrypted envelopes with redacted API responses. Validate key preservation/recovery and continue testing diagnostic/log redaction as integrations expand.
 - Keep subprocess safety scanner updated as new process-launching integrations are added.
 - Keep API-key scope-boundary tests updated when new protected endpoint groups are added.
 
@@ -268,6 +297,7 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 
 - Filesystem, rsync-over-SSH, SCP-over-SSH, SFTP-over-SSH, FTP, and FTPS remote target config UI exists with summary counters, mobile-friendly action layout, visible loading/error states, guarded target creation, and per-action pending feedback.
 - Upload retry queue exists for failed upload jobs.
+- Capture/product completion does not enqueue uploads; retry is also explicit. Add optional automatic publication/retry policy with bounded timeouts and worker isolation.
 - Upload job list and detail views expose target metadata, attempts, timing, source, destination, and last error.
 - Remote target configs are stored as a local Fernet encrypted envelope derived from `SKYWEAVER_SECRET_KEY`; keep that key stable across upgrades.
 - Redact credentials everywhere.
@@ -275,17 +305,10 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 ### Plugin/Module System
 
 - Expand built-in module registry.
-- Add built-in modules:
-  - thumbnail
-  - overlay
-  - bad image detector
-  - dark frame subtraction
-  - star counter placeholder
-  - remote upload
-  - latest image publisher
-  - metadata writer
-- Add flow execution ordering.
-- Add timeout and failure behavior.
+- Trusted text overlay and post-capture flow ordering/validation already exist. The flow run action previews readiness; it does not execute arbitrary module code.
+- Thumbnailing, quality/star analysis, dark subtraction, uploads, latest publication and metadata writing already exist as services. Decide which should become composable modules without duplicating their implementations.
+- Add day/night, transition and periodic execution contracts, module data exchange, timeouts and failure isolation before expanding executable flows.
+- Add a safe module package lifecycle and optional sensor/device/integration modules after the execution model is defined.
 - Keep uploaded custom code disabled until sandboxing/signing is implemented.
 
 ### Database and Migrations
@@ -304,6 +327,9 @@ The product is not yet Allsky feature-complete. The main missing areas are longe
 
 ## Known Current Limitations
 
+- Image/product retention cleanup and uploads/retries are explicit API/UI operations. There is no automatic cleanup schedule, enforced minimum-free-space capture policy, or capture/product upload trigger.
+- UTC calendar `day_key` selection can split an observing night; rolling latest-N-frame mini timelapses are not implemented.
+- Shared post-capture resize/crop/stretch/mask processing, general backup/export/restore, meteor detection, environmental control, historical chart workspaces, and optional observatory integrations are missing.
 - Capture daemon now performs day/night scheduled captures and consumes queued test-shot, single-capture, and sequence jobs. Restart-safe per-profile interval/save controls, next-capture due visibility, latest-only unsaved captures, brightness/saturation feedback exposure ramping, end-of-night product queueing, graceful stop fallback, real-Pi validated rpicam hard-cancel, pause/resume/stop queue semantics, stale lock/PID-reuse recovery, daemon activity visibility, Dashboard capture job progress, and interrupted job requeue on service start exist. Real outdoor overnight image quality and environmental stability still need field validation.
 - Worker now generates thumbnails, keograms, ffmpeg timelapses, mini timelapses, and startrails. Product jobs expose stage/current/total progress detail while running and final progress summaries on completion. Image/product retention cleanup, product deletion, filesystem upload execution, and Health-visible heartbeat/PID/last-job reporting exist.
 - Dark-frame calibration supports daemon-owned master capture, median stacking, camera-specific matching, manual active selection, and pixel subtraction with clipping. Covered-sensor IMX290 validation passed on the Raspberry Pi; temperature-aware matching remains future hardening.
@@ -397,7 +423,9 @@ The next development phase should focus on Phase 8/10 operational hardening and 
 
 Suggested next tasks:
 
-1. Run real outdoor overnight field validation once the Pi/camera can be placed outside.
-2. Add optional nginx reverse proxy and broader installer smoke coverage for fresh Pi OS Bookworm images.
-3. Add cursor pagination to additional large collections and richer filters for mobile clients.
-4. Expand product-processing progress detail and image-quality hardening.
+1. Close unattended-operation gaps: observing-night source windows, scheduled retention/low-space behavior, and automatic publication/retry policy.
+2. Run outdoor overnight field validation and fresh Pi OS Bookworm installation; validate real ZWO hardware, backup recovery, and migration fixtures for supported source versions.
+3. Add shared image transforms/masks, temperature-aware dark matching, rolling mini timelapses and richer product controls.
+4. Expand visual overlays, then define safe module execution before pursuing sensors, charts and optional integrations.
+
+Optional nginx and further mobile pagination remain useful platform work alongside the operational priorities above.

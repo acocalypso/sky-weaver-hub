@@ -1088,3 +1088,28 @@ def test_mock_overnight_simulation_updates_latest_gallery_and_recovers(tmp_path:
 
     after_recovery = client.get("/api/v1/images?limit=10", headers=headers).json()["data"]
     assert len(after_recovery) == 5
+
+
+def test_second_daemon_does_not_recover_active_jobs_before_lock(tmp_path: Path, monkeypatch):
+    import os
+    import pytest
+
+    client = make_client(tmp_path)
+    from skyweaver import capture_daemon
+    from skyweaver.config import get_settings
+    from skyweaver.db import session
+
+    headers = {"Authorization": f"Bearer {login(client)}"}
+    job_id = client.post("/api/v1/capture/single", headers=headers, json={}).json()["data"]["id"]
+    with session() as conn:
+        conn.execute("UPDATE capture_jobs SET status='running' WHERE id=?", (job_id,))
+    lock_path = get_settings().data_dir / "capture-daemon.lock"
+    lock_path.write_text(str(os.getpid()), encoding="ascii")
+    monkeypatch.setattr(capture_daemon, "_pid_is_capture_daemon", lambda _pid: True)
+
+    with pytest.raises(RuntimeError, match="lock already exists"):
+        asyncio.run(capture_daemon.main())
+
+    with session() as conn:
+        assert conn.execute("SELECT status FROM capture_jobs WHERE id=?", (job_id,)).fetchone()["status"] == "running"
+    assert lock_path.exists()

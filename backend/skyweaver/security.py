@@ -9,6 +9,24 @@ import jwt
 
 MAX_BCRYPT_PASSWORD_BYTES = 72
 
+READ_SCOPES = ("read:status", "read:images", "read:settings")
+ROLE_SCOPES = {
+    "admin": ("admin",),
+    "operator": (*READ_SCOPES, "write:capture", "write:settings", "write:processing"),
+    "viewer": READ_SCOPES,
+}
+
+
+def scopes_for_role(role: str) -> list[str]:
+    return list(ROLE_SCOPES.get(role, ()))
+
+
+def parse_expiration(value: str) -> datetime:
+    expiration = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if expiration.tzinfo is None or expiration.utcoffset() is None:
+        raise ValueError("Expiration must include a timezone")
+    return expiration.astimezone(UTC)
+
 
 def _password_bytes(password: str) -> bytes:
     data = password.encode("utf-8")
@@ -24,7 +42,7 @@ def hash_password(password: str) -> str:
 def verify_password(password: str, password_hash: str) -> bool:
     data = password.encode("utf-8")
     if len(data) > MAX_BCRYPT_PASSWORD_BYTES:
-        data = data[:MAX_BCRYPT_PASSWORD_BYTES]
+        return False
     try:
         return bcrypt.checkpw(data, password_hash.encode("utf-8"))
     except ValueError:
@@ -38,7 +56,7 @@ def make_token(payload: dict[str, Any], secret_key: str, minutes: int = 1440) ->
 
 
 def read_token(token: str, secret_key: str) -> dict[str, Any]:
-    return jwt.decode(token, secret_key, algorithms=["HS256"])
+    return jwt.decode(token, secret_key, algorithms=["HS256"], options={"require": ["exp", "sub"]})
 
 
 def create_api_key() -> tuple[str, str, str]:

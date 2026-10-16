@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "@/App";
@@ -107,5 +107,21 @@ describe("app route smoke tests", () => {
 
     expect(await screen.findByRole("heading", { name: /first setup route/i })).toBeInTheDocument();
     expect(window.location.pathname).toBe("/setup");
+  });
+
+  it("blocks the admin page on setup lookup failure and supports retry", async () => {
+    vi.mocked(SkyApi.setupStatus).mockRejectedValueOnce(new Error("API unavailable"));
+    renderAt("/deployment", true);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Unable to verify setup status");
+    expect(screen.queryByRole("heading", { name: /deployment route/i })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(await screen.findByRole("heading", { name: /deployment route/i })).toBeInTheDocument();
+  });
+
+  it("does not require an admin-only setup lookup for viewer sessions", async () => {
+    vi.mocked(SkyApi.me).mockResolvedValue({ ...principal, role: "viewer", scopes: ["read:status", "read:settings", "read:images"] } as any);
+    renderAt("/deployment", true);
+    expect(await screen.findByRole("heading", { name: /deployment route/i })).toBeInTheDocument();
+    expect(SkyApi.setupStatus).not.toHaveBeenCalled();
   });
 });
