@@ -923,6 +923,17 @@ describe("main pages", () => {
     expect(await screen.findByText("migration-job-1")).toBeInTheDocument();
   });
 
+  it("hides host service controls for Docker-managed services", async () => {
+    vi.mocked(SkyApi.systemServices).mockResolvedValue([
+      { name: "skyweaver-capture", status: "running", managed_by: "docker", actions: [] },
+    ]);
+    render(<Health />);
+    const serviceName = await screen.findByText("skyweaver-capture");
+    const serviceRow = serviceName.closest(".rounded-md") as HTMLElement;
+    expect(within(serviceRow).getByRole("button", { name: /details/i })).toBeInTheDocument();
+    expect(within(serviceRow).queryByRole("button", { name: /start|stop/i })).not.toBeInTheDocument();
+  });
+
   it("runs service controls from health", async () => {
     render(<Health />);
 

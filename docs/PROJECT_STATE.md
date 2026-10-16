@@ -33,6 +33,8 @@ The [correctness review](CORRECTNESS_REVIEW.md) records targeted fixes for user-
 
 ## Runtime Architecture
 
+- Docker/Compose deployment runs API/web UI, capture and worker as separate non-root services with shared persistent volumes. The image keeps web assets outside the data volume. GitHub Actions builds/tests the stack and publishes AMD64/ARM64 images to GHCR; see [Docker deployment](DOCKER.md). The portable image defaults to mock capture; host camera SDK/device acceptance remains separate.
+- Container work verified on 2026-10-16: local AMD64 image build, non-root UID, Compose startup, login/UI deep links, daemon-owned mock capture, worker-owned keogram/ffmpeg timelapse generation and downloads, volume persistence and resumed processing after abrupt shutdown/container recreation. Backend suite: 143 passed, 1 Windows-only skip; frontend: 42 passed; lint/typecheck passed. No new real-camera acceptance is claimed.
 - API process: authenticates requests, validates configuration, reads state/artifacts, and persists queued work under `/api/v1`.
 - Capture daemon: owns camera execution and scheduled/manual/dark-frame capture queues. The shared capture service performs calibration, quality analysis, optional trusted text overlays, metadata, thumbnails, and latest publication.
 - Processing worker: consumes persistent jobs for thumbnails, keograms, videos, startrails, uploads, and Allsky imports. Long uploads/imports share this worker and can delay other processing work.

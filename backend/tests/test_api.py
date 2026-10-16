@@ -121,6 +121,36 @@ def test_frontend_deep_links_fall_back_to_index(tmp_path):
     assert client.get("/api/v1/health").json()["data"]["status"] == "ok"
 
 
+def test_container_web_assets_and_service_boundaries(tmp_path, monkeypatch):
+    web_dir = tmp_path / "image-web"
+    web_dir.mkdir()
+    (web_dir / "index.html").write_text('<div id="root">Container UI</div>', encoding="utf-8")
+    monkeypatch.setenv("SKYWEAVER_WEB_DIR", str(web_dir))
+    monkeypatch.setenv("SKYWEAVER_DEPLOYMENT", "docker")
+    client = make_client(tmp_path)
+    from skyweaver.api import routes
+    from skyweaver.config import get_settings
+
+    def reject_host_command(*args, **kwargs):
+        raise AssertionError("Container service operations must not invoke host commands")
+
+    monkeypatch.setattr(routes, "systemctl_command", reject_host_command)
+    try:
+        assert "Container UI" in client.get("/dashboard", headers={"accept": "text/html"}).text
+        assert not (tmp_path / "data" / "web").exists()
+        headers = {"Authorization": f"Bearer {login(client)}"}
+        rows = client.get("/api/v1/system/services", headers=headers).json()["data"]
+        assert all(row["managed_by"] == "docker" and not row["actions"] for row in rows)
+        detail = client.get("/api/v1/system/services/skyweaver-capture", headers=headers).json()["data"]
+        assert detail["systemctl_status"] == "unavailable"
+        assert "Docker Compose" in detail["failure_analysis"]["summary"]
+        response = client.post("/api/v1/system/services/skyweaver-capture/restart", headers=headers)
+        assert response.status_code == 409
+        assert "Docker Compose" in response.json()["error"]["message"]
+    finally:
+        get_settings.cache_clear()
+
+
 def test_mock_capture_creates_image(tmp_path):
     client = make_client(tmp_path)
     latest_dir = tmp_path / "data" / "latest"

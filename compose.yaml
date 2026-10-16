@@ -1,0 +1,57 @@
+name: skyweaver
+
+x-runtime: &runtime
+  image: ${SKYWEAVER_IMAGE:-ghcr.io/acocalypso/sky-weaver-hub:latest}
+  build:
+    context: .
+  init: true
+  restart: unless-stopped
+  stop_grace_period: 60s
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  environment:
+    SKYWEAVER_SECRET_KEY: ${SKYWEAVER_SECRET_KEY:?Set SKYWEAVER_SECRET_KEY in .env}
+    SKYWEAVER_ADMIN_USERNAME: ${SKYWEAVER_ADMIN_USERNAME:-admin}
+    SKYWEAVER_ADMIN_PASSWORD: ${SKYWEAVER_ADMIN_PASSWORD:?Set SKYWEAVER_ADMIN_PASSWORD in .env}
+    SKYWEAVER_PRIMARY_CAMERA_ADAPTER: ${SKYWEAVER_PRIMARY_CAMERA_ADAPTER:-mock}
+    SKYWEAVER_OBSERVATORY_NAME: ${SKYWEAVER_OBSERVATORY_NAME:-Sky Weaver Observatory}
+    SKYWEAVER_OBSERVATORY_LATITUDE: ${SKYWEAVER_OBSERVATORY_LATITUDE:-0}
+    SKYWEAVER_OBSERVATORY_LONGITUDE: ${SKYWEAVER_OBSERVATORY_LONGITUDE:-0}
+    SKYWEAVER_OBSERVATORY_TIMEZONE: ${SKYWEAVER_OBSERVATORY_TIMEZONE:-UTC}
+    SKYWEAVER_PUBLIC_PAGE_ENABLED: ${SKYWEAVER_PUBLIC_PAGE_ENABLED:-false}
+  volumes:
+    - data:/var/lib/skyweaver
+    - config:/etc/skyweaver
+    - logs:/var/log/skyweaver
+
+services:
+  api:
+    <<: *runtime
+    command: [api]
+    ports:
+      - "${SKYWEAVER_BIND_ADDRESS:-127.0.0.1}:${SKYWEAVER_PORT:-8765}:8765"
+
+  capture:
+    <<: *runtime
+    command: [capture]
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      disable: true
+
+  worker:
+    <<: *runtime
+    command: [worker]
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      disable: true
+
+volumes:
+  data:
+  config:
+  logs:

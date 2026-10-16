@@ -110,9 +110,9 @@ export default function Health() {
                 <FileText className="h-4 w-4 mr-2" />
                 Details
               </Button>
-              <ServiceButton service={service.name} action="start" icon={<Play className="h-4 w-4" />} pendingAction={pendingAction} onClick={serviceAction} />
-              <ServiceButton service={service.name} action="stop" icon={<Square className="h-4 w-4" />} pendingAction={pendingAction} onClick={serviceAction} />
-              <ServiceButton service={service.name} action="restart" icon={<RotateCw className="h-4 w-4" />} pendingAction={pendingAction} onClick={serviceAction} />
+              {service.actions?.includes("start") && <ServiceButton service={service.name} action="start" icon={<Play className="h-4 w-4" />} pendingAction={pendingAction} onClick={serviceAction} />}
+              {service.actions?.includes("stop") && <ServiceButton service={service.name} action="stop" icon={<Square className="h-4 w-4" />} pendingAction={pendingAction} onClick={serviceAction} />}
+              {service.actions?.includes("restart") && <ServiceButton service={service.name} action="restart" icon={<RotateCw className="h-4 w-4" />} pendingAction={pendingAction} onClick={serviceAction} />}
             </div>
           </div>
         ))}

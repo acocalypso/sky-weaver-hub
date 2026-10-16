@@ -1,0 +1,109 @@
+name: Docker images
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: Build and test Compose
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      SKYWEAVER_IMAGE: skyweaver:smoke
+      SKYWEAVER_SECRET_KEY: ci-only-secret-not-for-production-0123456789
+      SKYWEAVER_ADMIN_PASSWORD: ci-only-bootstrap-password
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4.4.1
+      - name: Build test image
+        uses: docker/build-push-action@v7.4.0
+        with:
+          context: .
+          load: true
+          tags: skyweaver:smoke
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Start services
+        run: docker compose up -d --no-build --wait --wait-timeout 120
+      - name: Verify capture and processing
+        run: python3 scripts/test_docker.py
+      - name: Recreate containers and verify persistence
+        run: |
+          docker compose kill -s SIGKILL capture worker
+          docker compose down
+          docker compose up -d --no-build --wait --wait-timeout 120
+          python3 scripts/test_docker.py --check-persistence
+      - name: Show logs
+        if: always()
+        run: docker compose logs --no-color --tail=150
+      - name: Remove CI containers and disposable volumes
+        if: always()
+        run: docker compose down --volumes
+
+  publish:
+    name: Publish AMD64 and ARM64 image
+    needs: smoke
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+      - name: Image name
+        id: image
+        shell: bash
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-qemu-action@v4.4.0
+      - uses: docker/setup-buildx-action@v4.4.1
+      - uses: docker/login-action@v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/metadata-action@v6.2.0
+        id: meta
+        with:
+          images: ${{ steps.image.outputs.name }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=ref,event=branch
+            type=ref,event=tag
+            type=sha
+      - name: Build and publish
+        id: publish
+        uses: docker/build-push-action@v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Verify published architectures
+        env:
+          IMAGE: ${{ steps.image.outputs.name }}
+          DIGEST: ${{ steps.publish.outputs.digest }}
+        run: |
+          docker buildx imagetools inspect "$IMAGE@$DIGEST" --raw > /tmp/manifest.json
+          python3 - <<'PY'
+          import json
+          with open('/tmp/manifest.json') as source:
+              index = json.load(source)
+          platforms = {(item['platform']['os'], item['platform']['architecture']) for item in index['manifests']}
+          assert {('linux', 'amd64'), ('linux', 'arm64')} <= platforms, platforms
+          PY
+          echo "Published: \`$IMAGE@$DIGEST\` (linux/amd64 and linux/arm64)" >> "$GITHUB_STEP_SUMMARY"

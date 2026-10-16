@@ -46,6 +46,7 @@ Sky Weaver Hub currently includes:
 - Public unauthenticated sky page and public latest-image API guarded by the public-page enabled setting.
 - System Health UI with service control, journal inspection, diagnostics export, and queue/metric summaries.
 - Installer/systemd scripts for Raspberry Pi deployment.
+- Docker/Compose deployment with separate API/capture/worker containers, persistent volumes and GHCR image builds. Portable images use mock capture by default; real cameras require host-specific libraries/devices and acceptance.
 - Allsky migration detection, preview, worker-backed image/product/dark-frame/overlay-asset import, selected settings/profile translation, and rollback of Sky Weaver-created data and settings snapshots. Full upstream configuration/module compatibility remains incomplete.
 - Dark-frame master capture/subtraction, trusted text overlays, and worker-backed remote file uploads. Uploads and retention cleanup currently require explicit queue/API/UI actions; automatic publication and scheduled cleanup are not implemented.
 

@@ -1,5 +1,6 @@
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -8,6 +9,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     app_name: str = "Sky Weaver Hub"
     environment: str = Field(default="development", validation_alias="SKYWEAVER_ENV")
+    deployment: Literal["native", "docker"] = Field(default="native", validation_alias="SKYWEAVER_DEPLOYMENT")
+    web_dir: Path | None = Field(default=None, validation_alias="SKYWEAVER_WEB_DIR")
     host: str = Field(default="0.0.0.0", validation_alias="SKYWEAVER_HOST")
     port: int = Field(default=8765, validation_alias="SKYWEAVER_PORT")
     secret_key: str = Field(default="dev-change-me", validation_alias="SKYWEAVER_SECRET_KEY")

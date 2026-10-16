@@ -56,7 +56,7 @@ def create_app() -> FastAPI:
     app.add_exception_handler(HTTPException, http_exception_handler)
     app.add_exception_handler(Exception, unhandled_exception_handler)
 
-    static_dir = settings.data_dir / "web"
+    static_dir = settings.web_dir or settings.data_dir / "web"
     if static_dir.exists():
         app.mount("/", SpaStaticFiles(directory=static_dir, html=True), name="web")
     return app

@@ -120,6 +120,8 @@ Allsky migration endpoints require admin scope. Detection and preview do not mod
 
 `GET /api/v1/system/services` returns Sky Weaver service rows, including capture daemon and processing worker heartbeat, PID, last claimed job, and last success timestamps when those processes have reported activity. `GET /api/v1/system/services/{name}` returns per-service `systemctl show` properties, recent `journalctl` output, a `failure_analysis` summary, and `unit_history` timestamps/restart metadata when systemd tooling is available. These fields are read-only diagnostics for operators and mobile clients; service actions remain separate admin-scoped `POST /api/v1/system/services/{name}/{action}` calls.
 
+With `SKYWEAVER_DEPLOYMENT=docker`, service rows report `managed_by: "docker"` and an empty `actions` list. Service-control requests return HTTP 409; container service details retain the response shape but mark systemd/journal diagnostics unavailable and direct operators to host-side Compose commands. Native deployment retains its existing systemd behavior.
+
 Local Pi administration endpoints support field operation when the Pi has no RTC or needs Wi-Fi changes:
 
 - `GET /api/v1/system/time` returns the API host UTC time and epoch milliseconds.

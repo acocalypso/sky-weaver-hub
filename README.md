@@ -74,6 +74,19 @@ To inspect installer actions without root or filesystem writes:
 SKYWEAVER_DRY_RUN=1 ./install.sh
 ```
 
+## Docker / Compose
+
+Docker runs the API/web UI, capture daemon and worker as separate services with persistent volumes. AMD64 and ARM64 images are published to `ghcr.io/acocalypso/sky-weaver-hub` by GitHub Actions.
+
+Copy `.env.docker.example` to `.env`, set a random `SKYWEAVER_SECRET_KEY` (at least 32 characters) and a strong `SKYWEAVER_ADMIN_PASSWORD`, then run:
+
+```bash
+docker compose pull
+docker compose up -d --no-build --wait
+```
+
+Open `http://localhost:8765` and complete setup. Mock capture works by default; real cameras need host-specific devices and libraries. See [Docker deployment](docs/DOCKER.md) for local builds, upgrades, storage, camera requirements and image publishing.
+
 ## Development
 
 Use Python 3.11+ and Node.js 22.x (22.22.2+), 24.x (24.15+), or 26+ as allowed by `package.json` (Node 24 is used in CI). OS-provided Node packages can be older; check `node --version` before installing or building. See [dependency maintenance](docs/DEPENDENCIES.md) for the current upgrade decisions and compatibility exceptions.

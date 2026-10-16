@@ -1,5 +1,7 @@
 # Install
 
+For the container deployment, see [Docker and Compose](DOCKER.md). The native installation below remains the validated Raspberry Pi camera path.
+
 Primary target is Raspberry Pi OS Bookworm 64-bit.
 
 The current dependency set requires Python 3.11+ and a Node version matching `package.json`: `^22.22.2 || ^24.15.0 || >=26.0.0`. Node 24 is the recommended build/test runtime and is used in CI. Check `python3 --version` and `node --version` before installation. The installer uses configured apt repositories for Node/npm; it does not provision a newer Node release when the OS package is too old. Configure a suitable package source/runtime before running the installer in that case. Bookworm's Python 3.11 meets the Python requirement.

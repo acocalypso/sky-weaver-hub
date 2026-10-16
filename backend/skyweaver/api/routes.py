@@ -456,7 +456,7 @@ def service_rows() -> list[dict[str, Any]]:
             worker_status = "running" if worker_age_seconds <= 120 else "stale"
         except ValueError:
             worker_status = "unknown"
-    return [
+    rows = [
         {"name": "skyweaver", "unit": "skyweaver.target", "status": "running", "managed_by": "systemd", "actions": sorted(SERVICE_ACTIONS)},
         {"name": "skyweaver-api", "unit": "skyweaver-api.service", "status": "running", "managed_by": "systemd", "actions": sorted(SERVICE_ACTIONS)},
         {
@@ -488,6 +488,11 @@ def service_rows() -> list[dict[str, Any]]:
             "last_success_at": worker.get("last_success_at"),
         },
     ]
+    if get_settings().deployment == "docker":
+        for row in rows:
+            row["managed_by"] = "docker"
+            row["actions"] = []
+    return rows
 
 
 def redact_operational_text(value: str) -> str:
@@ -593,6 +598,19 @@ def service_detail_row(name: str, journal_lines: int = 80) -> dict[str, Any]:
         "unit_history": {},
         "failure_analysis": {},
     }
+
+    if get_settings().deployment == "docker":
+        detail["systemctl_error"] = "Services are managed by Docker Compose."
+        detail["journal_error"] = "Use docker compose logs on the host."
+        detail["unit_history"] = service_unit_history({})
+        stale = service.get("status") == "stale"
+        detail["failure_analysis"] = {
+            "severity": "warning" if stale else "ok",
+            "summary": "Service heartbeat is stale." if stale else "Service is managed by Docker Compose; systemd diagnostics are unavailable.",
+            "findings": [],
+            "suggested_actions": ["Inspect docker compose ps and docker compose logs on the host."],
+        }
+        return detail
 
     command = systemctl_command()
     if command:
@@ -918,6 +936,8 @@ def run_service_action(name: str, action: str) -> dict[str, str]:
         raise HTTPException(404, "Unknown Sky Weaver service")
     if action not in SERVICE_ACTIONS:
         raise HTTPException(400, "Unsupported service action")
+    if get_settings().deployment == "docker":
+        raise HTTPException(409, "Manage container services with Docker Compose on the host.")
     command = systemctl_command()
     if not command:
         return {"name": name, "unit": unit, "action": action, "status": "unavailable", "note": "systemctl is not available on this host."}
