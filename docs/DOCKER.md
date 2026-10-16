@@ -51,7 +51,7 @@ docker compose up -d --no-build --wait
 
 `docker compose down` removes containers but preserves named volumes. Do not add `--volumes` to an observatory shutdown unless you intend to delete its stored data. Keep the same Compose project name so existing volumes are reused. Never run two stacks, workers or capture daemons against the same data volume; these services are singletons.
 
-The API health check gates initial daemon/worker startup. Docker restarts exited services; an unhealthy status by itself does not restart a live process. Capture/worker activity is reported through existing database heartbeats in Health. Health checks do not prove camera readiness or a complete capture-to-product flow.
+The API health check gates initial daemon/worker startup. Capture/worker health checks verify ownership of their kernel singleton locks; database heartbeats also report activity in Health. This avoids falsely rejecting long captures or video jobs because they delay heartbeat updates. Docker restarts exited services; an unhealthy status by itself does not restart a live process. Health checks do not prove camera readiness or a complete capture-to-product flow.
 
 In container mode, Health identifies services as Docker-managed and hides systemd start/stop/restart actions. Admin service-control API calls return HTTP 409; use Compose on the host. Host Wi-Fi, time changes, systemd journals and installer operations remain host responsibilities. The Docker socket and host control interfaces are not mounted.
 

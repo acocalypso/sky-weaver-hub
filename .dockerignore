@@ -17,6 +17,7 @@
 !backend/skyweaver/**
 !docker/
 !docker/entrypoint.sh
+!docker/healthcheck.py
 **/__pycache__/
 **/*.pyc
 **/.env*

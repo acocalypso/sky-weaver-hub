@@ -32,9 +32,10 @@ RUN pip install --no-cache-dir -r backend/requirements.txt
 COPY backend/skyweaver ./backend/skyweaver
 COPY --from=frontend /build/dist ./web
 COPY --chmod=755 docker/entrypoint.sh /usr/local/bin/skyweaver-entrypoint
+COPY docker/healthcheck.py ./docker/healthcheck.py
 USER skyweaver
 EXPOSE 8765
 HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=5 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/api/v1/health', timeout=3).read()"
+    CMD ["python", "/app/docker/healthcheck.py", "api"]
 ENTRYPOINT ["skyweaver-entrypoint"]
 CMD ["api"]
